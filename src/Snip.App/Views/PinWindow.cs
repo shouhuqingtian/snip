@@ -21,7 +21,7 @@ public sealed class PinWindow : Window
     [DllImport("user32.dll", EntryPoint = "SetWindowLongPtrW")] private static extern IntPtr SetStyle(IntPtr hwnd, int index, IntPtr style);
     public PinWindow(BitmapSource bitmap, IImageExportService export)
     {
-        Ui.EnsureTheme();
+        Ui.ApplyWindow(this);
         this.bitmap = bitmap; Title = "自用截图 · 贴图"; WindowStyle = WindowStyle.None; ResizeMode = ResizeMode.NoResize;
         Topmost = true; ShowInTaskbar = false; AllowsTransparency = true; Background = Brushes.Transparent;
         scale = Math.Min(1, Math.Min(650.0 / bitmap.PixelWidth, 500.0 / bitmap.PixelHeight));

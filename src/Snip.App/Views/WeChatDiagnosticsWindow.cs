@@ -10,7 +10,7 @@ public sealed class WeChatDiagnosticsWindow : Window
 {
     public WeChatDiagnosticsWindow()
     {
-        Ui.EnsureTheme();
+        Ui.ApplyWindow(this);
         Title = "微信控件诊断（只读）"; Width = 860; Height = 680; MinWidth = 600; MinHeight = 480; WindowStartupLocation = WindowStartupLocation.CenterScreen;
         var root = new DockPanel { Margin = new Thickness(24) };
         var header = new StackPanel(); header.Children.Add(Ui.Title("微信控件诊断"));

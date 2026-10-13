@@ -15,7 +15,7 @@ public sealed class StickerPicker : Window
     public double ImageHeight { get; private set; }
     public StickerPicker()
     {
-        Ui.EnsureTheme();
+        Ui.ApplyWindow(this);
         Title = "表情与图片贴纸"; Width = 460; Height = 440; ResizeMode = ResizeMode.NoResize; WindowStartupLocation = WindowStartupLocation.CenterOwner; ShowInTaskbar = false;
         var root = new StackPanel { Margin = new Thickness(24) };
         root.Children.Add(Ui.Title("让画面更有趣"));

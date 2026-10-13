@@ -20,6 +20,7 @@ public sealed class SelectionWindow : Window
     public DisplayInfo Display { get; }
     public SelectionWindow(SelectionSession session, IDesktopCaptureService capture, DisplayInfo display)
     {
+        Ui.ApplyWindow(this);
         this.session = session; Display = display;
         Title = "自用截图 · 选区编辑"; WindowStyle = WindowStyle.None; ResizeMode = ResizeMode.NoResize;
         ShowInTaskbar = false; Topmost = true; Background = Brushes.Black;

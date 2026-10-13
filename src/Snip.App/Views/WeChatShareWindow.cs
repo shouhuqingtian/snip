@@ -11,7 +11,7 @@ public sealed class WeChatShareWindow : Window
     private readonly CancellationTokenSource cancellation = new();
     public WeChatShareWindow(BitmapSource image, IImageExportService export)
     {
-        Ui.EnsureTheme();
+        Ui.ApplyWindow(this);
         Title = "自用截图 · 微信分享"; Width = 720; Height = 760; MinWidth = 600; MinHeight = 620; WindowStartupLocation = WindowStartupLocation.CenterOwner;
         var automation = new WeChatAutomation(); var root = new DockPanel { Margin = new Thickness(24) };
         var top = new StackPanel(); DockPanel.SetDock(top, Dock.Top); root.Children.Add(top);

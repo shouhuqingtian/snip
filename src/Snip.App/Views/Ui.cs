@@ -12,6 +12,12 @@ public static class Ui
         app.Resources.MergedDictionaries.Add(new ResourceDictionary { Source = new Uri("/Snip;component/Styles/Theme.xaml", UriKind.Relative) });
     }
     public static Brush Brush(string key) => (Brush)Application.Current.FindResource(key);
+    public static void ApplyWindow(Window window)
+    {
+        EnsureTheme();
+        // WPF implicit styles use the runtime type; derived Window classes need the base style explicitly.
+        window.SetResourceReference(FrameworkElement.StyleProperty, typeof(Window));
+    }
     public static void Style(FrameworkElement element, string key) => element.SetResourceReference(FrameworkElement.StyleProperty, key);
     public static TextBlock Title(string text) { var value = new TextBlock { Text = text }; Style(value, "PageTitle"); return value; }
     public static TextBlock Subtitle(string text) { var value = new TextBlock { Text = text }; Style(value, "Subtitle"); return value; }

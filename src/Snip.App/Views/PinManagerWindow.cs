@@ -7,7 +7,7 @@ public sealed class PinManagerWindow : Window
 {
     public PinManagerWindow(IReadOnlyList<PinWindow> pins)
     {
-        Ui.EnsureTheme();
+        Ui.ApplyWindow(this);
         Title = "自用截图 · 贴图管理"; Width = 560; Height = 460; MinWidth = 500; MinHeight = 330; WindowStartupLocation = WindowStartupLocation.CenterScreen;
         var root = new DockPanel { Margin = new Thickness(24) };
         var header = new StackPanel(); header.Children.Add(Ui.Title("桌面贴图"));

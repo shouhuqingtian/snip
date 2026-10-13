@@ -7,7 +7,7 @@ public partial class MainWindow : Window
     public bool AllowClose { get; set; }
     public MainWindow()
     {
-        Ui.EnsureTheme(); InitializeComponent();
+        Ui.ApplyWindow(this); InitializeComponent();
         Closing += (_, e) => { if (!AllowClose) { e.Cancel = true; Hide(); } };
     }
 }
