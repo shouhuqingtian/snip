@@ -119,7 +119,7 @@ internal static class ChromeCaptureCheck
             finally { ownWindow.Close(); }
             return 0;
         }
-        catch (Exception e) { Console.WriteLine("::error::Chrome " + stage + ": " + e.Message.Replace("\n", " ").Replace("\r", " ")); Console.Error.WriteLine("FAIL real Chrome: " + e); return 1; }
+        catch (Exception e) { Console.WriteLine("::error::Chrome " + stage + ": " + e.ToString().Replace("\r", "").Replace("\n", "%0A")); Console.Error.WriteLine("FAIL real Chrome: " + e); return 1; }
         finally
         {
             try { if (browser is not null && !browser.HasExited) { browser.Kill(true); browser.WaitForExit(5000); } } catch { }
