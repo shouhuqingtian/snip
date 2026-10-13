@@ -1,5 +1,5 @@
 <Window x:Class="Snip.App.Views.TextResultWindow" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
- xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" Title="{Binding WindowTitle}" Width="1140" Height="760" MinWidth="850" MinHeight="640" WindowStartupLocation="CenterScreen">
+ xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" Title="{Binding WindowTitle}" Width="1140" Height="760" MinWidth="850" MinHeight="700" WindowStartupLocation="CenterScreen">
  <Window.Resources><BooleanToVisibilityConverter x:Key="BoolVisibility"/></Window.Resources>
  <DockPanel Margin="24">
   <StackPanel DockPanel.Dock="Top" Margin="0,0,0,18"><TextBlock Text="文字工作台" Style="{StaticResource PageTitle}"/><TextBlock Text="从画面提取文字，修正、复制，或进行离线中英互译。" Style="{StaticResource Subtitle}" Margin="0,6,0,14"/>

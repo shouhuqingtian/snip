@@ -49,7 +49,7 @@ internal static class UiGalleryCheck
                 }
                 if (window is TextResultWindow)
                     foreach (var field in TextWindowChecks.Descendants<TextBox>(content).Where(b => b.IsVisible && b.Name is "RecognizedText" or "TranslatedText"))
-                        Require(field.ActualHeight >= 70, "Text result is too short to read in " + name);
+                        Require(field.ActualHeight >= 70, "Text result is too short to read in " + name + ": " + field.ActualHeight + " DIP");
                 var drawing = new DrawingVisual();
                 using (var dc = drawing.RenderOpen())
                 {
