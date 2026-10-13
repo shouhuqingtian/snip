@@ -54,7 +54,8 @@ internal static class UiGalleryCheck
                 using (var dc = drawing.RenderOpen())
                 {
                     dc.DrawRectangle(window.Background, null, new Rect(0, 0, content.ActualWidth + 48, content.ActualHeight + 48));
-                    dc.DrawRectangle(new VisualBrush(content), null, new Rect(24, 24, content.ActualWidth, content.ActualHeight));
+                    var brush = new VisualBrush(content) { ViewboxUnits = BrushMappingMode.Absolute, Viewbox = new Rect(0, 0, content.ActualWidth, content.ActualHeight), Stretch = Stretch.Fill };
+                    dc.DrawRectangle(brush, null, new Rect(24, 24, content.ActualWidth, content.ActualHeight));
                 }
                 var bitmap = new RenderTargetBitmap((int)Math.Ceiling(content.ActualWidth + 48), (int)Math.Ceiling(content.ActualHeight + 48), 96, 96, PixelFormats.Pbgra32);
                 bitmap.Render(drawing);
