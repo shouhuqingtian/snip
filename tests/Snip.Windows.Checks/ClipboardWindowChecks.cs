@@ -28,6 +28,13 @@ internal static class ClipboardWindowChecks
         SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext());
         string folder = Path.Combine(Path.GetTempPath(), "Snip.Clipboard-" + Guid.NewGuid());
         using var diagnostics = new DiagnosticJournal(folder);
+        string stage = "initialization";
+        using var watchdog = new System.Threading.Timer(_ =>
+        {
+            Console.WriteLine("::error title=Clipboard check deadline::Timed out in " + Volatile.Read(ref stage));
+            Environment.Exit(1);
+        }, null, TimeSpan.FromSeconds(45), Timeout.InfiniteTimeSpan);
+        void Stage(string value) { stage = value; Console.WriteLine("::notice title=Clipboard check stage::" + value); }
         Exception? dispatcherError = null;
         DispatcherUnhandledExceptionEventHandler handler = (_, e) => { dispatcherError = e.Exception; e.Handled = true; };
         app.DispatcherUnhandledException += handler;
@@ -50,6 +57,7 @@ internal static class ClipboardWindowChecks
             }
             void WaitCopy(TextResultViewModel vm) => TextWindowChecks.PumpUntil(() => vm.CopyStatus.Contains("已复制") || vm.CopyStatus.Contains("复制未完成") || vm.CopyStatus.Contains("复制失败"), TimeSpan.FromSeconds(8));
 
+            Stage("original failure reproduction");
             using (var holder = new ClipboardLock())
             {
                 bool reproduced = false;
@@ -59,6 +67,7 @@ internal static class ClipboardWindowChecks
             }
             Console.WriteLine("PASS original Clipboard.SetText reproduces the reported 0x800401D0 under a real external lock.");
 
+            Stage("Unicode source copy in actual window");
             var window = Show(); var vm = (TextResultViewModel)window.DataContext;
             ((TextBox)window.FindName("RecognizedText")).Text = Fixture;
             Click(window, "CopySourceButton"); WaitCopy(vm);
@@ -67,6 +76,7 @@ internal static class ClipboardWindowChecks
             window.Close(); Require(Clipboard.GetText() == Fixture, "Closing the result discarded clipboard data.");
             Console.WriteLine("PASS real copy button copies edited Unicode and multiline text, shows feedback and persists after window close.");
 
+            Stage("translation and empty source copy");
             window = Show(); vm = (TextResultViewModel)window.DataContext;
             Click(window, "CopyTranslationButton"); WaitCopy(vm);
             Require(Clipboard.GetText() == "你好，世界", "Translation button copied the wrong text.");
@@ -75,6 +85,7 @@ internal static class ClipboardWindowChecks
             Click(window, "CopySourceButton"); Require(Clipboard.GetText() == "你好，世界", "Empty copy overwrote the clipboard.");
             window.Close(); Console.WriteLine("PASS translation copy and empty source preserve the correct clipboard data.");
 
+            Stage("transient external lock and dispatcher responsiveness");
             window = Show(); vm = (TextResultViewModel)window.DataContext; vm.Source = Fixture;
             using (var holder = new ClipboardLock())
             {
@@ -94,6 +105,7 @@ internal static class ClipboardWindowChecks
             }
             window.Close(); Console.WriteLine("PASS another process holds the clipboard: UI stays responsive, duplicate clicks are ignored and release recovers automatically.");
 
+            Stage("persistent external lock and later retry");
             window = Show(); vm = (TextResultViewModel)window.DataContext;
             Clipboard.SetText(Sentinel);
             using (var holder = new ClipboardLock())
@@ -106,6 +118,7 @@ internal static class ClipboardWindowChecks
             Require(Clipboard.GetText() == "Hello world" && vm.CopyStatus.Contains("已复制"), "Retry after failure did not succeed.");
             window.Close(); Console.WriteLine("PASS persistent lock gives bounded failure, retains results and existing clipboard, and allows a later retry.");
 
+            Stage("window close during retry");
             window = Show(); vm = (TextResultViewModel)window.DataContext; Clipboard.SetText(Sentinel);
             using (var holder = new ClipboardLock())
             {
@@ -117,6 +130,7 @@ internal static class ClipboardWindowChecks
             Require(Clipboard.GetText() == Sentinel, "Closing during retry published a late clipboard result.");
             Console.WriteLine("PASS closing during a clipboard lock cancels retry without publishing a late result.");
 
+            Stage("persistence after publisher process exit");
             using (var publisher = StartChild("--clipboard-persist"))
             {
                 Require(publisher.WaitForExit(5000) && publisher.ExitCode == 0, "Clipboard publisher process failed.");
@@ -124,6 +138,7 @@ internal static class ClipboardWindowChecks
             Require(Clipboard.GetText() == Fixture, "Clipboard text did not persist after its publishing process exited.");
             Console.WriteLine("PASS clipboard text remains available after the publishing process exits.");
 
+            Stage("diagnostic privacy and lifecycle");
             diagnostics.FlushAsync().GetAwaiter().GetResult();
             string log = File.ReadAllText(Path.Combine(folder, "events.jsonl"));
             Require(log.Contains("text-clipboard") && log.Contains("clipboard-busy") && log.Contains("failed") && log.Contains("cancelled") && log.Contains("completed"), "Clipboard lifecycle was not logged.");
@@ -139,6 +154,7 @@ internal static class ClipboardWindowChecks
         }
         finally
         {
+            Stage("cleanup");
             foreach (Window window in app.Windows.Cast<Window>().ToArray()) window.Close();
             app.DispatcherUnhandledException -= handler;
             SynchronizationContext.SetSynchronizationContext(previous);

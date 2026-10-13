@@ -72,6 +72,15 @@ jobs:
         shell: pwsh
         timeout-minutes: 8
         run: ./packaging/Validate.ps1 -Scope Desktop -NoBuild
+      - name: Surface interrupted check output in GitHub annotations
+        if: failure()
+        shell: pwsh
+        run: |
+          Get-ChildItem artifacts/validation -Filter '*.log' -ErrorAction SilentlyContinue | ForEach-Object {
+            $detail = (Get-Content $_.FullName -Tail 12 | Out-String)
+            $detail = $detail.Substring(0, [Math]::Min(3000, $detail.Length)).Replace('%','%25').Replace("`r",'%0D').Replace("`n",'%0A')
+            Write-Output "::notice title=Check output $($_.BaseName)::$detail"
+          }
       - name: Publish tested portable application
         shell: pwsh
         run: |
