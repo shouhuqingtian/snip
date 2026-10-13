@@ -36,6 +36,11 @@ public interface ITranslationService
         => TranslateAsync(text, direction, cancellationToken);
 }
 
+public interface ITextClipboardService
+{
+    Task CopyAsync(string text, CancellationToken cancellationToken, IProgress<int>? retries = null);
+}
+
 public sealed record TranslationProgress(string Stage, int CompletedSegments = 0, int TotalSegments = 0, int GeneratedTokens = 0);
 
 public interface IAiImageService

@@ -16,6 +16,7 @@
   <StackPanel DockPanel.Dock="Bottom" Margin="0,10,0,0">
    <ProgressBar Value="{Binding Progress, Mode=OneWay}" IsIndeterminate="{Binding Indeterminate, Mode=OneWay}" Maximum="100" Height="6"/>
    <TextBlock Text="{Binding Status, Mode=OneWay}" TextWrapping="Wrap" Margin="0,8,0,0"/>
+   <TextBlock x:Name="ClipboardStatus" Text="{Binding CopyStatus, Mode=OneWay}" TextWrapping="Wrap" Margin="0,4,0,0"/>
   </StackPanel>
   <Grid>
    <Grid.ColumnDefinitions><ColumnDefinition Width="0.85*"/><ColumnDefinition Width="16"/><ColumnDefinition Width="1.15*"/></Grid.ColumnDefinitions>
@@ -33,11 +34,11 @@
      <RowDefinition><RowDefinition.Style><Style TargetType="RowDefinition"><Setter Property="Height" Value="0"/><Style.Triggers><DataTrigger Binding="{Binding ShowTranslation}" Value="True"><Setter Property="Height" Value="*"/></DataTrigger></Style.Triggers></Style></RowDefinition.Style></RowDefinition>
     </Grid.RowDefinitions>
     <DockPanel>
-     <DockPanel DockPanel.Dock="Top"><Button Content="复制文字" Command="{Binding CopySourceCommand}" DockPanel.Dock="Right"/><TextBlock Text="识别文字（可修改）" FontWeight="Bold" VerticalAlignment="Center"/></DockPanel>
+     <DockPanel DockPanel.Dock="Top"><Button x:Name="CopySourceButton" Content="复制文字" Command="{Binding CopySourceCommand}" DockPanel.Dock="Right"/><TextBlock Text="识别文字（可修改）" FontWeight="Bold" VerticalAlignment="Center"/></DockPanel>
      <TextBox x:Name="RecognizedText" Text="{Binding Source, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" Padding="10"/>
     </DockPanel>
     <DockPanel Grid.Row="1" Margin="0,12,0,0" Visibility="{Binding ShowTranslation, Converter={StaticResource BoolVisibility}}">
-     <DockPanel DockPanel.Dock="Top"><Button Content="复制译文" Command="{Binding CopyTranslationCommand}" DockPanel.Dock="Right"/><TextBlock Text="翻译结果" FontWeight="Bold" VerticalAlignment="Center"/></DockPanel>
+     <DockPanel DockPanel.Dock="Top"><Button x:Name="CopyTranslationButton" Content="复制译文" Command="{Binding CopyTranslationCommand}" DockPanel.Dock="Right"/><TextBlock Text="翻译结果" FontWeight="Bold" VerticalAlignment="Center"/></DockPanel>
      <TextBox x:Name="TranslatedText" Text="{Binding Translated, Mode=OneWay}" IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" Padding="10"/>
     </DockPanel>
    </Grid>

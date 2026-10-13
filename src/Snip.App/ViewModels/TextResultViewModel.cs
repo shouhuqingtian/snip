@@ -6,6 +6,7 @@ using System.Windows.Threading;
 using Snip.App.Mvvm;
 using Snip.Translation;
 using Snip.Core;
+using Snip.Infrastructure;
 
 namespace Snip.App.ViewModels;
 
@@ -16,6 +17,9 @@ public sealed class TextResultViewModel : ObservableObject, IDisposable
     private readonly IOcrService ocr;
     private readonly ModelStore models;
     private readonly ITranslationService translator;
+    private readonly ITextClipboardService clipboard;
+    private CancellationTokenSource? copying;
+    private string copyStatus = "";
     private CancellationTokenSource? operation;
     private readonly DiagnosticJournal? diagnostics;
     private DiagnosticOperation? diagnosticOperation;
@@ -27,11 +31,12 @@ public sealed class TextResultViewModel : ObservableObject, IDisposable
     private bool busy, downloading, disposed, initialized, userCancelled;
     private bool autoTranslate, showTranslation;
     private double progress;
-    public TextResultViewModel(BitmapSource image, IOcrService ocr, ModelStore models, ITranslationService translator, DiagnosticJournal? diagnostics = null)
+    public TextResultViewModel(BitmapSource image, IOcrService ocr, ModelStore models, ITranslationService translator, DiagnosticJournal? diagnostics = null, ITextClipboardService? clipboard = null)
     {
         snapshot = image.IsFrozen ? image : image.Clone(); snapshot.Freeze();
         this.ocr = ocr; this.models = models; this.translator = translator;
         this.diagnostics = diagnostics;
+        this.clipboard = clipboard ?? new TextClipboardService();
         // No codec, WinRT or model calls in the constructor: first paint must not wait on native work.
         heartbeat.Tick += (_, _) => ShowStage();
         OcrCommand = new(() => Run("文字识别", TimeSpan.FromSeconds(45), Recognize), Report, () => !Busy);
@@ -51,7 +56,8 @@ public sealed class TextResultViewModel : ObservableObject, IDisposable
             await Task.Run(() => models.InstallAsync(updates, token), token);
             token.ThrowIfCancellationRequested(); Status = "两个方向的模型已校验，可断网翻译。";
         }), Report, () => !Busy);
-        CopySourceCommand = new(() => Copy(Source)); CopyTranslationCommand = new(() => Copy(Translated));
+        CopySourceCommand = new(() => CopyAsync(Source, false), Report, () => !disposed && copying is null && Source.Length > 0);
+        CopyTranslationCommand = new(() => CopyAsync(Translated, true), Report, () => !disposed && copying is null && Translated.Length > 0);
         CancelCommand = new(() => { userCancelled = true; if (operation is { } current) _ = current.CancelAsync(); }, () => Busy);
     }
     public Task InitializeAsync()
@@ -68,17 +74,18 @@ public sealed class TextResultViewModel : ObservableObject, IDisposable
     public string WindowTitle => ShowTranslation ? "自用截图 · 文字识别与离线翻译" : "自用截图 · 文字识别";
     public string? Language { get => language; set { if (value is not null) Set(ref language, value); } }
     public string Direction { get => direction; set { if (value is "en-zh" or "zh-en") Set(ref direction, value); } }
-    public string Source { get => source; set { if (Set(ref source, value)) TranslateCommand.Refresh(); } }
-    public string Translated { get => translated; private set => Set(ref translated, value); }
+    public string Source { get => source; set { if (Set(ref source, value)) { TranslateCommand.Refresh(); CopySourceCommand.Refresh(); } } }
+    public string Translated { get => translated; private set { if (Set(ref translated, value)) CopyTranslationCommand.Refresh(); } }
     public string Status { get => status; private set => Set(ref status, value); }
+    public string CopyStatus { get => copyStatus; private set => Set(ref copyStatus, value); }
     public bool Busy { get => busy; private set { Set(ref busy, value); Notify(nameof(Indeterminate)); OcrCommand.Refresh(); TranslateCommand.Refresh(); DownloadCommand.Refresh(); CancelCommand.Refresh(); } }
     public bool Indeterminate => Busy && !downloading;
     public double Progress { get => progress; private set => Set(ref progress, value); }
     public AsyncCommand OcrCommand { get; }
     public AsyncCommand TranslateCommand { get; }
     public AsyncCommand DownloadCommand { get; }
-    public RelayCommand CopySourceCommand { get; }
-    public RelayCommand CopyTranslationCommand { get; }
+    public AsyncCommand CopySourceCommand { get; }
+    public AsyncCommand CopyTranslationCommand { get; }
     public RelayCommand CancelCommand { get; }
     public void WindowOpened() => diagnostics?.Record("text-window", "loaded", new { AutoTranslate });
     public void WindowFailed(Exception error) => Report(error);
@@ -162,11 +169,40 @@ public sealed class TextResultViewModel : ObservableObject, IDisposable
         finally { heartbeat.Stop(); elapsed.Stop(); operation = null; diagnosticOperation = null; Busy = false; }
     }
     private void Report(Exception e) { diagnostics?.Record("text-result", "operation-failed", error: e); Status = "操作失败：" + e.Message + "；可从主窗口导出诊断包。"; }
-    private void Copy(string value) { try { if (!string.IsNullOrEmpty(value)) Clipboard.SetText(value); } catch (Exception e) { Report(e); } }
+    private async Task CopyAsync(string value, bool translation)
+    {
+        if (disposed || copying is not null || value.Length == 0) return;
+        using var current = new CancellationTokenSource(); copying = current;
+        using var log = diagnostics?.Begin("text-clipboard", new { Translation = translation, CharacterCount = value.Length });
+        CopySourceCommand.Refresh(); CopyTranslationCommand.Refresh();
+        CopyStatus = "正在复制…";
+        var retries = new Progress<int>(attempt =>
+        {
+            if (disposed || copying != current || current.IsCancellationRequested) return;
+            log?.Stage("clipboard-busy", new { Attempt = attempt });
+            CopyStatus = "剪贴板暂时被占用，正在重试…";
+        });
+        try
+        {
+            await clipboard.CopyAsync(value, current.Token, retries);
+            if (disposed || current.IsCancellationRequested) { log?.Cancel("window-closed"); return; }
+            log?.Complete(); CopyStatus = translation ? "译文已复制到剪贴板。" : "文字已复制到剪贴板。";
+        }
+        catch (OperationCanceledException) when (current.IsCancellationRequested) { log?.Cancel("window-closed"); }
+        catch (Exception error)
+        {
+            log?.Fail(error);
+            if (!disposed) CopyStatus = error.HResult == TextClipboardService.ClipboardBusy
+                ? "剪贴板持续被其他程序占用，复制未完成；请稍后重试。文字已保留，也可选中文字后按 Ctrl+C。"
+                : "复制失败，文字已保留；可选中文字后按 Ctrl+C，或导出诊断包反馈。";
+        }
+        finally { copying = null; CopySourceCommand.Refresh(); CopyTranslationCommand.Refresh(); }
+    }
     public void Dispose()
     {
         if (disposed) return;
         disposed = true; diagnostics?.Record("text-window", "closed", new { Busy });
         heartbeat.Stop(); if (operation is { } current) _ = current.CancelAsync();
+        copying?.Cancel(); CopySourceCommand.Refresh(); CopyTranslationCommand.Refresh();
     }
 }

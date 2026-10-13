@@ -15,6 +15,9 @@ internal static class Program
     [STAThread]
     private static int Main(string[] args)
     {
+        if (args.FirstOrDefault() == "--clipboard-lock") return ClipboardWindowChecks.HoldClipboard(args[1], args[2]);
+        if (args.Contains("--clipboard-ui")) return ClipboardWindowChecks.Run();
+        if (args.Contains("--clipboard-persist")) return ClipboardWindowChecks.PublishFixture();
         if (args.Contains("--chrome")) return ChromeCaptureCheck.Run();
         if (args.Contains("--ocr")) return NativeOcrCheck.Run();
         if (args.Contains("--ocr-ui")) return NativeOcrCheck.Run(withResultUi: true);
