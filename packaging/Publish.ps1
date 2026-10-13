@@ -20,8 +20,8 @@ try {
         -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true `
         -p:DebugType=None -p:DebugSymbols=false -o $portable
     if ($LASTEXITCODE -ne 0) { throw '发布失败' }
-    Compress-Archive -Path (Join-Path $portable 'Snip.exe'), (Join-Path $root 'docs/使用说明.md') `
-        -DestinationPath (Join-Path $root 'artifacts/自用截图-1.0.0-win-x64.zip') -Force
+    Compress-Archive -Path (Join-Path $portable 'Snip.exe'), (Join-Path $root 'docs/使用说明.md'), (Join-Path $root 'THIRD-PARTY-NOTICES.txt') `
+        -DestinationPath (Join-Path $root 'artifacts/自用截图-2.0.0-win-x64.zip') -Force
     if ($Installer) {
         if (-not $MakensisPath) {
             $command = Get-Command makensis -ErrorAction SilentlyContinue

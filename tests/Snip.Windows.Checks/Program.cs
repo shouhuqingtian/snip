@@ -110,6 +110,36 @@ internal static class Program
             Require(vm.Save() && !vm.IsDirty && service.Saved is not null);
             vm.UndoCommand.Execute(null); Require(vm.IsDirty);
         });
+        Check("filled rectangle exports opaque interior", () => Require(IsRed(renderer.Render(image, [Shape(AnnotationTool.Rectangle) with { Filled = true }]), 25, 25)));
+        Check("sticker exports source pixels", () =>
+        {
+            var encoder = new PngBitmapEncoder(); encoder.Frames.Add(BitmapFrame.Create(image)); using var stream = new MemoryStream(); encoder.Save(stream);
+            var sticker = Shape(AnnotationTool.Sticker) with { Start = new(0, 0), End = new(100, 80), StickerPng = stream.ToArray() };
+            Require(Pixel(renderer.Render(image, [sticker]), 70, 50).SequenceEqual(Pixel(image, 70, 50)));
+        });
+        Check("inline text commits and undo removes it", () =>
+        {
+            var vm = MakeEditor(image, renderer); vm.UseInlineText = true; vm.Tool = AnnotationTool.Text;
+            vm.BeginPointer(new(10, 10), false); Require(vm.InlineText is not null && vm.BaseAnnotations.Count == 0);
+            vm.CommitInlineText("原位文字"); Require(vm.BaseAnnotations.Single().Text == "原位文字");
+            vm.UndoCommand.Execute(null); Require(vm.BaseAnnotations.Count == 0);
+        });
+        Check("sticker can be moved resized and undone", () =>
+        {
+            var encoder = new PngBitmapEncoder(); encoder.Frames.Add(BitmapFrame.Create(image)); using var stream = new MemoryStream(); encoder.Save(stream);
+            var vm = MakeEditor(image, renderer); vm.AddSticker(stream.ToArray(), 20, 20);
+            var before = vm.BaseAnnotations.Single();
+            vm.BeginPointer(before.End, false); vm.EndPointer(before.End + new PixelPoint(10, 10));
+            Require(vm.BaseAnnotations.Single().Bounds.Width == before.Bounds.Width + 10);
+            vm.UndoCommand.Execute(null); Require(vm.BaseAnnotations.Single().Bounds == before.Bounds);
+        });
+        Check("large image renders across tile boundary", () =>
+        {
+            var bytes = Enumerable.Repeat((byte)255, 100 * 5000 * 4).ToArray();
+            var tall = BitmapSource.Create(100, 5000, 96, 96, PixelFormats.Bgra32, null, bytes, 400); tall.Freeze();
+            var rectangle = Shape(AnnotationTool.Rectangle) with { Start = new(10, 2000), End = new(40, 2100), Filled = true };
+            var output = renderer.Render(tall, [rectangle]); Require(output.PixelHeight == 5000 && IsRed(output, 25, 2047) && IsRed(output, 25, 2049));
+        });
         Console.WriteLine($"Total {passed + failed}; passed {passed}; failed {failed}");
         return failed == 0 ? 0 : 1;
     }

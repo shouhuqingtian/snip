@@ -1,0 +1,31 @@
+<Window x:Class="Snip.App.Views.TextResultWindow" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+ xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" Title="自用截图 · 离线文字识别与翻译" Width="880" Height="610" MinWidth="650" MinHeight="450" WindowStartupLocation="CenterOwner">
+ <DockPanel Margin="18">
+  <StackPanel DockPanel.Dock="Top">
+   <WrapPanel>
+    <TextBlock Text="OCR语言" VerticalAlignment="Center"/><ComboBox ItemsSource="{Binding Languages}" SelectedItem="{Binding Language}" Width="110"/>
+    <Button Content="识别文字" Command="{Binding OcrCommand}"/>
+    <ComboBox SelectedValue="{Binding Direction}" SelectedValuePath="Tag" Width="130"><ComboBoxItem Content="英文 → 中文" Tag="en-zh"/><ComboBoxItem Content="中文 → 英文" Tag="zh-en"/></ComboBox>
+    <Button Content="离线翻译" Command="{Binding TranslateCommand}"/>
+    <Button Content="下载 / 修复模型" Command="{Binding DownloadCommand}"/>
+    <Button Content="取消操作" Command="{Binding CancelCommand}"/>
+   </WrapPanel>
+   <TextBlock Text="模型约 221 MB，首次下载需要网络；下载校验完成后在本地识别/翻译，不上传截图和文字。" TextWrapping="Wrap" Foreground="#61758B" Margin="0,6,0,12"/>
+  </StackPanel>
+  <StackPanel DockPanel.Dock="Bottom" Margin="0,10,0,0">
+   <ProgressBar Value="{Binding Progress}" Maximum="100" Height="6"/>
+   <TextBlock Text="{Binding Status}" TextWrapping="Wrap" Margin="0,8,0,0"/>
+  </StackPanel>
+  <Grid>
+   <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="14"/><ColumnDefinition/></Grid.ColumnDefinitions>
+   <DockPanel>
+    <DockPanel DockPanel.Dock="Top"><Button Content="复制原文" Command="{Binding CopySourceCommand}" DockPanel.Dock="Right"/><TextBlock Text="识别原文（可修正）" VerticalAlignment="Center"/></DockPanel>
+    <TextBox Text="{Binding Source, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" Padding="10"/>
+   </DockPanel>
+   <DockPanel Grid.Column="2">
+    <DockPanel DockPanel.Dock="Top"><Button Content="复制译文" Command="{Binding CopyTranslationCommand}" DockPanel.Dock="Right"/><TextBlock Text="翻译结果" VerticalAlignment="Center"/></DockPanel>
+    <TextBox Text="{Binding Translated, Mode=OneWay}" IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" Padding="10"/>
+   </DockPanel>
+  </Grid>
+ </DockPanel>
+</Window>

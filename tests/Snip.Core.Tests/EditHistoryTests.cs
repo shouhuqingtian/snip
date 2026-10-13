@@ -64,4 +64,11 @@ public sealed class EditHistoryTests
         Assert.Equal(100, steps);
         Assert.Equal("49", history.Current.Single().Text);
     }
+    [Fact]
+    public void CommittedStickerPayloadDoesNotAliasCallerBuffer()
+    {
+        byte[] data = [1, 2, 3]; var history = new EditHistory();
+        history.Commit([Shape() with { Tool = AnnotationTool.Sticker, StickerPng = data }]); data[0] = 99;
+        Assert.Equal((byte)1, history.Current.Single().StickerPng.Span[0]);
+    }
 }

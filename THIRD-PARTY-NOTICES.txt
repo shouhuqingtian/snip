@@ -1,0 +1,22 @@
+自用截图 2.0 第三方组件与模型说明
+
+Microsoft.ML.OnnxRuntime 与 Microsoft.ML.Tokenizers：MIT License，Microsoft。
+项目通过 NuGet 使用官方发行包，相关许可见 https://github.com/microsoft/onnxruntime
+及 https://github.com/dotnet/machinelearning。
+
+离线英译中模型：Helsinki-NLP/OPUS-MT opus-mt-en-zh，Apache-2.0。
+原始模型：https://huggingface.co/Helsinki-NLP/opus-mt-en-zh
+ONNX 量化转换：Xenova，https://huggingface.co/Xenova/opus-mt-en-zh
+固定转换版本：046f55aec303cdee3e0318604406d4df20f1e8ea
+
+离线中译英模型：Helsinki-NLP/OPUS-MT opus-mt-zh-en，CC BY 4.0。
+原始模型：https://huggingface.co/Helsinki-NLP/opus-mt-zh-en
+ONNX 量化转换：Xenova，https://huggingface.co/Xenova/opus-mt-zh-en
+固定转换版本：39d480d52a9ea3065a1f117adfe4dbc55de10e6f
+许可：https://creativecommons.org/licenses/by/4.0/
+模型已由转换方转为 ONNX 并量化；本项目未重新训练权重。
+归属与许可来自各原始模型官方公开卡片，不表示原作者为本软件背书。
+
+模型与软件安装包分离，首次通过 Hugging Face 下载。
+软件固定模型版本，下载后核对 SHA256；下载完成后本地推理不上传截图或原文。
+表情图像由本软件绘制，不包含微信专有表情资源。

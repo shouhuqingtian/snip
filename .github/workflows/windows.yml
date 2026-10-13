@@ -16,14 +16,21 @@ jobs:
       - name: Install NSIS
         shell: pwsh
         run: choco install nsis --no-progress --yes
+      - uses: actions/cache@v4
+        with:
+          path: .model-cache/translation
+          key: translation-${{ hashFiles('src/Snip.Translation/translation-models.json') }}
       - name: Build, test and package
         shell: pwsh
         run: ./packaging/Publish.ps1 -Installer
+      - name: Verify real offline translation models
+        shell: pwsh
+        run: dotnet run --project tests/Snip.Translation.Checks/Snip.Translation.Checks.csproj -c Release --no-build -- .model-cache/translation --install
       - uses: actions/upload-artifact@v4
         with:
           name: SelfSnip-win-x64
           path: |
-            artifacts/自用截图-1.0.0-win-x64.zip
+            artifacts/自用截图-2.0.0-win-x64.zip
             artifacts/installer/*.exe
             artifacts/SHA256SUMS.txt
           if-no-files-found: error

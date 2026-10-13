@@ -1,0 +1,78 @@
+[
+  {
+    "Direction": "en-zh",
+    "Repository": "Xenova/opus-mt-en-zh",
+    "Revision": "046f55aec303cdee3e0318604406d4df20f1e8ea",
+    "License": "Apache-2.0",
+    "Files": [
+      {
+        "Path": "config.json",
+        "Sha256": "4727d1229a04f95bf6f39abf949d8080615433d99d6ebd85f81c09edd247d5fa",
+        "Size": 1503
+      },
+      {
+        "Path": "vocab.json",
+        "Sha256": "22c957348eed495ee925afc40a36da3e387c8a34a734c8486967c2dca271613e",
+        "Size": 1747795
+      },
+      {
+        "Path": "source.spm",
+        "Sha256": "5775ddc9e3ff2fae91554da56468ad35ff56edaba870fea74447bc7234bfdaa8",
+        "Size": 806435
+      },
+      {
+        "Path": "target.spm",
+        "Sha256": "81dc94efa84e4025ef38d25d5d07429fe41e3eb29d44003f1db6fe98487b0052",
+        "Size": 804600
+      },
+      {
+        "Path": "onnx/encoder_model_quantized.onnx",
+        "Sha256": "d3b7912bf6a9bd27e4c074c2df91d4ff3d5b4bc5f7f6c8d7cc9c805c98fbafee",
+        "Size": 52899742
+      },
+      {
+        "Path": "onnx/decoder_model_quantized.onnx",
+        "Sha256": "2c66a3981099b40edbb3a0d65e015d05964d42fecb9780f8422776eff5939112",
+        "Size": 59842102
+      }
+    ]
+  },
+  {
+    "Direction": "zh-en",
+    "Repository": "Xenova/opus-mt-zh-en",
+    "Revision": "39d480d52a9ea3065a1f117adfe4dbc55de10e6f",
+    "License": "CC-BY-4.0",
+    "Files": [
+      {
+        "Path": "config.json",
+        "Sha256": "293d318fce41dbf04114eac45037bb88a32d7c4ee21011a75e24a8b98ca45ad1",
+        "Size": 1389
+      },
+      {
+        "Path": "vocab.json",
+        "Sha256": "08a119a1defd522fa047cb5e3bfe3e89633e96caa38ced0dc9cee7ef1021a011",
+        "Size": 1747906
+      },
+      {
+        "Path": "source.spm",
+        "Sha256": "e27a3a1b539f4959ec72ea60e453f49156289f95d4e6000b29332efc45616203",
+        "Size": 804677
+      },
+      {
+        "Path": "target.spm",
+        "Sha256": "6a881f4717cd7265f53fea54fd3dc689c767c05338fac7a4590f3088cb2d7855",
+        "Size": 806530
+      },
+      {
+        "Path": "onnx/encoder_model_quantized.onnx",
+        "Sha256": "84d5e171b626bc8b6b220d022ac58696e9528c25deeacca62b5cbf4364547a99",
+        "Size": 52899742
+      },
+      {
+        "Path": "onnx/decoder_model_quantized.onnx",
+        "Sha256": "debcc3054b9ff9aaed972bd6e251a459abe1e2f1402da1efa63163dc2f46ef73",
+        "Size": 59842102
+      }
+    ]
+  }
+]

@@ -1,6 +1,5 @@
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Data;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
@@ -14,86 +13,151 @@ namespace Snip.App.Views;
 public sealed class SelectionWindow : Window
 {
     private readonly SelectionSession session;
+    private readonly Canvas overlay = new();
+    private readonly EditorToolbar toolbar = new();
+    private EditorCanvas? editorCanvas;
+    private readonly TextBlock hint;
     public DisplayInfo Display { get; }
     public SelectionWindow(SelectionSession session, IDesktopCaptureService capture, DisplayInfo display)
     {
         this.session = session; Display = display;
-        DataContext = session.ViewModel;
-        Title = "自用截图 · 选择区域"; WindowStyle = WindowStyle.None; ResizeMode = ResizeMode.NoResize;
+        Title = "自用截图 · 选区编辑"; WindowStyle = WindowStyle.None; ResizeMode = ResizeMode.NoResize;
         ShowInTaskbar = false; Topmost = true; Background = Brushes.Black;
         Width = display.Bounds.Width; Height = display.Bounds.Height;
-        var root = new Grid();
-        root.Children.Add(new SelectionSurface(session.ViewModel, capture, display));
-        var toolbar = new StackPanel { Orientation = Orientation.Horizontal };
-        var label = new TextBlock { Foreground = Brushes.White, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(10, 0, 15, 0) };
-        label.SetBinding(TextBlock.TextProperty, new Binding(nameof(SelectionViewModel.SizeText))); toolbar.Children.Add(label);
-        var confirm = new Button { Content = "编辑  Enter", ToolTip = "确认选区并打开编辑窗口" };
-        confirm.SetBinding(IsEnabledProperty, new Binding(nameof(SelectionViewModel.CanConfirm)));
-        confirm.Click += (_, _) => session.Confirm(); toolbar.Children.Add(confirm);
-        var cancel = new Button { Content = "取消  Esc" }; cancel.Click += (_, _) => session.Cancel(); toolbar.Children.Add(cancel);
-        var toolbarBorder = new Border
-        {
-            Background = new SolidColorBrush(Color.FromArgb(245, 27, 40, 55)), CornerRadius = new CornerRadius(8), Padding = new Thickness(8),
-            HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Bottom, Margin = new Thickness(16), Child = toolbar
-        };
-        root.Children.Add(toolbarBorder);
-        var hint = new TextBlock { Text = "拖动选择 · 拖动边框调整 · 拖动内部移动 · 右键取消", Foreground = Brushes.White, Background = new SolidColorBrush(Color.FromArgb(190, 27, 40, 55)), Padding = new Thickness(12),
-            HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(16), IsHitTestVisible = false };
-        root.Children.Add(hint); Content = root;
+        var root = new Grid(); root.Children.Add(new SelectionSurface(session, capture, display)); root.Children.Add(overlay);
+        toolbar.Visibility = Visibility.Collapsed;
+        toolbar.CompleteRequested += (_, _) => session.Confirm(); toolbar.CancelRequested += (_, _) => Cancel();
+        toolbar.WindowRequested += (_, _) => session.Request(SelectionAction.Editor);
+        toolbar.SelectionRequested += (_, _) => session.AdjustSelection();
+        toolbar.StickerRequested += (_, _) => session.AddSticker(this);
+        toolbar.PinRequested += (_, _) => session.Request(SelectionAction.Pin);
+        toolbar.ScrollRequested += (_, _) => session.Request(SelectionAction.Scroll);
+        toolbar.WeChatRequested += (_, _) => session.Request(SelectionAction.WeChat);
+        toolbar.OcrRequested += (_, _) => { if (session.Editor is { } vm) session.RecognizeRequested?.Invoke(vm, this, false); };
+        toolbar.TranslateRequested += (_, _) => { if (session.Editor is { } vm) session.RecognizeRequested?.Invoke(vm, this, true); };
+        overlay.Children.Add(toolbar);
+        hint = new TextBlock { Text = "拖动选区 · 悬停自动选择窗口 · 单击选窗口 · 方向键微调 · Esc取消", Foreground = Brushes.White,
+            Background = new SolidColorBrush(Color.FromArgb(200, 27, 40, 55)), Padding = new Thickness(10), IsHitTestVisible = false };
+        overlay.Children.Add(hint); Canvas.SetLeft(hint, 14); Canvas.SetTop(hint, 14); Content = root;
         SourceInitialized += (_, _) => capture.PlaceOverlay(this, display.Bounds);
-        PreviewKeyDown += OnKey;
-        MouseRightButtonDown += (_, e) => { session.Cancel(); e.Handled = true; };
-        Closed += (_, _) => session.Cancel();
+        PreviewKeyDown += OnKey; session.EditorChanged += RefreshEditor; session.ViewModel.Changed += Position;
+        SizeChanged += (_, _) => { Position(this, EventArgs.Empty); PositionEditor(); };
+        Closed += (_, _) => { session.EditorChanged -= RefreshEditor; session.ViewModel.Changed -= Position; session.Cancel(); };
+    }
+    private void Cancel()
+    {
+        if (session.Editor?.IsDirty == true && MessageBox.Show(this, "放弃当前截图和标注？", "取消截图", MessageBoxButton.OKCancel) != MessageBoxResult.OK) return;
+        session.Cancel();
+    }
+    private void RefreshEditor(object? sender, EventArgs e)
+    {
+        if (editorCanvas is not null) { overlay.Children.Remove(editorCanvas); editorCanvas = null; }
+        if (session.Editing && session.Editor is { } vm)
+        {
+            var region = session.ViewModel.Selection;
+            var visible = region.Intersect(Display.Bounds).Translate(new(-region.X, -region.Y));
+            editorCanvas = new EditorCanvas { VisibleImageBounds = visible, DataContext = vm, ClipToBounds = true };
+            overlay.Children.Insert(0, editorCanvas); toolbar.DataContext = vm; PositionEditor();
+        }
+        else toolbar.DataContext = null;
+        Position(this, EventArgs.Empty);
+    }
+    private void PositionEditor()
+    {
+        if (editorCanvas is null || ActualWidth <= 0) return;
+        var r = session.ViewModel.Selection; double sx = ActualWidth / Display.Bounds.Width, sy = ActualHeight / Display.Bounds.Height;
+        editorCanvas.LayoutTransform = new ScaleTransform(sx, sy);
+        Canvas.SetLeft(editorCanvas, (r.X - Display.Bounds.X) * sx); Canvas.SetTop(editorCanvas, (r.Y - Display.Bounds.Y) * sy);
+    }
+    private void Position(object? sender, EventArgs e)
+    {
+        hint.Text = session.ViewModel.SizeText + (session.Editing ? " · 选区内标注 · 对勾复制完成" : " · 拖动选区 · 单击选择窗口 · 方向键微调");
+        var r = session.ViewModel.Selection;
+        var selectedDisplay = session.ViewModel.Frame.Displays.OrderByDescending(d => { var i = r.Intersect(d.Bounds); return i.Width * i.Height; }).First();
+        bool visible = session.Editing && selectedDisplay.Name == Display.Name;
+        toolbar.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
+        if (!visible || ActualWidth <= 0 || ActualHeight <= 0) return;
+        toolbar.Width = Math.Min(1000, Math.Max(200, ActualWidth - 24)); toolbar.Measure(new Size(toolbar.Width, double.PositiveInfinity));
+        double sx = ActualWidth / Display.Bounds.Width, sy = ActualHeight / Display.Bounds.Height;
+        double x = Math.Clamp((r.X - Display.Bounds.X) * sx, 12, Math.Max(12, ActualWidth - toolbar.Width - 12));
+        double below = (r.Bottom - Display.Bounds.Y) * sy + 10;
+        double y = below + toolbar.DesiredSize.Height <= ActualHeight - 12 ? below : (r.Y - Display.Bounds.Y) * sy - toolbar.DesiredSize.Height - 10;
+        y = Math.Clamp(y, 12, Math.Max(12, ActualHeight - toolbar.DesiredSize.Height - 12));
+        Canvas.SetLeft(toolbar, x); Canvas.SetTop(toolbar, y);
     }
     private void OnKey(object sender, KeyEventArgs e)
     {
-        if (e.Key == Key.Escape) { session.Cancel(); e.Handled = true; }
+        if (Keyboard.FocusedElement is TextBox) return;
+        if (e.Key == Key.Escape) { if (session.Editor?.CancelCurrent() != true) Cancel(); e.Handled = true; }
         else if (e.Key == Key.Enter) { session.Confirm(); e.Handled = true; }
+        else if (e.Key is Key.Left or Key.Right or Key.Up or Key.Down)
+        { session.Nudge(e.Key == Key.Left ? -1 : e.Key == Key.Right ? 1 : 0, e.Key == Key.Up ? -1 : e.Key == Key.Down ? 1 : 0); e.Handled = true; }
+        else if (session.Editor is { } vm && Keyboard.Modifiers.HasFlag(ModifierKeys.Control))
+        {
+            var command = e.Key switch { Key.Z => vm.UndoCommand, Key.Y => vm.RedoCommand, Key.S => vm.SaveCommand, _ => null };
+            if (command is not null) { command.Execute(null); e.Handled = true; }
+        }
+        else if (e.Key == Key.Delete) { session.Editor?.DeleteCommand.Execute(null); e.Handled = true; }
     }
 }
 
 internal sealed class SelectionSurface : FrameworkElement
 {
+    private readonly SelectionSession session;
     private readonly SelectionViewModel vm;
     private readonly IDesktopCaptureService capture;
     private readonly DisplayInfo display;
     private readonly BitmapSource image;
-    public SelectionSurface(SelectionViewModel vm, IDesktopCaptureService capture, DisplayInfo display)
+    private PixelRect hovered;
+    private PixelPoint dragStart, cursor;
+    private bool newSelection;
+    public SelectionSurface(SelectionSession session, IDesktopCaptureService capture, DisplayInfo display)
     {
-        this.vm = vm; this.capture = capture; this.display = display; ClipToBounds = true; Focusable = true;
-        var bounds = display.Bounds; var desktop = vm.Frame.Bounds;
-        image = new CroppedBitmap(vm.Frame.Image, new Int32Rect((int)(bounds.X - desktop.X), (int)(bounds.Y - desktop.Y), (int)bounds.Width, (int)bounds.Height));
-        image.Freeze();
-        vm.Changed += OnChanged;
-        Unloaded += (_, _) => { vm.Changed -= OnChanged; if (IsMouseCaptured) ReleaseMouseCapture(); };
+        this.session = session; vm = session.ViewModel; this.capture = capture; this.display = display; ClipToBounds = true; Focusable = true;
+        var b = display.Bounds; var desktop = vm.Frame.Bounds;
+        image = new CroppedBitmap(vm.Frame.Image, new Int32Rect((int)(b.X - desktop.X), (int)(b.Y - desktop.Y), (int)b.Width, (int)b.Height)); image.Freeze();
+        vm.Changed += OnChanged; session.EditorChanged += OnChanged;
+        Unloaded += (_, _) => { vm.Changed -= OnChanged; session.EditorChanged -= OnChanged; if (IsMouseCaptured) ReleaseMouseCapture(); };
     }
     private void OnChanged(object? sender, EventArgs e) => InvalidateVisual();
-    protected override void OnRender(DrawingContext context)
+    protected override void OnRender(DrawingContext dc)
     {
         if (ActualWidth <= 0 || ActualHeight <= 0) return;
-        var bounds = new Rect(0, 0, ActualWidth, ActualHeight);
-        context.DrawImage(image, bounds);
-        double scaleX = ActualWidth / display.Bounds.Width, scaleY = ActualHeight / display.Bounds.Height;
-        var r = vm.Selection;
-        var local = new Rect((r.X - display.Bounds.X) * scaleX, (r.Y - display.Bounds.Y) * scaleY, r.Width * scaleX, r.Height * scaleY);
-        var shade = new CombinedGeometry(GeometryCombineMode.Exclude, new RectangleGeometry(bounds), new RectangleGeometry(local));
-        context.DrawGeometry(new SolidColorBrush(Color.FromArgb(135, 0, 0, 0)), null, shade);
-        if (r.IsEmpty) return;
-        context.DrawRectangle(null, new System.Windows.Media.Pen(Brushes.SpringGreen, 1.5), local);
-        double[] xs = [local.Left, (local.Left + local.Right) / 2, local.Right], ys = [local.Top, (local.Top + local.Bottom) / 2, local.Bottom];
-        foreach (var x in xs) foreach (var y in ys)
+        var bounds = new Rect(0, 0, ActualWidth, ActualHeight); dc.DrawImage(image, bounds);
+        double sx = ActualWidth / display.Bounds.Width, sy = ActualHeight / display.Bounds.Height;
+        var r = vm.Selection.IsEmpty && !hovered.IsEmpty ? hovered : vm.Selection;
+        var local = new Rect((r.X - display.Bounds.X) * sx, (r.Y - display.Bounds.Y) * sy, r.Width * sx, r.Height * sy);
+        dc.DrawGeometry(new SolidColorBrush(Color.FromArgb(135, 0, 0, 0)), null,
+            new CombinedGeometry(GeometryCombineMode.Exclude, new RectangleGeometry(bounds), new RectangleGeometry(local)));
+        if (!r.IsEmpty) dc.DrawRectangle(null, new System.Windows.Media.Pen(Brushes.SpringGreen, 1.5), local);
+        if (!session.Editing)
         {
-            if (x == xs[1] && y == ys[1]) continue;
-            context.DrawRectangle(Brushes.White, new System.Windows.Media.Pen(Brushes.SeaGreen, 1), new Rect(x - 3, y - 3, 6, 6));
+            if (!r.IsEmpty && !vm.Selection.IsEmpty)
+                foreach (double hx in new[] { local.Left, (local.Left + local.Right) / 2, local.Right })
+                foreach (double hy in new[] { local.Top, (local.Top + local.Bottom) / 2, local.Bottom })
+                    if (hx != (local.Left + local.Right) / 2 || hy != (local.Top + local.Bottom) / 2)
+                        dc.DrawRectangle(Brushes.White, new System.Windows.Media.Pen(Brushes.SeaGreen, 1), new Rect(hx - 3, hy - 3, 6, 6));
+            double x = (cursor.X - display.Bounds.X) * sx, y = (cursor.Y - display.Bounds.Y) * sy;
+            if (x < 0 || y < 0 || x >= ActualWidth || y >= ActualHeight) return;
+            int px = Math.Clamp((int)(cursor.X - display.Bounds.X), 0, image.PixelWidth - 1), py = Math.Clamp((int)(cursor.Y - display.Bounds.Y), 0, image.PixelHeight - 1);
+            int left = Math.Max(0, px - 8), top = Math.Max(0, py - 8), w = Math.Min(17, image.PixelWidth - left), h = Math.Min(17, image.PixelHeight - top);
+            var zoom = new CroppedBitmap(image, new Int32Rect(left, top, w, h));
+            double mx = Math.Clamp(x + 22, 0, Math.Max(0, ActualWidth - 120)), my = Math.Clamp(y + 22, 0, Math.Max(0, ActualHeight - 120));
+            dc.DrawRectangle(Brushes.White, new System.Windows.Media.Pen(Brushes.SeaGreen, 2), new Rect(mx, my, 112, 112));
+            dc.DrawImage(zoom, new Rect(mx + 1, my + 1, 110, 110));
+            dc.DrawLine(new System.Windows.Media.Pen(Brushes.Red, 1), new(mx + 56, my), new(mx + 56, my + 112));
+            dc.DrawLine(new System.Windows.Media.Pen(Brushes.Red, 1), new(mx, my + 56), new(mx + 112, my + 56));
         }
     }
     protected override void OnMouseLeftButtonDown(MouseButtonEventArgs e)
-    { Focus(); vm.Begin(capture.CursorPosition); CaptureMouse(); e.Handled = true; }
+    { if (session.Editing) return; Focus(); dragStart = capture.CursorPosition; newSelection = SelectionGeometry.HitTest(vm.Selection, dragStart) == SelectionHandle.New; vm.Begin(dragStart); CaptureMouse(); e.Handled = true; }
     protected override void OnMouseMove(MouseEventArgs e)
     {
-        var point = capture.CursorPosition;
-        if (IsMouseCaptured) vm.Move(point);
-        else Cursor = SelectionGeometry.HitTest(vm.Selection, point) switch
+        if (session.Editing) return;
+        cursor = capture.CursorPosition;
+        if (IsMouseCaptured) vm.Move(cursor);
+        else hovered = session.Targets.FirstOrDefault(w => w.Bounds.Contains(cursor))?.Bounds.Intersect(vm.Frame.Bounds) ?? default;
+        Cursor = SelectionGeometry.HitTest(vm.Selection, cursor) switch
         {
             SelectionHandle.Move => Cursors.SizeAll,
             SelectionHandle.Left or SelectionHandle.Right => Cursors.SizeWE,
@@ -101,9 +165,15 @@ internal sealed class SelectionSurface : FrameworkElement
             SelectionHandle.TopLeft or SelectionHandle.BottomRight => Cursors.SizeNWSE,
             SelectionHandle.TopRight or SelectionHandle.BottomLeft => Cursors.SizeNESW,
             _ => Cursors.Cross
-        };
+        }; InvalidateVisual();
     }
     protected override void OnMouseLeftButtonUp(MouseButtonEventArgs e)
-    { if (!IsMouseCaptured) return; vm.End(capture.CursorPosition); ReleaseMouseCapture(); e.Handled = true; }
+    {
+        if (!IsMouseCaptured) return;
+        var p = capture.CursorPosition; vm.End(p); ReleaseMouseCapture();
+        if (newSelection && Math.Abs(p.X - dragStart.X) + Math.Abs(p.Y - dragStart.Y) < 3 && !hovered.IsEmpty) vm.SetSelection(hovered);
+        session.BeginEditing(); e.Handled = true;
+    }
     protected override void OnLostMouseCapture(MouseEventArgs e) { vm.CancelDrag(); base.OnLostMouseCapture(e); }
+    protected override void OnMouseRightButtonDown(MouseButtonEventArgs e) { if (!session.Editing) session.Cancel(); e.Handled = true; }
 }

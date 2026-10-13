@@ -5,7 +5,7 @@ Unicode true
 !include "x64.nsh"
 
 !define APP_NAME "自用截图"
-!define APP_VERSION "1.0.0"
+!define APP_VERSION "2.0.0"
 !define APP_EXE "Snip.exe"
 !define APP_KEY "Software\SelfSnip"
 !define UNINSTALL_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\SelfSnip"
@@ -17,7 +17,7 @@ InstallDirRegKey HKCU "${APP_KEY}" "InstallDir"
 RequestExecutionLevel user
 SetCompressor /SOLID lzma
 ManifestDPIAware true
-VIProductVersion "1.0.0.0"
+VIProductVersion "2.0.0.0"
 VIAddVersionKey /LANG=2052 "ProductName" "${APP_NAME}"
 VIAddVersionKey /LANG=2052 "FileDescription" "${APP_NAME}安装程序"
 VIAddVersionKey /LANG=2052 "FileVersion" "${APP_VERSION}"
@@ -82,6 +82,7 @@ Section "主程序（必选）" SecMain
   SetOutPath "$INSTDIR"
   File "..\artifacts\portable\win-x64\${APP_EXE}"
   File "..\docs\使用说明.md"
+  File "..\THIRD-PARTY-NOTICES.txt"
   WriteUninstaller "$INSTDIR\Uninstall.exe"
   CreateDirectory "$SMPROGRAMS\${APP_NAME}"
   CreateShortcut "$SMPROGRAMS\${APP_NAME}\${APP_NAME}.lnk" "$INSTDIR\${APP_EXE}"
@@ -109,6 +110,7 @@ SectionEnd
 Section "Uninstall"
   Delete "$INSTDIR\${APP_EXE}"
   Delete "$INSTDIR\使用说明.md"
+  Delete "$INSTDIR\THIRD-PARTY-NOTICES.txt"
   Delete "$INSTDIR\Uninstall.exe"
   RMDir "$INSTDIR"
   Delete "$DESKTOP\${APP_NAME}.lnk"

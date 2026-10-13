@@ -10,37 +10,7 @@
     <KeyBinding Key="Delete" Command="{Binding DeleteCommand}"/>
   </Window.InputBindings>
   <DockPanel>
-    <Border DockPanel.Dock="Top" Background="White" BorderBrush="#DEE5EE" BorderThickness="0,0,0,1" Padding="12">
-      <StackPanel>
-        <DockPanel Margin="0,0,0,10">
-          <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
-            <Button Content="撤销" Command="{Binding UndoCommand}" ToolTip="Ctrl+Z"/>
-            <Button Content="重做" Command="{Binding RedoCommand}" ToolTip="Ctrl+Y"/>
-            <Button Content="删除标注" Command="{Binding DeleteCommand}" ToolTip="Delete"/>
-            <Button Content="复制" Command="{Binding CopyCommand}" ToolTip="Ctrl+C"/>
-            <Button Content="保存 PNG" Command="{Binding SaveCommand}" ToolTip="Ctrl+S" Background="#168B73" Foreground="White"/>
-          </StackPanel>
-          <StackPanel VerticalAlignment="Center"><TextBlock Text="截图编辑" FontSize="20" FontWeight="SemiBold"/><TextBlock Text="{Binding SizeText}" Foreground="#61758B"/></StackPanel>
-        </DockPanel>
-        <WrapPanel>
-          <RadioButton Content="选择" ToolTip="移动、删除标注；双击文字修改" IsChecked="{Binding Tool, Converter={StaticResource ToolConverter}, ConverterParameter=Select}"/>
-          <RadioButton Content="矩形" IsChecked="{Binding Tool, Converter={StaticResource ToolConverter}, ConverterParameter=Rectangle}"/>
-          <RadioButton Content="椭圆" IsChecked="{Binding Tool, Converter={StaticResource ToolConverter}, ConverterParameter=Ellipse}"/>
-          <RadioButton Content="箭头" IsChecked="{Binding Tool, Converter={StaticResource ToolConverter}, ConverterParameter=Arrow}"/>
-          <RadioButton Content="画笔" IsChecked="{Binding Tool, Converter={StaticResource ToolConverter}, ConverterParameter=Pen}"/>
-          <RadioButton Content="文字" IsChecked="{Binding Tool, Converter={StaticResource ToolConverter}, ConverterParameter=Text}"/>
-          <RadioButton Content="马赛克" IsChecked="{Binding Tool, Converter={StaticResource ToolConverter}, ConverterParameter=Mosaic}"/>
-        </WrapPanel>
-        <WrapPanel Margin="3,8,0,0" VerticalAlignment="Center">
-          <TextBlock Text="颜色" VerticalAlignment="Center"/>
-          <ComboBox ItemsSource="{Binding Colors}" SelectedItem="{Binding Color}" Width="110"><ComboBox.ItemTemplate><DataTemplate><Border Width="65" Height="16" Background="{Binding}" BorderBrush="#AABBCC" BorderThickness="1"/></DataTemplate></ComboBox.ItemTemplate></ComboBox>
-          <TextBox Text="{Binding Color}" Width="90" Margin="3" Padding="5" VerticalContentAlignment="Center" ToolTip="自定义颜色 #RRGGBB"/>
-          <TextBlock Text="线宽" VerticalAlignment="Center" Margin="12,0,0,0"/><ComboBox ItemsSource="{Binding StrokeWidths}" SelectedItem="{Binding StrokeWidth}"/>
-          <TextBlock Text="字号" VerticalAlignment="Center" Margin="12,0,0,0"/><ComboBox ItemsSource="{Binding FontSizes}" SelectedItem="{Binding FontSize}"/>
-          <TextBlock Text="马赛克块" VerticalAlignment="Center" Margin="12,0,0,0"/><ComboBox ItemsSource="{Binding MosaicSizes}" SelectedItem="{Binding MosaicSize}"/>
-        </WrapPanel>
-      </StackPanel>
-    </Border>
+    <local:EditorToolbar x:Name="ToolbarControl" DockPanel.Dock="Top" Margin="10"/>
     <Border DockPanel.Dock="Bottom" Background="White" Padding="12,6">
       <DockPanel>
         <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">

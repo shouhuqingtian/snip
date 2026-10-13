@@ -34,4 +34,6 @@ public sealed class SelectionViewModel(DesktopFrame frame) : ObservableObject
         Notify(nameof(CanConfirm)); Changed?.Invoke(this, EventArgs.Empty);
     }
     public void CancelDrag() { if (!IsDragging) return; IsDragging = false; Selection = dragOriginal; Notify(nameof(CanConfirm)); }
+    public void SetSelection(PixelRect rect) => Selection = rect.RoundOut().Intersect(Frame.Bounds);
+    public void Nudge(double dx, double dy) { if (!IsDragging) Selection = Selection.Translate(new(dx, dy)).ClampInside(Frame.Bounds); }
 }

@@ -16,12 +16,17 @@ public partial class App : Application
     private IHotkeyService? hotkey;
     private ITrayService? tray;
     private CaptureCoordinator? coordinator;
+    private PinManager? pins;
     private MainWindow? main;
     private bool ownsMutex;
 
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
+        if (e.Args.Contains("--wechat-diagnostics", StringComparer.Ordinal))
+        {
+            var diagnostics = new WeChatDiagnosticsWindow(); diagnostics.Closed += (_, _) => Shutdown(); diagnostics.Show(); return;
+        }
         activation = new EventWaitHandle(false, EventResetMode.AutoReset, @"Local\SelfSnip.Activate.v1");
         instance = new Mutex(true, @"Local\SelfSnip.Instance.v1", out ownsMutex);
         if (!ownsMutex) { activation.Set(); Shutdown(); return; }
@@ -31,12 +36,15 @@ public partial class App : Application
             var capture = new DesktopCaptureService();
             var renderer = new AnnotationRenderer();
             var export = new ImageExportService();
-            coordinator = new CaptureCoordinator(capture, renderer, export);
+            pins = new PinManager(export);
+            var features = new FeatureHub(renderer, export, capture, pins);
+            coordinator = new CaptureCoordinator(capture, renderer, export, features);
             main = new MainWindow { DataContext = new MainViewModel(coordinator.CaptureAsync, ShowError) };
             MainWindow = main;
             hotkey = new HotkeyService(); tray = new TrayService();
             hotkey.Triggered += (_, _) => StartCapture(); tray.CaptureRequested += (_, _) => StartCapture();
             tray.OpenRequested += (_, _) => OpenMain(); tray.ExitRequested += (_, _) => ExitApplication();
+            tray.PinsRequested += (_, _) => pins.ShowManager();
             activationListener = ThreadPool.RegisterWaitForSingleObject(activation, (_, _) => Dispatcher.BeginInvoke(OpenMain), null, Timeout.Infinite, false);
             if (!hotkey.Register())
             {
@@ -72,7 +80,7 @@ public partial class App : Application
     private static void ShowError(Exception e) => MessageBox.Show($"操作失败：{e.Message}", "自用截图", MessageBoxButton.OK, MessageBoxImage.Error);
     protected override void OnExit(ExitEventArgs e)
     {
-        activationListener?.Unregister(null); coordinator?.Dispose(); hotkey?.Dispose(); tray?.Dispose();
+        activationListener?.Unregister(null); coordinator?.Dispose(); pins?.Dispose(); hotkey?.Dispose(); tray?.Dispose();
         if (ownsMutex) instance?.ReleaseMutex(); instance?.Dispose(); activation?.Dispose();
         base.OnExit(e);
     }

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using System.IO;
 using System.Windows;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
@@ -41,6 +42,20 @@ public sealed class AnnotationRenderer
 
     private static BitmapSource Rasterize(Drawing drawing, int width, int height)
     {
+        if (width > 4096 || height > 4096)
+        {
+            var output = new WriteableBitmap(width, height, 96, 96, PixelFormats.Pbgra32, null);
+            for (int y = 0; y < height; y += 2048) for (int x = 0; x < width; x += 2048)
+            {
+                int w = Math.Min(2048, width - x), h = Math.Min(2048, height - y);
+                var tile = new DrawingVisual();
+                using (var dc = tile.RenderOpen()) { dc.PushTransform(new TranslateTransform(-x, -y)); dc.DrawDrawing(drawing); dc.Pop(); }
+                var targetTile = new RenderTargetBitmap(w, h, 96, 96, PixelFormats.Pbgra32); targetTile.Render(tile);
+                var buffer = new byte[w * h * 4]; targetTile.CopyPixels(buffer, w * 4, 0);
+                output.WritePixels(new Int32Rect(x, y, w, h), buffer, w * 4, 0);
+            }
+            output.Freeze(); return output;
+        }
         var visual = new DrawingVisual();
         using (var context = visual.RenderOpen()) context.DrawDrawing(drawing);
         var target = new RenderTargetBitmap(width, height, 96, 96, PixelFormats.Pbgra32);
@@ -84,10 +99,10 @@ public sealed class AnnotationRenderer
         var pen = new System.Windows.Media.Pen(brush, annotation.StrokeWidth) { StartLineCap = PenLineCap.Round, EndLineCap = PenLineCap.Round, LineJoin = PenLineJoin.Round };
         switch (annotation.Tool)
         {
-            case AnnotationTool.Rectangle: context.DrawRectangle(null, pen, Rect(annotation.Bounds)); break;
+            case AnnotationTool.Rectangle: context.DrawRectangle(annotation.Filled ? brush : null, pen, Rect(annotation.Bounds)); break;
             case AnnotationTool.Ellipse:
                 var r = annotation.Bounds;
-                context.DrawEllipse(null, pen, new Point(r.X + r.Width / 2, r.Y + r.Height / 2), r.Width / 2, r.Height / 2);
+                context.DrawEllipse(annotation.Filled ? brush : null, pen, new Point(r.X + r.Width / 2, r.Y + r.Height / 2), r.Width / 2, r.Height / 2);
                 break;
             case AnnotationTool.Arrow:
                 context.DrawLine(pen, Point(annotation.Start), Point(annotation.End));
@@ -97,6 +112,7 @@ public sealed class AnnotationRenderer
                 context.DrawLine(pen, Point(annotation.End), new Point(annotation.End.X - length * Math.Cos(angle + Math.PI / 6), annotation.End.Y - length * Math.Sin(angle + Math.PI / 6)));
                 break;
             case AnnotationTool.Pen:
+                if (annotation.Points.Count == 0) break;
                 if (annotation.Points.Count == 1) context.DrawEllipse(brush, null, Point(annotation.Points[0]), annotation.StrokeWidth / 2, annotation.StrokeWidth / 2);
                 else
                 {
@@ -115,6 +131,14 @@ public sealed class AnnotationRenderer
             case AnnotationTool.Mosaic:
                 context.DrawRectangle(new SolidColorBrush(Color.FromArgb(100, 80, 80, 80)), new System.Windows.Media.Pen(Brushes.White, 1), Rect(annotation.Bounds));
                 break;
+            case AnnotationTool.Sticker:
+                if (!annotation.StickerPng.IsEmpty)
+                {
+                    using var stream = new MemoryStream(annotation.StickerPng.ToArray());
+                    var image = new BitmapImage(); image.BeginInit(); image.CacheOption = BitmapCacheOption.OnLoad; image.StreamSource = stream; image.EndInit(); image.Freeze();
+                    context.DrawImage(image, Rect(annotation.Bounds));
+                }
+                break;
         }
     }
 
@@ -131,7 +155,7 @@ public sealed class AnnotationRenderer
     public bool HitTest(Annotation a, PixelPoint p, double tolerance)
     {
         var r = GetBounds(a);
-        if (a.Tool is AnnotationTool.Text or AnnotationTool.Mosaic) return r.Contains(p);
+        if (a.Tool is AnnotationTool.Text or AnnotationTool.Mosaic or AnnotationTool.Sticker || (a.Filled && a.Tool is AnnotationTool.Rectangle or AnnotationTool.Ellipse)) return r.Contains(p);
         var limit = tolerance + a.StrokeWidth / 2;
         if (a.Tool == AnnotationTool.Arrow) return SegmentDistance(p, a.Start, a.End) <= limit;
         if (a.Tool == AnnotationTool.Pen)
