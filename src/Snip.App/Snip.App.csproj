@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <AssemblyName>Snip</AssemblyName>
+    <Product>自用截图</Product>
+    <Description>Windows 区域截图与标注工具</Description>
+    <Version>1.0.0</Version>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Snip.Core/Snip.Core.csproj" />
+    <ProjectReference Include="../Snip.Infrastructure/Snip.Infrastructure.csproj" />
+  </ItemGroup>
+</Project>

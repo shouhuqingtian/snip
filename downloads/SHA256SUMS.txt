@@ -1,0 +1,3 @@
+f24edb963302fe0baebdfe4879c3e3e9c53776eefa2642c1b1053fdd9b33eaf1  self-snip-source.zip
+7d37482b6df46f44fbf6015771e94703d13e72e7e7e2226f5676cce88ff7d7aa  self-snip-portable.zip
+685232d19d8fae15ed2b24f078db99be28af54a578d777a5a36da3b209630588  self-snip-setup.exe

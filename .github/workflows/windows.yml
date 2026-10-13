@@ -1,0 +1,29 @@
+name: Windows build and package
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.4xx'
+      - name: Install NSIS
+        shell: pwsh
+        run: choco install nsis --no-progress --yes
+      - name: Build, test and package
+        shell: pwsh
+        run: ./packaging/Publish.ps1 -Installer
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SelfSnip-win-x64
+          path: |
+            artifacts/自用截图-1.0.0-win-x64.zip
+            artifacts/installer/*.exe
+            artifacts/SHA256SUMS.txt
+          if-no-files-found: error
