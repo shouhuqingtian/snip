@@ -10,4 +10,4 @@
 
 2.0 新增选区内工具栏、表情/图片贴纸、标注缩放与填充、贴图、离线 OCR/中英翻译、Chrome/Edge 自动长截图。翻译模型约 221 MB，首次在软件中下载后可断网使用。
 
-当前包未签名，Windows 实机验收尚待完成。**微信 4.1.15.12 直接发送尚未完成实际控件适配**，可运行 `Snip.exe --wechat-diagnostics` 提供脱敏结构，继续适配。已通过的构建和测试见 [第二阶段变更与验证](../docs/第二阶段功能变更与验证.md)。校验值见 [SHA256SUMS.txt](SHA256SUMS.txt)。
+当前下载包由 [通过的 Windows CI](https://github.com/shouhuqingtian/snip/actions/runs/38368351618) 生成：35 项核心测试、19 项 Windows 检查和 4 项真实翻译模型检查通过。软件未签名，桌面交互实机验收尚待完成。**微信 4.1.15.12 直接发送尚未完成实际控件适配**，可运行 `Snip.exe --wechat-diagnostics` 提供脱敏结构，继续适配。各功能修改文件与验证状态见 [第二阶段变更与验证](../docs/第二阶段功能变更与验证.md)。校验值见 [SHA256SUMS.txt](SHA256SUMS.txt)。
