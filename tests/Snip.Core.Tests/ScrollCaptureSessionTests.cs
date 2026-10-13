@@ -41,6 +41,13 @@ public sealed class ScrollCaptureSessionTests
         var source = new PageSource(803, 0) { Corrupt = true };
         await Assert.ThrowsAsync<InvalidOperationException>(() => new ScrollCaptureSession().CaptureAsync(source, false, null, CancellationToken.None));
     }
+    [Fact]
+    public async Task PlainRowBackgroundsAreNotMistakenForChangingFixedFooters()
+    {
+        var source = new PageSource(803, 0, true);
+        var output = await new ScrollCaptureSession().CaptureAsync(source, false, null, CancellationToken.None);
+        Assert.Equal(source.Page, output.Bgra);
+    }
     [Theory]
     [InlineData(1)] [InlineData(3)] [InlineData(7)]
     public async Task FinalSmallScrollStillMatches(int shift)
@@ -57,11 +64,19 @@ public sealed class ScrollCaptureSessionTests
         public List<int> Inputs { get; } = [];
         public Action? AfterScroll { get; init; }
         public bool Corrupt { get; init; }
-        public PageSource(int height, int position)
+        public PageSource(int height, int position, bool rows = false)
         {
             this.height = height; this.position = position; Page = new byte[120 * height * 4];
             new Random(8).NextBytes(Page);
             for (int i = 3; i < Page.Length; i += 4) Page[i] = 255;
+            if (rows)
+            {
+                for (int y = 0; y < height; y++) for (int x = 0; x < 120; x++)
+                {
+                    if (y % 73 is >= 25 and < 45 && x is > 15 and < 100) continue;
+                    for (int c = 0; c < 3; c++) Page[(y * 120 + x) * 4 + c] = (byte)((y / 73 * (77 + c * 43) + 32) % 256);
+                }
+            }
         }
         public Task<PixelFrame> ReadAsync(CancellationToken token)
         {

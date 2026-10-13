@@ -52,7 +52,6 @@ public sealed class ScrollCaptureSession
             var match = ScrollMatching.Match(frames[^1].Frame, next);
             if (match is null) throw new InvalidOperationException("网页已滚动，但重叠内容无法可靠拼接；请扩大选区高度，并避开动态内容、弹窗或重复列表。");
             if (frames.Count == 1) footer = match.Footer;
-            else if (Math.Abs(match.Footer - footer) > 8) throw new InvalidOperationException("网页固定底部区域发生变化，请避开固定工具栏后重试。");
             total += match.Offset;
             if (total > 24000 || (long)total * next.Width > 60_000_000) throw new InvalidOperationException("长图达到图像大小上限，请分段截图。");
             frames.Add((next, match.Offset)); progress?.Report($"正在自动滚动：已采集 {frames.Count} 帧，约 {total} 像素高；Esc 取消。");
