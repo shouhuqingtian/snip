@@ -24,7 +24,7 @@ internal static class ChromeCaptureCheck
         }.FirstOrDefault(File.Exists) ?? throw new InvalidOperationException("Chrome not installed for integration check.");
         var directory = Path.Combine(Path.GetTempPath(), "Snip.Chrome.Check-" + Guid.NewGuid()); Directory.CreateDirectory(directory);
         var output = Path.GetFullPath("artifacts/chrome-check"); Directory.CreateDirectory(output);
-        Process? browser = null;
+        Process? browser = null; string stage = "launch";
         try
         {
             var html = new StringBuilder("<!doctype html><meta charset='utf-8'><title>Snip scroll fixture</title><style>body{margin:0;font:22px Arial}.row{height:73px;box-sizing:border-box;border-bottom:2px solid #333;display:flex;align-items:center;padding:0 30px}</style>");
@@ -55,14 +55,17 @@ internal static class ChromeCaptureCheck
             var export = new ImageExportService(); export.SavePng(desktop.CaptureRegion(region), Path.Combine(output, "initial.png"));
             var service = new BrowserScrollCapture(desktop); using var cancel = new CancellationTokenSource(TimeSpan.FromMinutes(3));
             var progress = new Progress<string>(Console.WriteLine);
+            stage = "colored whole page";
             var entire = service.CaptureAsync(region, progress, cancel.Token, BrowserCaptureMode.EntirePage).GetAwaiter().GetResult();
             export.SavePng(entire, Path.Combine(output, "entire-page.png"));
             if (entire.PixelHeight < 3500 || entire.PixelHeight > 4000) throw new InvalidOperationException($"Unexpected full page height: {entire.PixelHeight}");
             Console.WriteLine($"PASS real Chrome entire page: {entire.PixelWidth}x{entire.PixelHeight}; ScrollPattern disabled.");
+            stage = "visible page";
             var visible = service.CaptureAsync(region, progress, cancel.Token, BrowserCaptureMode.VisiblePage).GetAwaiter().GetResult();
             export.SavePng(visible, Path.Combine(output, "visible-page.png"));
             if (visible.PixelHeight >= 1000 || visible.PixelWidth != entire.PixelWidth) throw new InvalidOperationException("Visible-page viewport mismatch.");
             Console.WriteLine($"PASS real Chrome visible page: {visible.PixelWidth}x{visible.PixelHeight}");
+            stage = "selected region";
             var selected = service.CaptureAsync(region, progress, cancel.Token, BrowserCaptureMode.SelectedRegion).GetAwaiter().GetResult();
             export.SavePng(selected, Path.Combine(output, "selected-region.png"));
             if (selected.PixelHeight != (int)region.Height || selected.PixelWidth != (int)region.Width) throw new InvalidOperationException("Selected region mismatch.");
@@ -94,7 +97,7 @@ internal static class ChromeCaptureCheck
                 WindowStyle = WindowStyle.None, Background = Brushes.Magenta };
             try
             {
-                ownWindow.Show();
+                stage = "own window setup"; ownWindow.Show();
                 var frame = new DispatcherFrame(); var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(250) };
                 timer.Tick += (_, _) => { timer.Stop(); frame.Continue = false; }; timer.Start(); Dispatcher.PushFrame(frame);
                 if (!ContainsMagenta(desktop.CaptureRegion(richRegion))) throw new InvalidOperationException("Occluding test window was not visible before capture.");
@@ -102,6 +105,7 @@ internal static class ChromeCaptureCheck
                 using (var hidden = new CaptureWindowScope([ownWindow]))
                 {
                     if (ownWindow.IsVisible) throw new InvalidOperationException("Own window was not hidden.");
+                    stage = "sparse article with fixed toolbar";
                     article = service.CaptureAsync(richRegion, progress, cancel.Token, BrowserCaptureMode.EntirePage).GetAwaiter().GetResult();
                 }
                 if (!ownWindow.IsVisible) throw new InvalidOperationException("Own window was not restored after capture.");
@@ -113,7 +117,7 @@ internal static class ChromeCaptureCheck
             finally { ownWindow.Close(); }
             return 0;
         }
-        catch (Exception e) { Console.Error.WriteLine("FAIL real Chrome: " + e); return 1; }
+        catch (Exception e) { Console.WriteLine("::error::Chrome " + stage + ": " + e.Message.Replace("\n", " ").Replace("\r", " ")); Console.Error.WriteLine("FAIL real Chrome: " + e); return 1; }
         finally
         {
             try { if (browser is not null && !browser.HasExited) { browser.Kill(true); browser.WaitForExit(5000); } } catch { }
