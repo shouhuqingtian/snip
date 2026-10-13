@@ -29,7 +29,8 @@ public sealed class ModelStore(string directory)
     private static async Task<bool> ValidAsync(string path, ModelFile file, CancellationToken token)
     {
         if (!File.Exists(path) || new FileInfo(path).Length != file.Size) return false;
-        await using var input = File.OpenRead(path); var hash = await SHA256.HashDataAsync(input, token);
+        await using var input = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 81920, FileOptions.Asynchronous | FileOptions.SequentialScan);
+        var hash = await SHA256.HashDataAsync(input, token).ConfigureAwait(false);
         return Convert.ToHexString(hash).Equals(file.Sha256, StringComparison.OrdinalIgnoreCase);
     }
     public async Task InstallAsync(IProgress<DownloadProgress>? progress, CancellationToken token)

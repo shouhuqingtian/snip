@@ -17,7 +17,7 @@ Windows 10 22H2 / Windows 11 x64 为运行目标。当前已通过编译和核�
 
 支持 Windows 10 22H2 / Windows 11 x64。启动后常驻托盘，按 **Ctrl+Alt+A** 截图，或通过托盘打开主窗口。左键拖动选区，可跨显示器；松开鼠标直接进入选区编辑，绿色对勾复制并结束；可打开独立编辑窗口。Esc 先取消当前输入/绘制，再取消截图。
 
-2.0 新增选区内浮动工具栏、原位文字、标注缩放/填充、表情/图片贴纸、置顶贴图、离线 OCR/中英翻译和浏览器自动长截图。微信 4.1.15.12 界面自动化发送已加入核实流程，仍需用户 Windows 端完成控件适配，未宣称已可发送。
+2.0 系列新增选区内浮动工具栏、原位文字、标注缩放/填充、表情/图片贴纸、置顶贴图、离线 OCR/中英翻译和浏览器自动长截图。微信 4.1.15.12 界面自动化发送已加入核实流程，仍需用户 Windows 端完成控件适配，未宣称已可发送。
 
 已有矩形、椭圆、箭头、画笔、中文文字、马赛克、颜色、线宽、撤销/重做、PNG 保存及剪贴板复制。参见 [使用说明](docs/使用说明.md)。
 
@@ -51,8 +51,8 @@ WPF 应用和 Windows 检查只能在 Windows 运行。Linux 可使用 Windows t
 输出目录：
 
 - `artifacts/portable/win-x64/Snip.exe`：包含 .NET 运行时的单文件 EXE。
-- `artifacts/自用截图-2.0.0-win-x64.zip`：便携交付包。
-- `artifacts/installer/SelfSnip-2.0.0-Setup-x64.exe`：按当前用户安装，无需管理员权限。
+- `artifacts/自用截图-2.0.1-win-x64.zip`：便携交付包。
+- `artifacts/installer/SelfSnip-2.0.1-Setup-x64.exe`：按当前用户安装，无需管理员权限。
 - `artifacts/SHA256SUMS.txt`：输出文件校验值。
 
 初次启动时 .NET 会将部分原生组件解压到用户临时目录；便携 EXE 不依赖预先安装 .NET。
@@ -82,3 +82,5 @@ OCR/AI 契约位于 `Snip.Core/Services.cs`。后续在 Infrastructure 中实现
 ```powershell
 dotnet run --project tests/Snip.Translation.Checks/Snip.Translation.Checks.csproj -c Release -- .model-cache/translation --install
 ```
+
+2.0.1 修复 OCR/翻译阻塞及 Chrome 自动滚动，并提供整个网页、可见网页和选定区域模式，见 [问题修复与验证](docs/2.0.1问题修复与验证.md)。

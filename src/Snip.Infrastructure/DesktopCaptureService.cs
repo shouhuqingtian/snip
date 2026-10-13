@@ -17,6 +17,13 @@ public interface IDesktopCaptureService
 {
     IReadOnlyList<DisplayInfo> GetDisplays();
     DesktopFrame Capture();
+    BitmapSource CaptureRegion(PixelRect region)
+    {
+        var desktop = Capture();
+        if (region.Intersect(desktop.Bounds) != region) throw new InvalidOperationException("选区超出桌面。");
+        var image = new CroppedBitmap(desktop.Image, new Int32Rect((int)(region.X - desktop.Bounds.X), (int)(region.Y - desktop.Bounds.Y), (int)region.Width, (int)region.Height));
+        image.Freeze(); return image;
+    }
     PixelPoint CursorPosition { get; }
     void PlaceOverlay(Window window, PixelRect bounds);
 }
@@ -49,6 +56,20 @@ public sealed class DesktopCaptureService : IDesktopCaptureService
         var displays = GetDisplays();
         double x = displays.Min(d => d.Bounds.X), y = displays.Min(d => d.Bounds.Y);
         var bounds = new PixelRect(x, y, displays.Max(d => d.Bounds.Right) - x, displays.Max(d => d.Bounds.Bottom) - y);
+        return new(CapturePixels(bounds, displays), bounds, displays);
+    }
+
+    public BitmapSource CaptureRegion(PixelRect region)
+    {
+        var displays = GetDisplays();
+        var bounds = new PixelRect(displays.Min(d => d.Bounds.X), displays.Min(d => d.Bounds.Y),
+            displays.Max(d => d.Bounds.Right) - displays.Min(d => d.Bounds.X), displays.Max(d => d.Bounds.Bottom) - displays.Min(d => d.Bounds.Y));
+        if (region.Intersect(bounds) != region) throw new InvalidOperationException("选区超出桌面。");
+        return CapturePixels(region, displays);
+    }
+
+    private static BitmapSource CapturePixels(PixelRect bounds, IReadOnlyList<DisplayInfo> displays)
+    {
         using var bitmap = new Bitmap((int)bounds.Width, (int)bounds.Height, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
         using (var graphics = Graphics.FromImage(bitmap))
         {
@@ -61,8 +82,9 @@ public sealed class DesktopCaptureService : IDesktopCaptureService
                 // Copy each monitor separately, leaving desktop gaps opaque black.
                 foreach (var display in displays)
                 {
-                    var r = display.Bounds;
-                    if (!NativeMethods.BitBlt(target, (int)(r.X - x), (int)(r.Y - y), (int)r.Width, (int)r.Height, source, (int)r.X, (int)r.Y, 0x40CC0020))
+                    var r = display.Bounds.Intersect(bounds);
+                    if (r.IsEmpty) continue;
+                    if (!NativeMethods.BitBlt(target, (int)(r.X - bounds.X), (int)(r.Y - bounds.Y), (int)r.Width, (int)r.Height, source, (int)r.X, (int)r.Y, 0x40CC0020))
                         throw new Win32Exception(Marshal.GetLastWin32Error());
                 }
             }
@@ -73,7 +95,7 @@ public sealed class DesktopCaptureService : IDesktopCaptureService
         {
             var image = Imaging.CreateBitmapSourceFromHBitmap(handle, IntPtr.Zero, Int32Rect.Empty, BitmapSizeOptions.FromEmptyOptions());
             image.Freeze();
-            return new(image, bounds, displays);
+            return image;
         }
         finally { NativeMethods.DeleteObject(handle); }
     }

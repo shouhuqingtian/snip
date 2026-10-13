@@ -31,7 +31,7 @@ public static class ScrollMatching
         while (header < previous.Height / 5 && RowError(header) < 1) header++;
         while (footer < previous.Height / 5 && RowError(previous.Height - footer - 1) < 1) footer++;
         var candidates = new List<(int Shift, double Error)>();
-        for (int shift = 8; shift < (previous.Height - header - footer) * .8; shift++)
+        for (int shift = 1; shift < (previous.Height - header - footer) * .8; shift++)
         {
             double error = 0; int count = 0;
             for (int y = header + 4; y < previous.Height - footer - shift - 4; y += 5)

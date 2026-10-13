@@ -26,11 +26,21 @@ jobs:
       - name: Verify real offline translation models
         shell: pwsh
         run: dotnet run --project tests/Snip.Translation.Checks/Snip.Translation.Checks.csproj -c Release --no-build -- .model-cache/translation --install
+      - name: Verify real Chrome page capture without ScrollPattern
+        shell: pwsh
+        timeout-minutes: 4
+        run: dotnet run --project tests/Snip.Windows.Checks/Snip.Windows.Checks.csproj -c Release --no-build -- --chrome
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Chrome-capture-check
+          path: artifacts/chrome-check/*.png
+          if-no-files-found: ignore
       - uses: actions/upload-artifact@v4
         with:
           name: SelfSnip-win-x64
           path: |
-            artifacts/自用截图-2.0.0-win-x64.zip
+            artifacts/自用截图-2.0.1-win-x64.zip
             artifacts/installer/*.exe
             artifacts/SHA256SUMS.txt
           if-no-files-found: error

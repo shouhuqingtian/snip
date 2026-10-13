@@ -29,7 +29,11 @@ public interface IOcrService
 public interface ITranslationService
 {
     Task<string> TranslateAsync(string text, string direction, CancellationToken cancellationToken);
+    Task<string> TranslateAsync(string text, string direction, IProgress<TranslationProgress>? progress, CancellationToken cancellationToken)
+        => TranslateAsync(text, direction, cancellationToken);
 }
+
+public sealed record TranslationProgress(string Stage, int CompletedSegments = 0, int TotalSegments = 0, int GeneratedTokens = 0);
 
 public interface IAiImageService
 {

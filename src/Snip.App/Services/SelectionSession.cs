@@ -66,12 +66,12 @@ public sealed class SelectionSession : IDisposable
         }
         catch (Exception e) { MessageBox.Show(e.Message, "复制失败", MessageBoxButton.OK, MessageBoxImage.Warning); }
     }
-    public void Request(SelectionAction action)
+    public void Request(SelectionAction action, BrowserCaptureMode browserMode = BrowserCaptureMode.EntirePage)
     {
         if (Editor is null) BeginEditing();
         if (Editor is null) return;
         _ = Editor.Compose();
-        Finish(new(Editor, ViewModel.Selection, action));
+        Finish(new(Editor, ViewModel.Selection, action, browserMode));
     }
     public void AdjustSelection()
     {
@@ -107,4 +107,4 @@ public sealed class SelectionSession : IDisposable
 }
 
 public enum SelectionAction { Editor, Pin, Scroll, WeChat }
-public sealed record SelectionResult(EditorViewModel Editor, PixelRect Region, SelectionAction Action);
+public sealed record SelectionResult(EditorViewModel Editor, PixelRect Region, SelectionAction Action, BrowserCaptureMode BrowserMode = BrowserCaptureMode.EntirePage);

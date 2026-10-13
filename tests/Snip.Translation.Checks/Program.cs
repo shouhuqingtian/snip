@@ -19,6 +19,20 @@ using (var cancellation = new CancellationTokenSource())
     catch (OperationCanceledException) { Console.WriteLine("Cancellation check passed."); }
 }
 var temporary = Path.Combine(Path.GetTempPath(), "Snip.Model.Check-" + Guid.NewGuid());
+using (var cancellation = new CancellationTokenSource())
+{
+    bool started = false;
+    var progress = new InlineProgress(p =>
+    {
+        if (!started && p.Stage == "正在翻译") { started = true; cancellation.CancelAfter(TimeSpan.FromMilliseconds(10)); }
+    });
+    try
+    {
+        await translator.TranslateAsync(string.Join(" ", Enumerable.Repeat("This is a longer sentence used to verify cancellation during local inference.", 12)), "en-zh", progress, cancellation.Token).WaitAsync(TimeSpan.FromSeconds(10));
+        throw new Exception("Active translation cancellation was ignored.");
+    }
+    catch (OperationCanceledException) when (cancellation.IsCancellationRequested && started) { Console.WriteLine("Active inference cancellation check passed."); }
+}
 try
 {
     Directory.CreateDirectory(Path.Combine(temporary, "en-zh"));
@@ -27,5 +41,10 @@ try
     Console.WriteLine("Corrupt model rejection passed.");
 }
 finally { Directory.Delete(temporary, true); }
-Console.WriteLine("2 semantic offline translation checks and 2 model/cancellation checks passed.");
+Console.WriteLine("2 semantic offline translation checks and 3 model/cancellation checks passed.");
 return 0;
+
+sealed class InlineProgress(Action<Snip.Core.TranslationProgress> action) : IProgress<Snip.Core.TranslationProgress>
+{
+    public void Report(Snip.Core.TranslationProgress value) => action(value);
+}

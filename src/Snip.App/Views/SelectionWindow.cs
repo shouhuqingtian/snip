@@ -31,7 +31,7 @@ public sealed class SelectionWindow : Window
         toolbar.SelectionRequested += (_, _) => session.AdjustSelection();
         toolbar.StickerRequested += (_, _) => session.AddSticker(this);
         toolbar.PinRequested += (_, _) => session.Request(SelectionAction.Pin);
-        toolbar.ScrollRequested += (_, _) => session.Request(SelectionAction.Scroll);
+        toolbar.ScrollRequested += mode => session.Request(SelectionAction.Scroll, mode);
         toolbar.WeChatRequested += (_, _) => session.Request(SelectionAction.WeChat);
         toolbar.OcrRequested += (_, _) => { if (session.Editor is { } vm) session.RecognizeRequested?.Invoke(vm, this, false); };
         toolbar.TranslateRequested += (_, _) => { if (session.Editor is { } vm) session.RecognizeRequested?.Invoke(vm, this, true); };

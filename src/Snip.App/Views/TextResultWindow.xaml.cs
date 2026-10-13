@@ -8,7 +8,7 @@ public partial class TextResultWindow : Window
     public TextResultWindow(TextResultViewModel vm)
     {
         InitializeComponent(); DataContext = vm;
-        Loaded += (_, _) => vm.OcrCommand.Execute(null);
+        Loaded += async (_, _) => await vm.InitializeAsync();
         Closed += (_, _) => vm.Dispose();
     }
 }

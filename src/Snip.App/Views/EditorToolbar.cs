@@ -11,7 +11,8 @@ namespace Snip.App.Views;
 public sealed class EditorToolbar : UserControl
 {
     public event EventHandler? CompleteRequested, CancelRequested, WindowRequested, SelectionRequested;
-    public event EventHandler? StickerRequested, PinRequested, OcrRequested, TranslateRequested, ScrollRequested, WeChatRequested;
+    public event EventHandler? StickerRequested, PinRequested, OcrRequested, TranslateRequested, WeChatRequested;
+    public event Action<BrowserCaptureMode>? ScrollRequested;
     public EditorToolbar()
     {
         var panel = new StackPanel();
@@ -34,7 +35,17 @@ public sealed class EditorToolbar : UserControl
         Add("☺", "表情 / 图片贴纸", () => StickerRequested?.Invoke(this, EventArgs.Empty));
         Add("文", "离线文字识别", () => OcrRequested?.Invoke(this, EventArgs.Empty));
         Add("译", "离线中英互译", () => TranslateRequested?.Invoke(this, EventArgs.Empty));
-        Add("↕", "Chrome / Edge 自动长截图", () => ScrollRequested?.Invoke(this, EventArgs.Empty));
+        var browserMenu = new ContextMenu();
+        foreach (var (mode, title) in new[] {
+            (BrowserCaptureMode.EntirePage, "捕捉整个网页（自动从顶部到页尾）"),
+            (BrowserCaptureMode.VisiblePage, "捕捉可见网页（不滚动）"),
+            (BrowserCaptureMode.SelectedRegion, "捕捉选定区域（不滚动）"),
+            (BrowserCaptureMode.SelectedRegionScroll, "选定区域长截图（从当前位置向下）") })
+        {
+            var item = new MenuItem { Header = title }; item.Click += (_, _) => ScrollRequested?.Invoke(mode); browserMenu.Items.Add(item);
+        }
+        Button? browser = null;
+        browser = Add("↕", "Chrome / Edge 网页截图", () => { browserMenu.PlacementTarget = browser; browserMenu.IsOpen = true; });
         var undo = Add("↶", "撤销 Ctrl+Z", () => { }); undo.SetBinding(Button.CommandProperty, new Binding(nameof(EditorViewModel.UndoCommand)));
         var redo = Add("↷", "重做 Ctrl+Y", () => { }); redo.SetBinding(Button.CommandProperty, new Binding(nameof(EditorViewModel.RedoCommand)));
         var save = Add("↓", "保存 PNG Ctrl+S", () => { }); save.SetBinding(Button.CommandProperty, new Binding(nameof(EditorViewModel.SaveCommand)));

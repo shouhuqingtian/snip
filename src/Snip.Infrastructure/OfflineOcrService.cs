@@ -19,8 +19,12 @@ public sealed class OfflineOcrService : IOcrService
 {
     public IReadOnlyList<string> Languages => OcrEngine.AvailableRecognizerLanguages.Select(l => l.LanguageTag).ToArray();
     public Task<OcrResult> RecognizeAsync(ImagePayload image, CancellationToken token) => RecognizeAsync(image, null, token);
-    public async Task<OcrResult> RecognizeAsync(ImagePayload payload, string? language, CancellationToken token)
+    public Task<OcrResult> RecognizeAsync(ImagePayload payload, string? language, CancellationToken token)
+        => Task.Run(() => RecognizeCoreAsync(payload, language, token), token);
+
+    private static async Task<OcrResult> RecognizeCoreAsync(ImagePayload payload, string? language, CancellationToken token)
     {
+        token.ThrowIfCancellationRequested();
         using var input = new MemoryStream(payload.PngBytes.ToArray());
         var image = System.Windows.Media.Imaging.BitmapFrame.Create(input, BitmapCreateOptions.PreservePixelFormat, BitmapCacheOption.OnLoad); image.Freeze();
         if (image.PixelWidth != payload.Width || image.PixelHeight != payload.Height) throw new InvalidDataException("OCR 图片尺寸与声明不一致。");
@@ -38,7 +42,8 @@ public sealed class OfflineOcrService : IOcrService
             var bytes = new byte[width * height * 4]; source.CopyPixels(new System.Windows.Int32Rect(x, y, width, height), bytes, width * 4, 0);
             using var bitmap = new SoftwareBitmap(BitmapPixelFormat.Bgra8, width, height, BitmapAlphaMode.Ignore);
             bitmap.CopyFromBuffer(bytes.AsBuffer());
-            var result = await engine.RecognizeAsync(bitmap).AsTask(token);
+            var result = await engine.RecognizeAsync(bitmap).AsTask(token).ConfigureAwait(false);
+            token.ThrowIfCancellationRequested();
             foreach (var line in result.Lines)
             {
                 if (line.Words.Count == 0) continue;

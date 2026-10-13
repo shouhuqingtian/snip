@@ -11,8 +11,9 @@ namespace Snip.Windows.Checks;
 internal static class Program
 {
     [STAThread]
-    private static int Main()
+    private static int Main(string[] args)
     {
+        if (args.Contains("--chrome")) return ChromeCaptureCheck.Run();
         int passed = 0, failed = 0;
         var renderer = new AnnotationRenderer();
         var image = MakeImage();
@@ -140,6 +141,8 @@ internal static class Program
             var rectangle = Shape(AnnotationTool.Rectangle) with { Start = new(10, 2000), End = new(40, 2100), Filled = true };
             var output = renderer.Render(tall, [rectangle]); Require(output.PixelHeight == 5000 && IsRed(output, 25, 2047) && IsRed(output, 25, 2049));
         });
+        Check("OCR initialization leaves dispatcher responsive and cancellation preserves results", () => ResponsivenessChecks.Ocr(image));
+        Check("translation synchronous provider runs off the dispatcher", () => ResponsivenessChecks.Translation(image));
         Console.WriteLine($"Total {passed + failed}; passed {passed}; failed {failed}");
         return failed == 0 ? 0 : 1;
     }

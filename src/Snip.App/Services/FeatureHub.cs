@@ -39,7 +39,7 @@ public sealed class FeatureHub
         window.Toolbar.TranslateRequested += (_, _) => ShowText(vm, window, true);
         window.Toolbar.WeChatRequested += (_, _) => ShowWeChat(vm, window);
         window.Toolbar.WindowRequested += (_, _) => window.Activate();
-        window.Toolbar.ScrollRequested += (_, _) => MessageBox.Show(window, "请重新截图选取 Chrome/Edge 网页正文，再使用长截图。", "自动长截图");
+        window.Toolbar.ScrollRequested += _ => MessageBox.Show(window, "请通过 Ctrl+Alt+A 选取 Chrome/Edge 网页正文，再选择网页截图模式。", "网页截图");
         window.Toolbar.SelectionRequested += (_, _) => MessageBox.Show(window, "请通过 Ctrl+Alt+A 重新选择屏幕区域。", "调整选区");
         window.Toolbar.CancelRequested += (_, _) => window.Close();
         window.Toolbar.CompleteRequested += async (_, _) =>
@@ -59,6 +59,7 @@ public sealed class FeatureHub
             case SelectionAction.WeChat:
                 var editor = OpenEditor(result.Editor); ShowWeChat(result.Editor, editor); break;
             case SelectionAction.Scroll:
+                if (result.BrowserMode == BrowserCaptureMode.SelectedRegion) { OpenEditor(result.Editor); return; }
                 if (result.Editor.IsDirty && MessageBox.Show("自动长截图使用网页原画面，不包含当前标注。继续？", "自动长截图", MessageBoxButton.OKCancel) != MessageBoxResult.OK)
                 { OpenEditor(result.Editor); return; }
                 using (var cancellation = new CancellationTokenSource())
@@ -71,7 +72,8 @@ public sealed class FeatureHub
                     try
                     {
                         var service = new BrowserScrollCapture(capture);
-                        var image = await service.CaptureAsync(result.Region, new Progress<string>(message => label.Text = message), cancellation.Token);
+                        var image = await service.CaptureAsync(result.Region, new Progress<string>(message => label.Text = message), cancellation.Token, result.BrowserMode);
+                        progressWindow.Close();
                         OpenEditor(new EditorViewModel(image, renderer, export, new EditorDialogs(() => null)));
                     }
                     catch (OperationCanceledException) { OpenEditor(result.Editor); }
