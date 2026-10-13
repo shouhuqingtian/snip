@@ -42,6 +42,8 @@ public partial class App : Application
             main = new MainWindow { DataContext = new MainViewModel(coordinator.CaptureAsync, ShowError) };
             MainWindow = main;
             hotkey = new HotkeyService(); tray = new TrayService();
+            features.CaptureStatus = message => tray?.SetCaptureStatus(message);
+            tray.CaptureCancelRequested += (_, _) => features.CancelBrowserCapture();
             hotkey.Triggered += (_, _) => StartCapture(); tray.CaptureRequested += (_, _) => StartCapture();
             tray.OpenRequested += (_, _) => OpenMain(); tray.ExitRequested += (_, _) => ExitApplication();
             tray.PinsRequested += (_, _) => pins.ShowManager();

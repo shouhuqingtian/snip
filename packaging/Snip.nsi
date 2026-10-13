@@ -5,7 +5,7 @@ Unicode true
 !include "x64.nsh"
 
 !define APP_NAME "自用截图"
-!define APP_VERSION "2.0.1"
+!define APP_VERSION "2.0.2"
 !define APP_EXE "Snip.exe"
 !define APP_KEY "Software\SelfSnip"
 !define UNINSTALL_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\SelfSnip"
@@ -17,7 +17,7 @@ InstallDirRegKey HKCU "${APP_KEY}" "InstallDir"
 RequestExecutionLevel user
 SetCompressor /SOLID lzma
 ManifestDPIAware true
-VIProductVersion "2.0.1.0"
+VIProductVersion "2.0.2.0"
 VIAddVersionKey /LANG=2052 "ProductName" "${APP_NAME}"
 VIAddVersionKey /LANG=2052 "FileDescription" "${APP_NAME}安装程序"
 VIAddVersionKey /LANG=2052 "FileVersion" "${APP_VERSION}"

@@ -13,6 +13,8 @@ public sealed class TrayService : ITrayService
     public event EventHandler? OpenRequested;
     public event EventHandler? ExitRequested;
     public event EventHandler? PinsRequested;
+    public event EventHandler? CaptureCancelRequested;
+    private bool capturing;
     public TrayService()
     {
         menu.Items.Add("开始截图  Ctrl+Alt+A", null, (_, _) => CaptureRequested?.Invoke(this, EventArgs.Empty));
@@ -20,8 +22,15 @@ public sealed class TrayService : ITrayService
         menu.Items.Add("贴图管理", null, (_, _) => PinsRequested?.Invoke(this, EventArgs.Empty));
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("退出", null, (_, _) => ExitRequested?.Invoke(this, EventArgs.Empty));
+        menu.Opening += (_, _) => { if (capturing) CaptureCancelRequested?.Invoke(this, EventArgs.Empty); };
         icon = new NotifyIcon { Text = "自用截图 · Ctrl+Alt+A", Icon = SystemIcons.Application, ContextMenuStrip = menu, Visible = true };
         icon.DoubleClick += (_, _) => OpenRequested?.Invoke(this, EventArgs.Empty);
+    }
+    public void SetCaptureStatus(string? status)
+    {
+        capturing = status is not null;
+        var text = status is null ? "自用截图 · Ctrl+Alt+A" : "自用截图 · " + status;
+        icon.Text = text.Length > 63 ? text[..63] : text;
     }
     public void Dispose() { icon.Visible = false; icon.Dispose(); menu.Dispose(); }
 }

@@ -12,6 +12,8 @@ public interface ITrayService : IDisposable
     event EventHandler? OpenRequested;
     event EventHandler? ExitRequested;
     event EventHandler? PinsRequested;
+    event EventHandler? CaptureCancelRequested;
+    void SetCaptureStatus(string? status);
 }
 
 public sealed record ImagePayload(ReadOnlyMemory<byte> PngBytes, int Width, int Height);

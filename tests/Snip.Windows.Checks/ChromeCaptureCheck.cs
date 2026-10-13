@@ -5,6 +5,10 @@ using System.Runtime.InteropServices;
 using System.Windows.Media.Imaging;
 using Snip.Core;
 using Snip.Infrastructure;
+using Snip.App.Services;
+using System.Windows;
+using System.Windows.Media;
+using System.Windows.Threading;
 
 namespace Snip.Windows.Checks;
 
@@ -63,6 +67,50 @@ internal static class ChromeCaptureCheck
             export.SavePng(selected, Path.Combine(output, "selected-region.png"));
             if (selected.PixelHeight != (int)region.Height || selected.PixelWidth != (int)region.Width) throw new InvalidOperationException("Selected region mismatch.");
             Console.WriteLine($"PASS real Chrome selected region: {selected.PixelWidth}x{selected.PixelHeight}");
+            // A normal white article with embedded screenshots and a fixed bottom toolbar.
+            var rich = new StringBuilder("<!doctype html><meta charset='utf-8'><title>Snip rich scroll fixture</title><style>body{margin:0;background:#eee;font:16px Arial}.article{width:760px;margin:auto;background:white}.section{height:540px;box-sizing:border-box;padding:20px 24px}h2{margin:0;height:30px;font:20px Arial}p{margin:5px 0;line-height:20px;height:60px}.bar{position:fixed;bottom:12px;left:35%;background:#555;color:white;padding:10px;font:14px Arial}</style><div class='article'>");
+            for (int section = 0; section < 8; section++)
+            {
+                rich.Append($"<div class='section'><h2>Article section {section:D2} - unique instruction {section * 7919}</h2><svg width='620' height='400' xmlns='http://www.w3.org/2000/svg'><rect width='620' height='400' fill='white'/><rect x='4' y='4' width='108' height='392' fill='#30475c'/>");
+                for (int row = 0; row < 9; row++) rich.Append($"<text x='16' y='{35 + row * 38}' fill='white' font-size='13'>Menu {section}:{row} item</text>");
+                rich.Append($"<text x='140' y='25' font-size='12'>Order {section * 371 + 27} | Amount {section * 17 + 6}</text><path d='M 170 35 L 205 170 L 196 150 M 205 170 L 208 146' stroke='red' stroke-width='3' fill='none'/></svg><p>Step {section + 1}: update the selected record and notify the responsible team.<br>Document {section * 8317 + 93}: confirm the title and recipients.<br>These instructions are local test data.</p></div>");
+            }
+            rich.Append("</div><div class='bar'>Return · Approve · Examples · Create task</div>");
+            var richFile = Path.Combine(directory, "rich.html"); File.WriteAllText(richFile, rich.ToString());
+            var richStart = new ProcessStartInfo(chrome) { UseShellExecute = false };
+            richStart.ArgumentList.Add("--user-data-dir=" + Path.Combine(directory, "profile")); richStart.ArgumentList.Add(new Uri(richFile).AbsoluteUri);
+            using var handoff = Process.Start(richStart);
+            WindowCaptureInfo? richWindow = null;
+            for (int i = 0; i < 100; i++)
+            {
+                richWindow = DesktopWindows.Snapshot().FirstOrDefault(w => Title(w.Handle).Contains("Snip rich scroll fixture", StringComparison.Ordinal));
+                if (richWindow is not null) break; Task.Delay(100).GetAwaiter().GetResult();
+            }
+            if (richWindow is null) throw new InvalidOperationException("Rich article window was not created.");
+            DesktopWindows.Activate(richWindow.Handle);
+            var richRegion = new PixelRect(richWindow.Bounds.X + 80, richWindow.Bounds.Y + 180, 400, 280);
+            var ownWindow = new Window { Title = "Capture progress regression", Width = 340, Height = 150,
+                Left = richWindow.Bounds.X + 140, Top = richWindow.Bounds.Y + 220, Topmost = true,
+                WindowStyle = WindowStyle.None, Background = Brushes.Magenta };
+            try
+            {
+                ownWindow.Show();
+                var frame = new DispatcherFrame(); var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(250) };
+                timer.Tick += (_, _) => { timer.Stop(); frame.Continue = false; }; timer.Start(); Dispatcher.PushFrame(frame);
+                if (!ContainsMagenta(desktop.CaptureRegion(richRegion))) throw new InvalidOperationException("Occluding test window was not visible before capture.");
+                BitmapSource article;
+                using (var hidden = new CaptureWindowScope([ownWindow]))
+                {
+                    if (ownWindow.IsVisible) throw new InvalidOperationException("Own window was not hidden.");
+                    article = service.CaptureAsync(richRegion, progress, cancel.Token, BrowserCaptureMode.EntirePage).GetAwaiter().GetResult();
+                }
+                if (!ownWindow.IsVisible) throw new InvalidOperationException("Own window was not restored after capture.");
+                export.SavePng(article, Path.Combine(output, "rich-article.png"));
+                if (ContainsMagenta(article)) throw new InvalidOperationException("Own progress window leaked into capture.");
+                if (article.PixelHeight < 4250 || article.PixelHeight > 4400) throw new InvalidOperationException("Rich article stitched height mismatch: " + article.PixelHeight);
+                Console.WriteLine($"PASS real Chrome sparse article with image and fixed toolbar: {article.PixelWidth}x{article.PixelHeight}; own topmost window excluded and restored.");
+            }
+            finally { ownWindow.Close(); }
             return 0;
         }
         catch (Exception e) { Console.Error.WriteLine("FAIL real Chrome: " + e); return 1; }
@@ -73,4 +121,12 @@ internal static class ChromeCaptureCheck
             try { Directory.Delete(directory, true); } catch { }
         }
     }
+    private static bool ContainsMagenta(BitmapSource image)
+    {
+        var converted = new FormatConvertedBitmap(image, PixelFormats.Bgra32, null, 0);
+        var pixels = new byte[converted.PixelWidth * converted.PixelHeight * 4]; converted.CopyPixels(pixels, converted.PixelWidth * 4, 0);
+        for (int i = 0; i < pixels.Length; i += 4) if (pixels[i] > 250 && pixels[i + 1] < 10 && pixels[i + 2] > 250) return true;
+        return false;
+    }
+
 }

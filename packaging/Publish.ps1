@@ -21,7 +21,7 @@ try {
         -p:DebugType=None -p:DebugSymbols=false -o $portable
     if ($LASTEXITCODE -ne 0) { throw '发布失败' }
     Compress-Archive -Path (Join-Path $portable 'Snip.exe'), (Join-Path $root 'docs/使用说明.md'), (Join-Path $root 'THIRD-PARTY-NOTICES.txt') `
-        -DestinationPath (Join-Path $root 'artifacts/自用截图-2.0.1-win-x64.zip') -Force
+        -DestinationPath (Join-Path $root 'artifacts/自用截图-2.0.2-win-x64.zip') -Force
     if ($Installer) {
         if (-not $MakensisPath) {
             $command = Get-Command makensis -ErrorAction SilentlyContinue

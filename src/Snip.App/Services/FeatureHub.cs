@@ -62,25 +62,34 @@ public sealed class FeatureHub
                 if (result.BrowserMode == BrowserCaptureMode.SelectedRegion) { OpenEditor(result.Editor); return; }
                 if (result.Editor.IsDirty && MessageBox.Show("自动长截图使用网页原画面，不包含当前标注。继续？", "自动长截图", MessageBoxButton.OKCancel) != MessageBoxResult.OK)
                 { OpenEditor(result.Editor); return; }
-                using (var cancellation = new CancellationTokenSource())
-                {
-                    var progressWindow = new Window { Title = "正在自动长截图 · Esc取消", Width = 400, Height = 170, ShowActivated = false, WindowStartupLocation = WindowStartupLocation.CenterScreen };
-                    var panel = new StackPanel { Margin = new Thickness(16) };
-                    var label = new TextBlock { Text = "正在激活浏览器…采集时不要切换窗口，Esc 取消。", TextWrapping = TextWrapping.Wrap }; panel.Children.Add(label);
-                    var cancel = new Button { Content = "取消采集" }; cancel.Click += (_, _) => cancellation.Cancel(); panel.Children.Add(cancel); progressWindow.Content = panel;
-                    progressWindow.Closing += (_, _) => cancellation.Cancel(); progressWindow.Show();
-                    try
-                    {
-                        var service = new BrowserScrollCapture(capture);
-                        var image = await service.CaptureAsync(result.Region, new Progress<string>(message => label.Text = message), cancellation.Token, result.BrowserMode);
-                        progressWindow.Close();
-                        OpenEditor(new EditorViewModel(image, renderer, export, new EditorDialogs(() => null)));
-                    }
-                    catch (OperationCanceledException) { OpenEditor(result.Editor); }
-                    catch (Exception e) { MessageBox.Show(e.Message, "长截图未完成", MessageBoxButton.OK, MessageBoxImage.Warning); OpenEditor(result.Editor); }
-                    finally { progressWindow.Close(); }
-                }
+                await CaptureBrowserAsync(result);
                 break;
         }
     }
+    public Action<string?>? CaptureStatus { get; set; }
+    private CancellationTokenSource? browserCancellation;
+    public void CancelBrowserCapture() { if (browserCancellation is { } current) _ = current.CancelAsync(); }
+    private async Task CaptureBrowserAsync(SelectionResult result)
+    {
+        using var cancellation = new CancellationTokenSource(); browserCancellation = cancellation;
+        System.Windows.Media.Imaging.BitmapSource? image = null;
+        Exception? failure = null;
+        try
+        {
+            // No floating progress window: GDI can photograph it even with ShowActivated=false.
+            // Hide every WPF window we own, including topmost pins, until the last frame is done.
+            using var hidden = new CaptureWindowScope(Application.Current.Windows.Cast<Window>());
+            CaptureStatus?.Invoke("正在采集网页 · Esc 取消");
+            await Task.Delay(160, cancellation.Token);
+            var progress = new Progress<string>(message => { if (browserCancellation == cancellation && !cancellation.IsCancellationRequested) CaptureStatus?.Invoke(message); });
+            image = await new BrowserScrollCapture(capture).CaptureAsync(result.Region, progress, cancellation.Token, result.BrowserMode);
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception e) { failure = e; }
+        finally { browserCancellation = null; CaptureStatus?.Invoke(null); }
+        if (failure is not null) MessageBox.Show(failure.Message, "长截图未完成", MessageBoxButton.OK, MessageBoxImage.Warning);
+        if (image is not null) OpenEditor(new EditorViewModel(image, renderer, export, new EditorDialogs(() => null)));
+        else OpenEditor(result.Editor);
+    }
+
 }

@@ -50,7 +50,7 @@ jobs:
         with:
           name: SelfSnip-win-x64
           path: |
-            artifacts/自用截图-2.0.1-win-x64.zip
+            artifacts/自用截图-2.0.2-win-x64.zip
             artifacts/installer/*.exe
             artifacts/SHA256SUMS.txt
           if-no-files-found: error

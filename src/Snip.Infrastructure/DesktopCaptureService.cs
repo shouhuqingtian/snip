@@ -70,6 +70,7 @@ public sealed class DesktopCaptureService : IDesktopCaptureService
 
     private static BitmapSource CapturePixels(PixelRect bounds, IReadOnlyList<DisplayInfo> displays)
     {
+        NativeMethods.DwmFlush();
         using var bitmap = new Bitmap((int)bounds.Width, (int)bounds.Height, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
         using (var graphics = Graphics.FromImage(bitmap))
         {

@@ -51,8 +51,8 @@ WPF 应用和 Windows 检查只能在 Windows 运行。Linux 可使用 Windows t
 输出目录：
 
 - `artifacts/portable/win-x64/Snip.exe`：包含 .NET 运行时的单文件 EXE。
-- `artifacts/自用截图-2.0.1-win-x64.zip`：便携交付包。
-- `artifacts/installer/SelfSnip-2.0.1-Setup-x64.exe`：按当前用户安装，无需管理员权限。
+- `artifacts/自用截图-2.0.2-win-x64.zip`：便携交付包。
+- `artifacts/installer/SelfSnip-2.0.2-Setup-x64.exe`：按当前用户安装，无需管理员权限。
 - `artifacts/SHA256SUMS.txt`：输出文件校验值。
 
 初次启动时 .NET 会将部分原生组件解压到用户临时目录；便携 EXE 不依赖预先安装 .NET。
@@ -83,4 +83,6 @@ OCR/AI 契约位于 `Snip.Core/Services.cs`。后续在 Infrastructure 中实现
 dotnet run --project tests/Snip.Translation.Checks/Snip.Translation.Checks.csproj -c Release -- .model-cache/translation --install
 ```
 
-2.0.1 修复 OCR/翻译阻塞及 Chrome 自动滚动，并提供整个网页、可见网页和选定区域模式，见 [问题修复与验证](docs/2.0.1问题修复与验证.md)。
+2.0.2 修复 OCR/翻译阻塞及 Chrome 自动滚动，并提供整个网页、可见网页和选定区域模式，见 [问题修复与验证](docs/2.0.1问题修复与验证.md)。
+
+2.0.2 改进白底图文长截图，并排除软件进度窗和置顶贴图，见 [长截图修复](docs/2.0.2长截图修复.md)。

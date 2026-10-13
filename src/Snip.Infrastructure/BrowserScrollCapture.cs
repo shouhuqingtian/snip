@@ -65,10 +65,17 @@ public sealed class BrowserScrollCapture(IDesktopCaptureService capture)
         }
         // ScrollPattern is optional and used only for exact position restoration.
         // Default Chrome commonly exposes no ScrollPattern; wheel capture must still work.
-        (ScrollPattern Pattern, double Position)? state = null;
+        (ScrollPattern Pattern, double Position, double ViewportHeight)? state = null;
         try { state = await Task.Run(() => FindScroll(region), token).WaitAsync(TimeSpan.FromSeconds(1), token).ConfigureAwait(false); }
         catch (Exception e) when (e is not OperationCanceledException) { }
-        var source = new WheelSource(capture, region, target.Handle);
+        if (state is { } measured)
+        {
+            // Accessibility document bounds may describe the full document, not its visible
+            // viewport. Use physical renderer bounds when converting percentages to pixels.
+            double height = mode == BrowserCaptureMode.EntirePage ? region.Height : FindNativeViewport(target, region)?.Height ?? 0;
+            state = (measured.Pattern, measured.Position, height);
+        }
+        var source = new WheelSource(capture, region, target.Handle, state);
         GetCursorPos(out var originalCursor);
         bool completed = false;
         try
@@ -119,7 +126,7 @@ public sealed class BrowserScrollCapture(IDesktopCaptureService capture)
         }
         return null;
     }
-    private static (ScrollPattern Pattern, double Position)? FindScroll(PixelRect region)
+    private static (ScrollPattern Pattern, double Position, double ViewportHeight)? FindScroll(PixelRect region)
     {
         var element = AutomationElement.FromPoint(new System.Windows.Point(region.X + region.Width / 2, region.Y + region.Height / 2));
         for (int i = 0; element is not null && i < 20; i++)
@@ -127,7 +134,9 @@ public sealed class BrowserScrollCapture(IDesktopCaptureService capture)
             if (element.TryGetCurrentPattern(ScrollPattern.Pattern, out var value))
             {
                 var p = (ScrollPattern)value;
-                if (p.Current.VerticallyScrollable) return (p, p.Current.VerticalScrollPercent);
+                var bounds = element.Current.BoundingRectangle;
+                if (bounds.Contains(new System.Windows.Rect(region.X, region.Y, region.Width, region.Height)) && bounds.Height > 0)
+                    return (p, p.Current.VerticalScrollPercent, bounds.Height);
             }
             element = TreeWalker.ControlViewWalker.GetParent(element);
         }
@@ -139,10 +148,13 @@ public sealed class BrowserScrollCapture(IDesktopCaptureService capture)
         private readonly PixelRect region;
         private readonly IntPtr target;
         private readonly DisplayInfo[] layout;
+        private (ScrollPattern Pattern, double Position, double ViewportHeight)? scrollState;
+        public ScrollCapturePosition? Position { get; private set; }
         public int PointerX { get; }
         public int PointerY { get; }
-        public WheelSource(IDesktopCaptureService capture, PixelRect region, IntPtr target)
+        public WheelSource(IDesktopCaptureService capture, PixelRect region, IntPtr target, (ScrollPattern Pattern, double Position, double ViewportHeight)? scrollState)
         {
+            this.scrollState = scrollState;
             this.capture = capture; this.region = region; this.target = target; layout = capture.GetDisplays().ToArray();
             PointerX = (int)(region.Right - 32); PointerY = (int)(region.Y + region.Height / 2);
         }
@@ -152,12 +164,29 @@ public sealed class BrowserScrollCapture(IDesktopCaptureService capture)
             if (GetAsyncKeyState(0x1B) < 0) throw new OperationCanceledException(token);
             if (GetForegroundWindow() != target || !capture.GetDisplays().SequenceEqual(layout)) throw new InvalidOperationException("浏览器焦点或显示器布局发生变化，长截图已停止。");
         }
-        public Task<PixelFrame> ReadAsync(CancellationToken token)
+        public async Task<PixelFrame> ReadAsync(CancellationToken token)
         {
             Check(token);
             var image = new FormatConvertedBitmap(capture.CaptureRegion(region), PixelFormats.Bgra32, null, 0);
             var bytes = new byte[image.PixelWidth * image.PixelHeight * 4]; image.CopyPixels(bytes, image.PixelWidth * 4, 0);
-            return Task.FromResult(new PixelFrame(image.PixelWidth, image.PixelHeight, bytes));
+            Position = null;
+            if (scrollState is { } saved)
+            {
+                try
+                {
+                    Position = await Task.Run(() =>
+                    {
+                        var current = saved.Pattern.Current;
+                        double percent = current.VerticalScrollPercent, view = current.VerticalViewSize;
+                        if (view >= 100 && !current.VerticallyScrollable) return new ScrollCapturePosition(0, true, true);
+                        if (!double.IsFinite(percent) || percent < 0 || percent > 100 || !double.IsFinite(view) || view <= 0 || view > 100 || saved.ViewportHeight <= 0) return null;
+                        double extent = saved.ViewportHeight * (100 / view - 1);
+                        return new ScrollCapturePosition(extent * percent / 100, percent <= .001, percent >= 99.999 || extent < 1);
+                    }, token).WaitAsync(TimeSpan.FromMilliseconds(300), token).ConfigureAwait(false);
+                }
+                catch (Exception e) when (e is not OperationCanceledException) { scrollState = null; }
+            }
+            return new PixelFrame(image.PixelWidth, image.PixelHeight, bytes);
         }
         public async Task<PixelFrame> ScrollAsync(int wheelUnits, CancellationToken token)
         {
