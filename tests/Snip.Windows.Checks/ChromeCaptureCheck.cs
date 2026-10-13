@@ -97,8 +97,10 @@ internal static class ChromeCaptureCheck
                 WindowStyle = WindowStyle.None, Background = Brushes.Magenta };
             try
             {
-                stage = "own window setup"; ownWindow.Show();
-                var frame = new DispatcherFrame(); var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(250) };
+                stage = "own window setup";
+                System.Windows.Interop.RenderOptions.ProcessRenderMode = System.Windows.Interop.RenderMode.SoftwareOnly;
+                ownWindow.Show(); desktop.PlaceOverlay(ownWindow, new PixelRect(richWindow.Bounds.X + 140, richWindow.Bounds.Y + 220, 340, 150)); ownWindow.UpdateLayout();
+                var frame = new DispatcherFrame(); var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(1000) };
                 timer.Tick += (_, _) => { timer.Stop(); frame.Continue = false; }; timer.Start(); Dispatcher.PushFrame(frame);
                 if (!ContainsMagenta(desktop.CaptureRegion(richRegion))) throw new InvalidOperationException("Occluding test window was not visible before capture.");
                 BitmapSource article;
