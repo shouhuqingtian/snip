@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.IO;
 using System.Text;
+using System.Runtime.InteropServices;
 using System.Windows.Media.Imaging;
 using Snip.Core;
 using Snip.Infrastructure;
@@ -9,6 +10,8 @@ namespace Snip.Windows.Checks;
 
 internal static class ChromeCaptureCheck
 {
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern int GetWindowText(IntPtr hwnd, StringBuilder title, int size);
+    private static string Title(IntPtr hwnd) { var title = new StringBuilder(256); GetWindowText(hwnd, title, title.Capacity); return title.ToString(); }
     public static int Run()
     {
         var chrome = new[] {
@@ -30,12 +33,19 @@ internal static class ChromeCaptureCheck
             foreach (var arg in new[] { "--new-window", "--no-first-run", "--disable-background-mode", "--disable-renderer-accessibility", "--disable-gpu", "--user-data-dir=" + Path.Combine(directory, "profile"), $"--window-size={width},{height}", $"--window-position={(int)display.X + 40},{(int)display.Y + 40}", new Uri(file).AbsoluteUri }) start.ArgumentList.Add(arg);
             browser = Process.Start(start)!;
             WindowCaptureInfo? window = null;
-            for (int i = 0; i < 100; i++)
+            for (int i = 0; i < 300; i++)
             {
-                window = DesktopWindows.Snapshot().FirstOrDefault(w => w.ProcessId == browser.Id);
+                // Chrome may bootstrap a different browser process; identify our unique local page,
+                // not the short-lived launcher's PID.
+                window = DesktopWindows.Snapshot().FirstOrDefault(w => Title(w.Handle).Contains("Snip scroll fixture", StringComparison.Ordinal));
                 if (window is not null) break; Task.Delay(100).GetAwaiter().GetResult();
             }
-            if (window is null) throw new InvalidOperationException("Chrome did not create a desktop window.");
+            if (window is null)
+            {
+                Console.WriteLine("Launcher exited: " + browser.HasExited);
+                foreach (var candidate in DesktopWindows.Snapshot()) Console.WriteLine($"Visible window: PID {candidate.ProcessId} {Title(candidate.Handle)} {candidate.Bounds}");
+                throw new InvalidOperationException("Chrome did not create the fixture desktop window.");
+            }
             Task.Delay(1500).GetAwaiter().GetResult(); DesktopWindows.Activate(window.Handle);
             var region = new PixelRect(window.Bounds.X + 60, window.Bounds.Y + 180, Math.Min(450, window.Bounds.Width - 100), Math.Min(300, window.Bounds.Height - 220)).RoundOut();
             var export = new ImageExportService(); export.SavePng(desktop.CaptureRegion(region), Path.Combine(output, "initial.png"));
