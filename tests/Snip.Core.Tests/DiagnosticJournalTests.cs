@@ -9,6 +9,42 @@ namespace Snip.Core.Tests;
 public sealed class DiagnosticJournalTests
 {
     [Fact]
+    public async Task FlushAndExportCompleteWithoutPumpingTheCallingContext() => await Task.Run(CheckNonPumpingCaller);
+
+    // Bounded synchronous waiting is the regression scenario; isolate it from xUnit's own context.
+    private static void CheckNonPumpingCaller()
+    {
+        string folder = Temporary();
+        try
+        {
+            using var journal = new DiagnosticJournal(Path.Combine(folder, "logs"));
+            // Keep the background writer busy so that FlushAsync genuinely awaits its barrier.
+            for (int i = 0; i < 500; i++) journal.Record("capture", "frame", new { Frame = i });
+            var previous = SynchronizationContext.Current;
+            var context = new NonPumpingContext();
+            SynchronizationContext.SetSynchronizationContext(context);
+            try
+            {
+                var flush = journal.FlushAsync();
+                Assert.True(flush.Wait(TimeSpan.FromSeconds(3)), "Log flush waited for a blocked UI context.");
+                flush.GetAwaiter().GetResult();
+                var export = journal.ExportAsync(Path.Combine(folder, "report.zip"), new { AppVersion = "test" });
+                Assert.True(export.Wait(TimeSpan.FromSeconds(3)), "Diagnostic export waited for a blocked UI context.");
+                export.GetAwaiter().GetResult();
+                Assert.Equal(0, context.PostCount);
+            }
+            finally { SynchronizationContext.SetSynchronizationContext(previous); }
+            Assert.True(File.Exists(Path.Combine(folder, "report.zip")));
+        }
+        finally { Directory.Delete(folder, true); }
+    }
+    private sealed class NonPumpingContext : SynchronizationContext
+    {
+        private int posts;
+        public int PostCount => Volatile.Read(ref posts);
+        public override void Post(SendOrPostCallback callback, object? state) => Interlocked.Increment(ref posts);
+    }
+    [Fact]
     public async Task ExportPreservesOperationTimelineAndRedactsExceptionContent()
     {
         string folder = Temporary();

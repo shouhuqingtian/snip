@@ -73,8 +73,8 @@ public sealed class DiagnosticJournal : IDisposable, IAsyncDisposable
     public async Task FlushAsync(CancellationToken token = default)
     {
         var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        await queue.Writer.WriteAsync(new(null, completion), token);
-        await completion.Task.WaitAsync(token);
+        await queue.Writer.WriteAsync(new(null, completion), token).ConfigureAwait(false);
+        await completion.Task.WaitAsync(token).ConfigureAwait(false);
     }
     public async Task ExportAsync(string destination, object environment, CancellationToken token = default)
     {
