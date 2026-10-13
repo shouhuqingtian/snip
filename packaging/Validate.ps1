@@ -23,6 +23,12 @@ try {
         $results.Add([pscustomobject]@{ Name = $Name; Outcome = $outcome; ExitCode = $code; ElapsedSeconds = [Math]::Round($watch.Elapsed.TotalSeconds, 2) })
         $results | ConvertTo-Json -Depth 4 -AsArray | Set-Content (Join-Path $output "validation-$($Scope.ToLower()).json") -Encoding utf8
         if ($outcome -eq 'Unrun') { Write-Output '::warning::Native English OCR unrun: Windows language component is missing.' }
+        if ($outcome -eq 'Failed' -and $env:GITHUB_ACTIONS -eq 'true') {
+            # Readable through GitHub check annotations even when artifact/log download is unavailable.
+            $detail = (Get-Content (Join-Path $output "$Name.log") -Tail 30 | Out-String)
+            $detail = $detail.Substring(0, [Math]::Min(6000, $detail.Length)).Replace('%','%25').Replace("`r",'%0D').Replace("`n",'%0A')
+            Write-Output "::error title=Validation $Name failed::$detail"
+        }
     }
     if ($Scope -in 'Core','All') {
         Check 'core' @('test','tests/Snip.Core.Tests/Snip.Core.Tests.csproj','-c','Release','--no-build','--logger','trx','--results-directory',$output)
@@ -40,4 +46,7 @@ try {
     }
     if ($results.Where({ $_.Outcome -eq 'Failed' }).Count) { throw '验证失败，禁止打包和发布；见 artifacts/validation。' }
     if (-not $results.Count) { throw '没有执行任何检查。' }
+    # GitHub's pwsh wrapper exits with LASTEXITCODE. Optional OCR exit 2 is recorded
+    # as Unrun above, while the overall successful validation contract returns 0.
+    $global:LASTEXITCODE = 0
 } finally { Pop-Location }

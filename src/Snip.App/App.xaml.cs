@@ -51,7 +51,7 @@ public partial class App : Application
             desktop = capture;
             _ = Task.Run(() => diagnostics.Record("app", "environment", DesktopDiagnostics.EnvironmentInfo(capture)));
             var renderer = new AnnotationRenderer();
-            var export = new ImageExportService();
+            var export = new DiagnosticImageExport(new ImageExportService(), diagnostics);
             pins = new PinManager(export);
             var features = new FeatureHub(renderer, export, capture, pins, diagnostics);
             coordinator = new CaptureCoordinator(capture, renderer, export, features, diagnostics);
@@ -65,7 +65,8 @@ public partial class App : Application
             tray.PinsRequested += (_, _) => pins.ShowManager();
             tray.DiagnosticsRequested += async (_, _) => { try { await ExportDiagnosticsAsync(); } catch (Exception error) { ShowError(error); } };
             activationListener = ThreadPool.RegisterWaitForSingleObject(activation, (_, _) => Dispatcher.BeginInvoke(OpenMain), null, Timeout.Infinite, false);
-            if (!hotkey.Register())
+            bool registered = hotkey.Register(); diagnostics.Record("app", "hotkey-registration", new { Registered = registered });
+            if (!registered)
             {
                 ((MainViewModel)main.DataContext).Status = "Ctrl+Alt+A 注册失败，可能已被占用；可通过托盘或主窗口截图。";
                 MessageBox.Show("快捷键 Ctrl+Alt+A 无法注册，可能已被其他软件占用。\n可使用托盘菜单或主窗口截图。", "自用截图", MessageBoxButton.OK, MessageBoxImage.Warning);

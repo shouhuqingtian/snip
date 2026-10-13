@@ -165,6 +165,23 @@ internal static class Program
             }
             finally { Directory.Delete(folder, true); }
         });
+        Check("PNG and clipboard failures are logged without content or destination", () =>
+        {
+            string folder = Path.Combine(Path.GetTempPath(), "Snip.Export.Diagnostics-" + Guid.NewGuid());
+            try
+            {
+                using var diagnostics = new DiagnosticJournal(folder);
+                var exporter = new DiagnosticImageExport(new FakeExport { Fail = true }, diagnostics);
+                bool saveFailed = false, copyFailed = false;
+                try { exporter.SavePng(image, "PRIVATE-destination.png"); } catch (IOException) { saveFailed = true; }
+                try { exporter.CopyAsync(image).GetAwaiter().GetResult(); } catch (IOException) { copyFailed = true; }
+                diagnostics.FlushAsync().GetAwaiter().GetResult();
+                string log = File.ReadAllText(Path.Combine(folder, "events.jsonl"));
+                Require(saveFailed && copyFailed && log.Contains("png-export") && log.Contains("clipboard-export") && log.Contains("failed"));
+                Require(!log.Contains("PRIVATE") && !log.Contains("simulated"));
+            }
+            finally { if (Directory.Exists(folder)) Directory.Delete(folder, true); }
+        });
         Console.WriteLine($"Total {passed + failed}; passed {passed}; failed {failed}");
         return failed == 0 ? 0 : 1;
     }
@@ -202,6 +219,6 @@ internal static class Program
         public bool Fail { get; init; }
         public BitmapSource? Saved { get; private set; }
         public void SavePng(BitmapSource image, string path) { if (Fail) throw new IOException("simulated"); Saved = image; }
-        public Task CopyAsync(BitmapSource image) => Task.CompletedTask;
+        public Task CopyAsync(BitmapSource image) => Fail ? Task.FromException(new IOException("simulated")) : Task.CompletedTask;
     }
 }
