@@ -36,7 +36,7 @@ try {
         }
         if (-not $MakensisPath -or -not (Test-Path $MakensisPath)) { throw '找不到 NSIS makensis，请使用 -MakensisPath 指定路径。' }
         New-Item -ItemType Directory -Path (Join-Path $root 'artifacts/installer') -Force | Out-Null
-        & $MakensisPath (Join-Path $PSScriptRoot 'Snip.nsi')
+        & $MakensisPath '-INPUTCHARSET' 'UTF8' (Join-Path $PSScriptRoot 'Snip.nsi')
         if ($LASTEXITCODE -ne 0) { throw '安装包编译失败' }
     }
     $artifactRoot = Join-Path $root 'artifacts'
