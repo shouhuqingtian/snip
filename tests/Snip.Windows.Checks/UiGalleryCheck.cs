@@ -47,6 +47,9 @@ internal static class UiGalleryCheck
                     var bounds = button.TransformToAncestor(content).TransformBounds(new Rect(0, 0, button.ActualWidth, button.ActualHeight));
                     Require(bounds.Left >= -1 && bounds.Top >= -1 && bounds.Right <= content.ActualWidth + 1 && bounds.Bottom <= content.ActualHeight + 1, "Button clipped outside the window in " + name);
                 }
+                if (window is TextResultWindow)
+                    foreach (var field in TextWindowChecks.Descendants<TextBox>(content).Where(b => b.IsVisible && b.Name is "RecognizedText" or "TranslatedText"))
+                        Require(field.ActualHeight >= 70, "Text result is too short to read in " + name);
                 var drawing = new DrawingVisual();
                 using (var dc = drawing.RenderOpen())
                 {

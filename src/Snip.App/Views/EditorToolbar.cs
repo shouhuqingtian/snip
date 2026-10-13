@@ -87,7 +87,7 @@ public sealed class EditorToolbar : UserControl
         var dot = new FrameworkElementFactory(typeof(Border)); dot.SetValue(FrameworkElement.WidthProperty, 16.0); dot.SetValue(FrameworkElement.HeightProperty, 16.0);
         dot.SetValue(Border.CornerRadiusProperty, new CornerRadius(8)); dot.SetValue(Border.BorderThicknessProperty, new Thickness(1)); dot.SetValue(Border.BorderBrushProperty, Ui.Brush("StrokeBrush")); dot.SetBinding(Border.BackgroundProperty, new Binding());
         swatchButton.AppendChild(dot); palette.ItemTemplate = new DataTemplate { VisualTree = swatchButton }; options.Children.Add(palette);
-        var color = new TextBox { Width = 85, VerticalContentAlignment = VerticalAlignment.Center, Margin = new Thickness(3), ToolTip = "#RRGGBB" };
+        var color = new TextBox { Width = 108, VerticalContentAlignment = VerticalAlignment.Center, Margin = new Thickness(3), ToolTip = "#RRGGBB" };
         color.SetBinding(TextBox.TextProperty, new Binding(nameof(EditorViewModel.Color)) { Mode = BindingMode.TwoWay }); options.Children.Add(color);
         Label("线宽"); Choice(nameof(EditorViewModel.StrokeWidths), nameof(EditorViewModel.StrokeWidth), 65);
         Label("字号"); Choice(nameof(EditorViewModel.FontSizes), nameof(EditorViewModel.FontSize), 65);
