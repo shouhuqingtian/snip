@@ -14,6 +14,7 @@ internal static class Program
     private static int Main(string[] args)
     {
         if (args.Contains("--chrome")) return ChromeCaptureCheck.Run();
+        if (args.Contains("--ocr")) return NativeOcrCheck.Run();
         int passed = 0, failed = 0;
         var renderer = new AnnotationRenderer();
         var image = MakeImage();

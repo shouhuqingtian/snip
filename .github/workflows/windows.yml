@@ -30,6 +30,16 @@ jobs:
         shell: pwsh
         timeout-minutes: 4
         run: dotnet run --project tests/Snip.Windows.Checks/Snip.Windows.Checks.csproj -c Release --no-build -- --chrome
+      - name: Verify native Windows OCR when language component is installed
+        shell: pwsh
+        timeout-minutes: 1
+        run: |
+          dotnet run --project tests/Snip.Windows.Checks/Snip.Windows.Checks.csproj -c Release --no-build -- --ocr
+          if ($LASTEXITCODE -eq 2) {
+            Write-Output '::warning::Native OCR unrun: this runner lacks the English OCR language component.'
+            exit 0
+          }
+          exit $LASTEXITCODE
       - uses: actions/upload-artifact@v4
         if: always()
         with:
