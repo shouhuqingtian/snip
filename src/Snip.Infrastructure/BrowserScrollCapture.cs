@@ -168,7 +168,9 @@ public sealed class BrowserScrollCapture(IDesktopCaptureService capture)
         {
             Check(token);
             var image = new FormatConvertedBitmap(capture.CaptureRegion(region), PixelFormats.Bgra32, null, 0);
-            var bytes = new byte[image.PixelWidth * image.PixelHeight * 4]; image.CopyPixels(bytes, image.PixelWidth * 4, 0);
+            image.Freeze();
+            int width = image.PixelWidth, height = image.PixelHeight;
+            var bytes = new byte[width * height * 4]; image.CopyPixels(bytes, width * 4, 0);
             Position = null;
             if (scrollState is { } saved)
             {
@@ -186,7 +188,7 @@ public sealed class BrowserScrollCapture(IDesktopCaptureService capture)
                 }
                 catch (Exception e) when (e is not OperationCanceledException) { scrollState = null; }
             }
-            return new PixelFrame(image.PixelWidth, image.PixelHeight, bytes);
+            return new PixelFrame(width, height, bytes);
         }
         public async Task<PixelFrame> ScrollAsync(int wheelUnits, CancellationToken token)
         {
