@@ -1,4 +1,6 @@
 using System.IO;
+using System.IO.Compression;
+using System.Text.Json;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using Snip.App.Services;
@@ -144,6 +146,25 @@ internal static class Program
         });
         Check("OCR initialization leaves dispatcher responsive and cancellation preserves results", () => ResponsivenessChecks.Ocr(image));
         Check("translation synchronous provider runs off the dispatcher", () => ResponsivenessChecks.Translation(image));
+        Check("diagnostic bundle contains native display DPI and app version without user identity", () =>
+        {
+            string folder = Path.Combine(Path.GetTempPath(), "Snip.Desktop.Diagnostics-" + Guid.NewGuid()); Directory.CreateDirectory(folder);
+            try
+            {
+                using var diagnostics = new DiagnosticJournal(Path.Combine(folder, "logs"));
+                diagnostics.Record("app", "started");
+                string path = Path.Combine(folder, "report.zip");
+                diagnostics.ExportAsync(path, DesktopDiagnostics.EnvironmentInfo(new DesktopCaptureService())).GetAwaiter().GetResult();
+                using var zip = ZipFile.OpenRead(path);
+                using var reader = new StreamReader(zip.GetEntry("environment.json")!.Open());
+                string text = reader.ReadToEnd(); using var json = JsonDocument.Parse(text);
+                var environment = json.RootElement.GetProperty("Environment");
+                Require(environment.GetProperty("Displays").GetArrayLength() > 0 && environment.GetProperty("Displays")[0].GetProperty("DpiX").GetUInt32() >= 96);
+                Require(Version.TryParse(environment.GetProperty("AppVersion").GetString()!.Split('+')[0].Split('-')[0], out var version) && version.Major > 0);
+                Require(!text.Contains("UserName") && !text.Contains("MachineName") && !text.Contains(folder));
+            }
+            finally { Directory.Delete(folder, true); }
+        });
         Console.WriteLine($"Total {passed + failed}; passed {passed}; failed {failed}");
         return failed == 0 ? 0 : 1;
     }

@@ -13,6 +13,7 @@ public interface ITrayService : IDisposable
     event EventHandler? ExitRequested;
     event EventHandler? PinsRequested;
     event EventHandler? CaptureCancelRequested;
+    event EventHandler? DiagnosticsRequested;
     void SetCaptureStatus(string? status);
 }
 

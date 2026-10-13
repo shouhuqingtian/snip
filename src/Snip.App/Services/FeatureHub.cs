@@ -18,11 +18,12 @@ public sealed class FeatureHub
     private readonly OfflineOcrService ocr = new();
     private readonly ModelStore models = new(System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SelfSnip", "Models"));
     private readonly OfflineTranslator translator;
-    public FeatureHub(AnnotationRenderer renderer, IImageExportService export, IDesktopCaptureService capture, PinManager pins)
-    { this.renderer = renderer; this.export = export; this.capture = capture; this.pins = pins; translator = new(models); }
+    private readonly DiagnosticJournal? diagnostics;
+    public FeatureHub(AnnotationRenderer renderer, IImageExportService export, IDesktopCaptureService capture, PinManager pins, DiagnosticJournal? diagnostics = null)
+    { this.renderer = renderer; this.export = export; this.capture = capture; this.pins = pins; this.diagnostics = diagnostics; translator = new(models); }
     public void ShowText(EditorViewModel vm, Window owner, bool translate)
     {
-        var text = new TextResultViewModel(vm.Compose(), ocr, models, translator) { AutoTranslate = translate };
+        var text = new TextResultViewModel(vm.Compose(), ocr, models, translator, diagnostics) { AutoTranslate = translate };
         var window = new TextResultWindow(text) { Owner = owner }; window.ShowDialog();
     }
     public EditorWindow OpenEditor(EditorViewModel vm)
@@ -72,6 +73,7 @@ public sealed class FeatureHub
     private async Task CaptureBrowserAsync(SelectionResult result)
     {
         using var cancellation = new CancellationTokenSource(); browserCancellation = cancellation;
+        using var operation = diagnostics?.Begin("browser-capture", new { Mode = result.BrowserMode.ToString(), result.Region.Width, result.Region.Height });
         System.Windows.Media.Imaging.BitmapSource? image = null;
         Exception? failure = null;
         try
@@ -79,13 +81,15 @@ public sealed class FeatureHub
             // No floating progress window: GDI can photograph it even with ShowActivated=false.
             // Hide every WPF window we own, including topmost pins, until the last frame is done.
             using var hidden = new CaptureWindowScope(Application.Current.Windows.Cast<Window>());
+            operation?.Stage("own-windows-hidden");
             CaptureStatus?.Invoke("正在采集网页 · Esc 取消");
             await Task.Delay(160, cancellation.Token);
             var progress = new Progress<string>(message => { if (browserCancellation == cancellation && !cancellation.IsCancellationRequested) CaptureStatus?.Invoke(message); });
-            image = await new BrowserScrollCapture(capture).CaptureAsync(result.Region, progress, cancellation.Token, result.BrowserMode);
+            image = await new BrowserScrollCapture(capture).CaptureAsync(result.Region, progress, cancellation.Token, result.BrowserMode, operation);
+            operation?.Complete(new { image.PixelWidth, image.PixelHeight });
         }
-        catch (OperationCanceledException) { }
-        catch (Exception e) { failure = e; }
+        catch (OperationCanceledException) { operation?.Cancel("requested"); }
+        catch (Exception e) { failure = e; operation?.Fail(e); }
         finally { browserCancellation = null; CaptureStatus?.Invoke(null); }
         if (failure is not null) MessageBox.Show(failure.Message, "长截图未完成", MessageBoxButton.OK, MessageBoxImage.Warning);
         if (image is not null) OpenEditor(new EditorViewModel(image, renderer, export, new EditorDialogs(() => null)));

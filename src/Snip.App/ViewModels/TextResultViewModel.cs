@@ -17,6 +17,8 @@ public sealed class TextResultViewModel : ObservableObject, IDisposable
     private readonly ModelStore models;
     private readonly ITranslationService translator;
     private CancellationTokenSource? operation;
+    private readonly DiagnosticJournal? diagnostics;
+    private DiagnosticOperation? diagnosticOperation;
     private readonly DispatcherTimer heartbeat = new() { Interval = TimeSpan.FromSeconds(1) };
     private readonly Stopwatch elapsed = new();
     private string stage = "", source = "", translated = "", status = "正在准备文字识别…", direction = "en-zh";
@@ -24,10 +26,11 @@ public sealed class TextResultViewModel : ObservableObject, IDisposable
     private IReadOnlyList<string> languages = [];
     private bool busy, downloading, disposed, initialized, userCancelled;
     private double progress;
-    public TextResultViewModel(BitmapSource image, IOcrService ocr, ModelStore models, ITranslationService translator)
+    public TextResultViewModel(BitmapSource image, IOcrService ocr, ModelStore models, ITranslationService translator, DiagnosticJournal? diagnostics = null)
     {
         snapshot = image.IsFrozen ? image : image.Clone(); snapshot.Freeze();
         this.ocr = ocr; this.models = models; this.translator = translator;
+        this.diagnostics = diagnostics;
         // No codec, WinRT or model calls in the constructor: first paint must not wait on native work.
         heartbeat.Tick += (_, _) => ShowStage();
         OcrCommand = new(() => Run("文字识别", TimeSpan.FromSeconds(45), Recognize), Report, () => !Busy);
@@ -35,10 +38,13 @@ public sealed class TextResultViewModel : ObservableObject, IDisposable
         DownloadCommand = new(() => Run("下载模型", TimeSpan.FromMinutes(15), async token =>
         {
             downloading = true; Notify(nameof(Indeterminate));
+            int loggedPercent = -1;
             var updates = new Progress<DownloadProgress>(p =>
             {
                 if (disposed || operation is null || operation.Token != token || token.IsCancellationRequested) return;
                 Progress = p.CompletedBytes * 100.0 / p.TotalBytes;
+                int bucket = (int)Progress / 10;
+                if (bucket != loggedPercent) { loggedPercent = bucket; diagnosticOperation?.Stage("model-download-progress", new { p.CompletedBytes, p.TotalBytes }); }
                 SetStage($"下载模型 {p.Direction}：{Progress:F1}%（共 {p.TotalBytes / 1024 / 1024} MB）");
             });
             await Task.Run(() => models.InstallAsync(updates, token), token);
@@ -75,14 +81,17 @@ public sealed class TextResultViewModel : ObservableObject, IDisposable
         if (Languages.Count == 0)
         {
             SetStage("正在加载 Windows 识别语言");
+            diagnosticOperation?.Stage("ocr-languages-loading");
             var available = await Task.Run(() => ocr.Languages, token);
             token.ThrowIfCancellationRequested(); Languages = available;
+            diagnosticOperation?.Stage("ocr-languages-loaded", new { Count = available.Count });
             Language = Languages.FirstOrDefault(x => x.StartsWith("zh", StringComparison.OrdinalIgnoreCase)) ?? Languages.FirstOrDefault();
             if (Language is null) throw new InvalidOperationException("未安装 Windows OCR 语言组件，请在 Windows 语言设置中添加中文/英语文字识别组件。");
         }
         SetStage("正在识别文字");
         if (image is null)
         {
+            diagnosticOperation?.Stage("png-encoding");
             var payload = await Task.Run(() =>
             {
                 token.ThrowIfCancellationRequested();
@@ -93,8 +102,10 @@ public sealed class TextResultViewModel : ObservableObject, IDisposable
             token.ThrowIfCancellationRequested(); image = payload;
         }
         var selectedLanguage = Language;
+        diagnosticOperation?.Stage("ocr-recognizing", new { Language = selectedLanguage, image.Width, image.Height });
         var result = await Task.Run(() => ocr.RecognizeAsync(image, selectedLanguage, token), token);
         token.ThrowIfCancellationRequested();
+        diagnosticOperation?.Stage("ocr-recognized", new { RegionCount = result.Regions.Count });
         Source = string.Join(Environment.NewLine, result.Regions.Select(r => r.Text));
         Status = string.IsNullOrWhiteSpace(Source) ? "没有识别到文字；可更换语言或重新截图。" : "文字已识别，可修正原文后翻译或复制。";
         if (AutoTranslate && !string.IsNullOrWhiteSpace(Source))
@@ -109,9 +120,16 @@ public sealed class TextResultViewModel : ObservableObject, IDisposable
     {
         SetStage("正在校验并加载翻译模型");
         var input = Source; var selectedDirection = Direction;
+        diagnosticOperation?.Stage("translation-starting", new { Direction = selectedDirection, CharacterCount = input.Length });
+        string? loggedStage = null; int loggedSegments = -1, loggedTokens = -1;
         var updates = new Progress<TranslationProgress>(p =>
         {
             if (disposed || operation is null || operation.Token != token || token.IsCancellationRequested) return;
+            if (loggedStage != p.Stage || loggedSegments != p.CompletedSegments || p.GeneratedTokens / 25 != loggedTokens)
+            {
+                loggedStage = p.Stage; loggedSegments = p.CompletedSegments; loggedTokens = p.GeneratedTokens / 25;
+                diagnosticOperation?.Stage("translation-progress", new { EngineStage = p.Stage, p.CompletedSegments, p.TotalSegments, p.GeneratedTokens });
+            }
             SetStage(p.TotalSegments == 0 ? p.Stage : $"{p.Stage}：已完成 {p.CompletedSegments}/{p.TotalSegments} 段");
         });
         var result = await Task.Run(() => translator.TranslateAsync(input, selectedDirection, updates, token), token);
@@ -123,16 +141,20 @@ public sealed class TextResultViewModel : ObservableObject, IDisposable
     {
         if (Busy || disposed) return;
         using var current = new CancellationTokenSource(timeout); operation = current;
+        using var log = diagnostics?.Begin(name == "离线翻译" ? "translation" : name == "下载模型" ? "model-download" : "ocr",
+            new { snapshot.PixelWidth, snapshot.PixelHeight, TimeoutSeconds = timeout.TotalSeconds });
+        diagnosticOperation = log;
         userCancelled = false; downloading = false; Progress = 0; Busy = true; elapsed.Restart(); SetStage(name); heartbeat.Start();
-        try { await action(current.Token).WaitAsync(current.Token); }
+        try { await action(current.Token).WaitAsync(current.Token); log?.Complete(); }
         catch (OperationCanceledException)
         {
+            log?.Cancel(userCancelled ? "user" : disposed ? "window-closed" : "timeout");
             Status = !userCancelled ? "操作超时，已有结果保留。请缩小截图或分段翻译后重试。" : "操作已取消，已有结果保留。";
         }
-        catch (Exception e) { Report(e); }
-        finally { heartbeat.Stop(); elapsed.Stop(); operation = null; Busy = false; }
+        catch (Exception e) { log?.Fail(e); Report(e); }
+        finally { heartbeat.Stop(); elapsed.Stop(); operation = null; diagnosticOperation = null; Busy = false; }
     }
-    private void Report(Exception e) => Status = "操作失败：" + e.Message;
+    private void Report(Exception e) { diagnostics?.Record("text-result", "operation-failed", error: e); Status = "操作失败：" + e.Message + "；可从主窗口导出诊断包。"; }
     private void Copy(string value) { try { if (!string.IsNullOrEmpty(value)) Clipboard.SetText(value); } catch (Exception e) { Report(e); } }
     public void Dispose() { disposed = true; heartbeat.Stop(); if (operation is { } current) _ = current.CancelAsync(); }
 }

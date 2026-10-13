@@ -24,13 +24,11 @@ internal static class ChromeCaptureCheck
         }.FirstOrDefault(File.Exists) ?? throw new InvalidOperationException("Chrome not installed for integration check.");
         var directory = Path.Combine(Path.GetTempPath(), "Snip.Chrome.Check-" + Guid.NewGuid()); Directory.CreateDirectory(directory);
         var output = Path.GetFullPath("artifacts/chrome-check"); Directory.CreateDirectory(output);
+        using var diagnostics = new DiagnosticJournal(Path.Combine(output, "logs"));
         Process? browser = null; string stage = "launch";
         try
         {
-            var html = new StringBuilder("<!doctype html><meta charset='utf-8'><title>Snip scroll fixture</title><style>body{margin:0;font:22px Arial}.row{height:73px;box-sizing:border-box;border-bottom:2px solid #333;display:flex;align-items:center;padding:0 30px}</style>");
-            var random = new Random(28);
-            for (int i = 0; i < 50; i++) html.Append($"<div class='row' style='background:rgb({random.Next(80, 240)},{random.Next(80, 240)},{random.Next(80, 240)})'>Row {i:D3} · Chrome native scrolling fixture · {random.Next()}</div>");
-            var file = Path.Combine(directory, "page.html"); File.WriteAllText(file, html.ToString());
+            var file = Fixture("colored-rows.html");
             var desktop = new DesktopCaptureService(); var display = desktop.GetDisplays().First(d => d.Primary).Bounds;
             var width = Math.Min(900, (int)display.Width - 80); var height = Math.Min(700, (int)display.Height - 80);
             var start = new ProcessStartInfo(chrome) { UseShellExecute = false };
@@ -55,31 +53,33 @@ internal static class ChromeCaptureCheck
             var export = new ImageExportService(); export.SavePng(desktop.CaptureRegion(region), Path.Combine(output, "initial.png"));
             var service = new BrowserScrollCapture(desktop); using var cancel = new CancellationTokenSource(TimeSpan.FromMinutes(3));
             var progress = new Progress<string>(Console.WriteLine);
+            BitmapSource Capture(PixelRect selectedRegion, BrowserCaptureMode mode)
+            {
+                using var operation = diagnostics.Begin("browser-capture", new { Mode = mode.ToString() });
+                try
+                {
+                    var result = service.CaptureAsync(selectedRegion, progress, cancel.Token, mode, operation).GetAwaiter().GetResult();
+                    operation.Complete(new { result.PixelWidth, result.PixelHeight }); return result;
+                }
+                catch (Exception error) { operation.Fail(error); throw; }
+            }
             stage = "colored whole page";
-            var entire = service.CaptureAsync(region, progress, cancel.Token, BrowserCaptureMode.EntirePage).GetAwaiter().GetResult();
+            var entire = Capture(region, BrowserCaptureMode.EntirePage);
             export.SavePng(entire, Path.Combine(output, "entire-page.png"));
             if (entire.PixelHeight < 3500 || entire.PixelHeight > 4000) throw new InvalidOperationException($"Unexpected full page height: {entire.PixelHeight}");
             Console.WriteLine($"PASS real Chrome entire page: {entire.PixelWidth}x{entire.PixelHeight}; ScrollPattern disabled.");
             stage = "visible page";
-            var visible = service.CaptureAsync(region, progress, cancel.Token, BrowserCaptureMode.VisiblePage).GetAwaiter().GetResult();
+            var visible = Capture(region, BrowserCaptureMode.VisiblePage);
             export.SavePng(visible, Path.Combine(output, "visible-page.png"));
             if (visible.PixelHeight >= 1000 || visible.PixelWidth != entire.PixelWidth) throw new InvalidOperationException("Visible-page viewport mismatch.");
             Console.WriteLine($"PASS real Chrome visible page: {visible.PixelWidth}x{visible.PixelHeight}");
             stage = "selected region";
-            var selected = service.CaptureAsync(region, progress, cancel.Token, BrowserCaptureMode.SelectedRegion).GetAwaiter().GetResult();
+            var selected = Capture(region, BrowserCaptureMode.SelectedRegion);
             export.SavePng(selected, Path.Combine(output, "selected-region.png"));
             if (selected.PixelHeight != (int)region.Height || selected.PixelWidth != (int)region.Width) throw new InvalidOperationException("Selected region mismatch.");
             Console.WriteLine($"PASS real Chrome selected region: {selected.PixelWidth}x{selected.PixelHeight}");
             // A normal white article with embedded screenshots and a fixed bottom toolbar.
-            var rich = new StringBuilder("<!doctype html><meta charset='utf-8'><title>Snip rich scroll fixture</title><style>body{margin:0;background:#eee;font:16px Arial}.article{width:760px;margin:auto;background:white}.section{height:540px;box-sizing:border-box;padding:20px 24px}h2{margin:0;height:30px;font:20px Arial}p{margin:5px 0;line-height:20px;height:60px}.bar{position:fixed;bottom:12px;left:35%;background:#555;color:white;padding:10px;font:14px Arial}</style><div class='article'>");
-            for (int section = 0; section < 8; section++)
-            {
-                rich.Append($"<div class='section'><h2>Article section {section:D2} - unique instruction {section * 7919}</h2><svg width='620' height='400' xmlns='http://www.w3.org/2000/svg'><rect width='620' height='400' fill='white'/><rect x='4' y='4' width='108' height='392' fill='#30475c'/>");
-                for (int row = 0; row < 9; row++) rich.Append($"<text x='16' y='{35 + row * 38}' fill='white' font-size='13'>Menu {section}:{row} item</text>");
-                rich.Append($"<text x='140' y='25' font-size='12'>Order {section * 371 + 27} | Amount {section * 17 + 6}</text><path d='M 170 35 L 205 170 L 196 150 M 205 170 L 208 146' stroke='red' stroke-width='3' fill='none'/></svg><p>Step {section + 1}: update the selected record and notify the responsible team.<br>Document {section * 8317 + 93}: confirm the title and recipients.<br>These instructions are local test data.</p></div>");
-            }
-            rich.Append("</div><div class='bar'>Return · Approve · Examples · Create task</div>");
-            var richFile = Path.Combine(directory, "rich.html"); File.WriteAllText(richFile, rich.ToString());
+            var richFile = Fixture("article-fixed-footer.html");
             var richStart = new ProcessStartInfo(chrome) { UseShellExecute = false };
             richStart.ArgumentList.Add("--user-data-dir=" + Path.Combine(directory, "profile")); richStart.ArgumentList.Add(new Uri(richFile).AbsoluteUri);
             using var handoff = Process.Start(richStart);
@@ -108,15 +108,33 @@ internal static class ChromeCaptureCheck
                 {
                     if (ownWindow.IsVisible) throw new InvalidOperationException("Own window was not hidden.");
                     stage = "sparse article with fixed toolbar";
-                    article = service.CaptureAsync(richRegion, progress, cancel.Token, BrowserCaptureMode.EntirePage).GetAwaiter().GetResult();
+                    article = Capture(richRegion, BrowserCaptureMode.EntirePage);
                 }
                 if (!ownWindow.IsVisible) throw new InvalidOperationException("Own window was not restored after capture.");
                 export.SavePng(article, Path.Combine(output, "rich-article.png"));
                 if (ContainsMagenta(article)) throw new InvalidOperationException("Own progress window leaked into capture.");
                 if (article.PixelHeight < 4250 || article.PixelHeight > 4400) throw new InvalidOperationException("Rich article stitched height mismatch: " + article.PixelHeight);
+                VerifySectionMarkers(article);
                 Console.WriteLine($"PASS real Chrome sparse article with image and fixed toolbar: {article.PixelWidth}x{article.PixelHeight}; own topmost window excluded and restored.");
             }
             finally { ownWindow.Close(); }
+            stage = "short page";
+            var shortStart = new ProcessStartInfo(chrome) { UseShellExecute = false };
+            shortStart.ArgumentList.Add("--user-data-dir=" + Path.Combine(directory, "profile")); shortStart.ArgumentList.Add(new Uri(Fixture("short-page.html")).AbsoluteUri);
+            using var shortHandoff = Process.Start(shortStart);
+            WindowCaptureInfo? shortWindow = null;
+            for (int i = 0; i < 100; i++)
+            {
+                shortWindow = DesktopWindows.Snapshot().FirstOrDefault(w => Title(w.Handle).Contains("Snip short scroll fixture", StringComparison.Ordinal));
+                if (shortWindow is not null) break; Task.Delay(100).GetAwaiter().GetResult();
+            }
+            if (shortWindow is null) throw new InvalidOperationException("Short page window was not created.");
+            DesktopWindows.Activate(shortWindow.Handle);
+            var shortRegion = new PixelRect(shortWindow.Bounds.X + 80, shortWindow.Bounds.Y + 180, 400, 280);
+            var shortPage = Capture(shortRegion, BrowserCaptureMode.EntirePage);
+            export.SavePng(shortPage, Path.Combine(output, "short-page.png"));
+            if (shortPage.PixelHeight >= 1000 || shortPage.PixelWidth != entire.PixelWidth) throw new InvalidOperationException("Short-page viewport mismatch.");
+            Console.WriteLine("PASS real Chrome short page without scrolling.");
             return 0;
         }
         catch (Exception e) { Console.WriteLine("::error::Chrome " + stage + ": " + e.ToString().Replace("\r", "").Replace("\n", "%0A")); Console.Error.WriteLine("FAIL real Chrome: " + e); return 1; }
@@ -125,6 +143,33 @@ internal static class ChromeCaptureCheck
             try { if (browser is not null && !browser.HasExited) { browser.Kill(true); browser.WaitForExit(5000); } } catch { }
             browser?.Dispose();
             try { Directory.Delete(directory, true); } catch { }
+        }
+    }
+    private static string Fixture(string name)
+    {
+        var path = Path.Combine(AppContext.BaseDirectory, "Fixtures", "scrolling", name);
+        if (!File.Exists(path)) throw new FileNotFoundException("Missing versioned scrolling fixture", name);
+        return path;
+    }
+    private static void VerifySectionMarkers(BitmapSource image)
+    {
+        var converted = new FormatConvertedBitmap(image, PixelFormats.Bgra32, null, 0);
+        int width = converted.PixelWidth, height = converted.PixelHeight;
+        var pixels = new byte[width * height * 4]; converted.CopyPixels(pixels, width * 4, 0);
+        foreach (string color in new[] { "E31729", "27A453", "3763D8", "BB7321", "8742B6", "1C9AAB", "A84C65", "567E32" })
+        {
+            int rgb = Convert.ToInt32(color, 16), groups = 0; bool previous = false;
+            for (int y = 0; y < height; y++)
+            {
+                bool found = false;
+                for (int x = 0; x < width; x++)
+                {
+                    int i = (y * width + x) * 4;
+                    if (pixels[i + 2] == (rgb >> 16) && pixels[i + 1] == ((rgb >> 8) & 255) && pixels[i] == (rgb & 255)) { found = true; break; }
+                }
+                if (found && !previous) groups++; previous = found;
+            }
+            if (groups != 1) throw new InvalidOperationException($"Article section marker {color} appears {groups} times; lost or duplicated section.");
         }
     }
     private static bool ContainsMagenta(BitmapSource image)

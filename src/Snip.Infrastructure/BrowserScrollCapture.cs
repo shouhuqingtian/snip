@@ -33,19 +33,25 @@ public sealed class BrowserScrollCapture(IDesktopCaptureService capture)
     }
     [StructLayout(LayoutKind.Sequential)] private struct MouseInput { public int X, Y; public uint Wheel, Flags, Time; public UIntPtr Extra; }
     [StructLayout(LayoutKind.Sequential)] private struct KeyboardInput { public ushort Key, Scan; public uint Flags, Time; public UIntPtr Extra; }
-    public async Task<BitmapSource> CaptureAsync(PixelRect region, IProgress<string> progress, CancellationToken token, BrowserCaptureMode mode = BrowserCaptureMode.EntirePage)
+    public async Task<BitmapSource> CaptureAsync(PixelRect region, IProgress<string> progress, CancellationToken token, BrowserCaptureMode mode = BrowserCaptureMode.EntirePage, DiagnosticOperation? diagnostics = null)
     {
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(token); deadline.CancelAfter(TimeSpan.FromSeconds(90));
-        try { return await Task.Run(() => CaptureCoreAsync(region, progress, deadline.Token, mode), deadline.Token).WaitAsync(deadline.Token).ConfigureAwait(false); }
+        try { return await Task.Run(() => CaptureCoreAsync(region, progress, deadline.Token, mode, diagnostics), deadline.Token).WaitAsync(deadline.Token).ConfigureAwait(false); }
         catch (OperationCanceledException) when (!token.IsCancellationRequested) { throw new TimeoutException("网页采集超时，已停止；请分段截图。"); }
     }
-    private async Task<BitmapSource> CaptureCoreAsync(PixelRect region, IProgress<string> progress, CancellationToken token, BrowserCaptureMode mode)
+    private async Task<BitmapSource> CaptureCoreAsync(PixelRect region, IProgress<string> progress, CancellationToken token, BrowserCaptureMode mode, DiagnosticOperation? diagnostics)
     {
         if (region.Width < 80 || region.Height < 160) throw new InvalidOperationException("长截图选区至少需要 80×160 像素，请选择网页正文区域。");
         var target = DesktopWindows.Snapshot().FirstOrDefault(w => w.Bounds.Contains(new(region.X + region.Width / 2, region.Y + region.Height / 2)))
             ?? throw new InvalidOperationException("未找到浏览器窗口。");
         using var process = Process.GetProcessById(target.ProcessId);
         if (process.ProcessName is not "chrome" and not "msedge") throw new InvalidOperationException("当前只支持 Chrome/Edge 普通网页，请重新选择浏览器正文区域。");
+        if (diagnostics is not null)
+        {
+            string? version = null;
+            try { if (process.MainModule?.FileName is { } executable) version = FileVersionInfo.GetVersionInfo(executable).ProductVersion; } catch { }
+            diagnostics.Stage("browser-identified", new { Browser = process.ProcessName, Version = version });
+        }
         SetForegroundWindow(target.Handle);
         await Task.Delay(200, token).ConfigureAwait(false);
         if (GetForegroundWindow() != target.Handle) throw new InvalidOperationException("无法激活目标浏览器，请切换到浏览器后重试。");
@@ -59,6 +65,7 @@ public sealed class BrowserScrollCapture(IDesktopCaptureService capture)
             }
             region = viewport ?? throw new InvalidOperationException("无法确定浏览器正文边界。请选取正文区域，再使用‘选定区域长截图’；不要求开启浏览器辅助功能。");
         }
+        diagnostics?.Stage("viewport-found", new { region.Width, region.Height, Mode = mode.ToString() });
         if (mode is BrowserCaptureMode.VisiblePage or BrowserCaptureMode.SelectedRegion)
         {
             var visible = capture.CaptureRegion(region); visible.Freeze(); return visible;
@@ -76,12 +83,13 @@ public sealed class BrowserScrollCapture(IDesktopCaptureService capture)
             state = (measured.Pattern, measured.Position, height);
         }
         var source = new WheelSource(capture, region, target.Handle, state);
+        diagnostics?.Stage("scroll-interface", new { PositionAvailable = state is not null });
         GetCursorPos(out var originalCursor);
         bool completed = false;
         try
         {
             progress.Report("正在使用浏览器滚轮自动采集…");
-            var frame = await new ScrollCaptureSession().CaptureAsync(source, mode == BrowserCaptureMode.EntirePage, progress, token).ConfigureAwait(false);
+            var frame = await new ScrollCaptureSession().CaptureAsync(source, mode == BrowserCaptureMode.EntirePage, progress, token, diagnostics).ConfigureAwait(false);
             var image = BitmapSource.Create(frame.Width, frame.Height, 96, 96, PixelFormats.Bgra32, null, frame.Bgra, frame.Width * 4); image.Freeze();
             completed = true; return image;
         }

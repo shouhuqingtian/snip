@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.IO;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using Snip.App.ViewModels;
@@ -13,7 +14,9 @@ internal static class ResponsivenessChecks
     {
         var uiThread = Environment.CurrentManagedThreadId;
         var ocr = new SlowOcr();
-        using var vm = new TextResultViewModel(image, ocr, new ModelStore("unused-models"), new SlowTranslator()) { Source = "已有结果" };
+        string directory = Path.Combine(Path.GetTempPath(), "Snip.Ocr.Diagnostics-" + Guid.NewGuid());
+        using var diagnostics = new DiagnosticJournal(directory);
+        using var vm = new TextResultViewModel(image, ocr, new ModelStore("unused-models"), new SlowTranslator(), diagnostics) { Source = "已有结果" };
         Require(ocr.LanguageThread == 0); // Constructor must not invoke a native language provider.
         var oldContext = SynchronizationContext.Current;
         SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext());
@@ -25,8 +28,11 @@ internal static class ResponsivenessChecks
             timer.Start(); Pump(task, TimeSpan.FromSeconds(3)); timer.Stop();
             Require(ticked && !vm.Busy && vm.Source == "已有结果" && vm.Status.Contains("取消"));
             Require(ocr.LanguageThread != 0 && ocr.LanguageThread != uiThread);
+            diagnostics.FlushAsync().GetAwaiter().GetResult();
+            string log = File.ReadAllText(Path.Combine(directory, "events.jsonl"));
+            Require(log.Contains("ocr-languages-loading") && log.Contains("cancelled") && !log.Contains("已有结果"));
         }
-        finally { SynchronizationContext.SetSynchronizationContext(oldContext); }
+        finally { SynchronizationContext.SetSynchronizationContext(oldContext); diagnostics.Dispose(); if (Directory.Exists(directory)) Directory.Delete(directory, true); }
     }
     public static void Translation(BitmapSource image)
     {

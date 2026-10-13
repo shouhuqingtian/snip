@@ -4,6 +4,10 @@
 
 ## 下载
 
+当前开发版 **2.0.3 测试便携版** 在 [GitHub Releases](https://github.com/shouhuqingtian/snip/releases) 下载最新带“测试便携版”的条目，选择 `self-snip-preview-win-x64.zip`。每个测试版对应一个明确提交，包含检查记录、版本信息和完整源码附件。
+
+下面是历史 **2.0.2** 发行文件：
+
 在 GitHub 文件页面点击 **Download raw file**（下载原始文件）：
 
 - [便携版 ZIP](https://github.com/shouhuqingtian/snip/blob/main/downloads/self-snip-portable.zip)：解压后运行 `Snip.exe`，无需安装 .NET。
@@ -51,8 +55,8 @@ WPF 应用和 Windows 检查只能在 Windows 运行。Linux 可使用 Windows t
 输出目录：
 
 - `artifacts/portable/win-x64/Snip.exe`：包含 .NET 运行时的单文件 EXE。
-- `artifacts/自用截图-2.0.2-win-x64.zip`：便携交付包。
-- `artifacts/installer/SelfSnip-2.0.2-Setup-x64.exe`：按当前用户安装，无需管理员权限。
+- `artifacts/自用截图-<版本>-win-x64.zip`：便携交付包，版本来自 `Directory.Build.props`。
+- `artifacts/installer/SelfSnip-<版本>-Setup-x64.exe`：按当前用户安装，无需管理员权限。
 - `artifacts/SHA256SUMS.txt`：输出文件校验值。
 
 初次启动时 .NET 会将部分原生组件解压到用户临时目录；便携 EXE 不依赖预先安装 .NET。
@@ -75,7 +79,9 @@ WPF 应用和 Windows 检查只能在 Windows 运行。Linux 可使用 Windows t
 
 OCR/AI 契约位于 `Snip.Core/Services.cs`。后续在 Infrastructure 中实现 `IOcrService` / `IAiImageService`，在组合根注入，保持 ViewModel 与供应商无关。在线 OCR/AI 供应商留待后续；当前识别与翻译不上传图片或文字，联网仅用于下载模型。
 
-项目已有 Windows CI 构建/测试/打包工作流。推送源码后由 GitHub Actions 执行 Windows 检查；执行状态以仓库 Actions 页面为准。
+CI 分为快速编译/Core 检查、Windows 桌面集成验证、交付三个阶段。验证通过才发布便携版；普通 main 推送发布测试版，`v<版本>` 标签生成正式安装包并发布。文档和历史下载文件的单独修改不会触发全量流程（使用说明作为包内容仍会触发）。失败日志和截图保留为 Actions 附件，独立检查失败后仍继续收集其余检查结果。
+
+2.0.3 可从主窗口或托盘 **导出诊断包**，反馈问题时提供 ZIP 和操作现象即可；诊断记录不包含截图、识别文本或译文。具体修改文件、流程和验收边界见 [诊断与开发效率改进](docs/2.0.3诊断与开发效率改进.md)。
 
 离线翻译集成检查（模型目录可在首次使用时通过 --install 自动下载约 221 MB）：
 

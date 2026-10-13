@@ -1,56 +1,154 @@
-name: Windows build and package
+name: Verify and deliver Windows preview
 on:
   push:
+    branches: [main]
+    tags: ['v*']
+    paths:
+      - 'src/**'
+      - 'tests/**'
+      - 'packaging/**'
+      - '.github/workflows/windows.yml'
+      - 'Directory.Build.props'
+      - 'Snip.sln'
+      - 'global.json'
+      - 'THIRD-PARTY-NOTICES.txt'
+      - 'docs/使用说明.md'
   pull_request:
+    paths:
+      - 'src/**'
+      - 'tests/**'
+      - 'packaging/**'
+      - '.github/workflows/windows.yml'
+      - 'Directory.Build.props'
+      - 'Snip.sln'
+      - 'global.json'
+      - 'THIRD-PARTY-NOTICES.txt'
+      - 'docs/使用说明.md'
   workflow_dispatch:
 permissions:
   contents: read
+concurrency:
+  group: verify-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
-  build:
-    runs-on: windows-latest
+  core:
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '8.0.4xx'
-      - name: Install NSIS
+          cache: true
+          cache-dependency-path: '**/*.csproj'
+      - name: Compile and verify core
         shell: pwsh
-        run: choco install nsis --no-progress --yes
+        run: ./packaging/Validate.ps1 -Scope Core
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Core-validation
+          path: artifacts/validation/
+  windows:
+    needs: core
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.4xx'
+          cache: true
+          cache-dependency-path: '**/*.csproj'
       - uses: actions/cache@v4
         with:
           path: .model-cache/translation
           key: translation-${{ hashFiles('src/Snip.Translation/translation-models.json') }}
-      - name: Build, test and package
+      - name: Compile Windows application
         shell: pwsh
-        run: ./packaging/Publish.ps1 -Installer
-      - name: Verify real offline translation models
-        shell: pwsh
-        run: dotnet run --project tests/Snip.Translation.Checks/Snip.Translation.Checks.csproj -c Release --no-build -- .model-cache/translation --install
-      - name: Verify real Chrome page capture without ScrollPattern
-        shell: pwsh
-        timeout-minutes: 4
-        run: dotnet run --project tests/Snip.Windows.Checks/Snip.Windows.Checks.csproj -c Release --no-build -- --chrome
-      - name: Verify native Windows OCR when language component is installed
-        shell: pwsh
-        timeout-minutes: 1
         run: |
-          dotnet run --project tests/Snip.Windows.Checks/Snip.Windows.Checks.csproj -c Release --no-build -- --ocr
-          if ($LASTEXITCODE -eq 2) {
-            Write-Output '::warning::Native OCR unrun: this runner lacks the English OCR language component.'
-            exit 0
-          }
-          exit $LASTEXITCODE
+          dotnet build Snip.sln -c Release --maxcpucount:2
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Verify UI, translation, browser and OCR before packaging
+        shell: pwsh
+        timeout-minutes: 8
+        run: ./packaging/Validate.ps1 -Scope Desktop -NoBuild
+      - name: Publish tested portable application
+        shell: pwsh
+        run: |
+          $channel = if ($env:GITHUB_REF -like 'refs/tags/v*') { 'Stable' } else { 'Preview' }
+          $version = ([xml](Get-Content Directory.Build.props -Raw)).Project.PropertyGroup.Version
+          if ($channel -eq 'Stable' -and $env:GITHUB_REF -ne "refs/tags/v$version") { throw 'Tag and project version disagree.' }
+          ./packaging/Publish.ps1 -SkipChecks -Channel $channel
+      - name: Smoke test the actual single-file EXE diagnostic export
+        shell: pwsh
+        run: |
+          $report = Join-Path $PWD 'artifacts/validation/packaged-diagnostics.zip'
+          $start = [System.Diagnostics.ProcessStartInfo]::new((Join-Path $PWD 'artifacts/portable/win-x64/Snip.exe'))
+          $start.UseShellExecute = $false
+          $start.ArgumentList.Add('--export-diagnostics'); $start.ArgumentList.Add($report)
+          $process = [System.Diagnostics.Process]::Start($start)
+          if (-not $process.WaitForExit(30000)) { $process.Kill($true); throw 'Packaged EXE timed out.' }
+          if ($process.ExitCode -ne 0 -or -not (Test-Path $report)) { throw 'Packaged EXE diagnostic export failed.' }
+          Expand-Archive $report 'artifacts/validation/packaged-report' -Force
+          $environment = Get-Content 'artifacts/validation/packaged-report/environment.json' -Raw | ConvertFrom-Json
+          if (-not $environment.Environment.Displays.Count -or $environment.Environment.AppVersion -notlike "*+$env:GITHUB_SHA") { throw 'Packaged version/display metadata incorrect.' }
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: Chrome-capture-check
-          path: artifacts/chrome-check/*.png
-          if-no-files-found: ignore
+          name: Windows-validation
+          path: |
+            artifacts/validation/
+            artifacts/chrome-check/
       - uses: actions/upload-artifact@v4
         with:
-          name: SelfSnip-win-x64
+          name: Tested-portable
+          compression-level: 0
           path: |
-            artifacts/自用截图-2.0.2-win-x64.zip
-            artifacts/installer/*.exe
+            artifacts/*.zip
             artifacts/SHA256SUMS.txt
-          if-no-files-found: error
+  deliver:
+    if: github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
+    needs: [core, windows]
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: Tested-portable
+          path: artifacts
+      - name: Build installer from the tested EXE for a version tag only
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        run: |
+          choco install nsis --no-progress --yes
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $version = ([xml](Get-Content Directory.Build.props -Raw)).Project.PropertyGroup.Version
+          Expand-Archive "artifacts/自用截图-$version-win-x64.zip" 'artifacts/portable/win-x64' -Force
+          ./packaging/Publish.ps1 -ReusePortable -Installer -Channel Stable
+      - name: Publish directly downloadable GitHub release assets
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $stable = $env:GITHUB_REF -like 'refs/tags/v*'
+          $tag = if ($stable) { $env:GITHUB_REF_NAME } else { "preview-$($env:GITHUB_SHA.Substring(0,12))" }
+          $version = ([xml](Get-Content Directory.Build.props -Raw)).Project.PropertyGroup.Version
+          $title = if ($stable) { "自用截图 $version" } else { "自用截图 $version 测试便携版 · $($env:GITHUB_SHA.Substring(0,7))" }
+          @("源码提交：$env:GITHUB_SHA", '', '便携版解压后运行 Snip.exe；反馈问题时从主窗口或托盘导出诊断包。', '',
+            '已通过 Core、Windows 界面/渲染、真实离线翻译和本地 Chrome 网页回归。原生英语 OCR 是否执行见 ZIP 内 validation/validation-desktop.json；Unrun 表示缺少语言组件。', '',
+            '多屏混合 DPI、用户真实网页及微信适配仍需实机验收。附件包含便携版、完整源码和 SHA256 校验值；正式版本另含安装包。') |
+            Set-Content artifacts/release-notes.md -Encoding utf8
+          $assets = @(Get-ChildItem artifacts -File -Filter '*.zip' | ForEach-Object FullName) + @((Join-Path $PWD 'artifacts/SHA256SUMS.txt'))
+          if ($stable) { $assets += @(Get-ChildItem artifacts/installer -File -Filter '*.exe' | ForEach-Object FullName) }
+          gh release view $tag --repo $env:GITHUB_REPOSITORY *> $null
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload $tag @assets --repo $env:GITHUB_REPOSITORY --clobber
+          } else {
+            $arguments = @('release','create',$tag) + $assets + @('--repo',$env:GITHUB_REPOSITORY,'--target',$env:GITHUB_SHA,'--title',$title,'--notes-file','artifacts/release-notes.md')
+            if (-not $stable) { $arguments += @('--prerelease','--latest=false') }
+            & gh @arguments
+          }
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          "Download: https://github.com/$env:GITHUB_REPOSITORY/releases/tag/$tag" | Add-Content $env:GITHUB_STEP_SUMMARY

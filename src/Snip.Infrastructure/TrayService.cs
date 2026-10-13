@@ -14,12 +14,14 @@ public sealed class TrayService : ITrayService
     public event EventHandler? ExitRequested;
     public event EventHandler? PinsRequested;
     public event EventHandler? CaptureCancelRequested;
+    public event EventHandler? DiagnosticsRequested;
     private bool capturing;
     public TrayService()
     {
         menu.Items.Add("开始截图  Ctrl+Alt+A", null, (_, _) => CaptureRequested?.Invoke(this, EventArgs.Empty));
         menu.Items.Add("打开主窗口", null, (_, _) => OpenRequested?.Invoke(this, EventArgs.Empty));
         menu.Items.Add("贴图管理", null, (_, _) => PinsRequested?.Invoke(this, EventArgs.Empty));
+        menu.Items.Add("导出诊断包…", null, (_, _) => DiagnosticsRequested?.Invoke(this, EventArgs.Empty));
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("退出", null, (_, _) => ExitRequested?.Invoke(this, EventArgs.Empty));
         menu.Opening += (_, _) => { if (capturing) CaptureCancelRequested?.Invoke(this, EventArgs.Empty); };
