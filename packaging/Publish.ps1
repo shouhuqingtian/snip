@@ -38,6 +38,8 @@ try {
         $payload = @('Snip.exe','build-info.json','使用说明.md','THIRD-PARTY-NOTICES.txt') | ForEach-Object { Join-Path $portable $_ }
         if (Test-Path (Join-Path $portable 'validation')) { $payload += Join-Path $portable 'validation' }
         Compress-Archive -Path $payload -DestinationPath (Join-Path $artifactRoot $zipName) -Force
+        $previews = Join-Path $artifactRoot 'validation/ui-previews'
+        if (Test-Path $previews) { Compress-Archive -Path (Join-Path $previews '*.png') -DestinationPath (Join-Path $artifactRoot 'ui-previews.zip') -Force }
         Add-Type -AssemblyName System.IO.Compression
         $sourcePath = Join-Path $artifactRoot 'self-snip-source.zip'
         $stream = [System.IO.File]::Open($sourcePath, [System.IO.FileMode]::Create)
@@ -66,6 +68,7 @@ try {
     }
     $zipName = if ($Channel -eq 'Preview') { 'self-snip-preview-win-x64.zip' } else { "自用截图-$version-win-x64.zip" }
     $deliverables = @((Join-Path $artifactRoot $zipName), (Join-Path $artifactRoot 'self-snip-source.zip'))
+    if (Test-Path (Join-Path $artifactRoot 'ui-previews.zip')) { $deliverables += Join-Path $artifactRoot 'ui-previews.zip' }
     if ($Installer) { $deliverables += Join-Path $artifactRoot "installer/SelfSnip-$version-Setup-x64.exe" }
     $deliverables | Where-Object { Test-Path $_ } | ForEach-Object {
         $relative = [System.IO.Path]::GetRelativePath($artifactRoot, $_).Replace('\','/')

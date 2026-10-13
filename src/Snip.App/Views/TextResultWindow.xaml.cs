@@ -7,7 +7,7 @@ public partial class TextResultWindow : Window
 {
     public TextResultWindow(TextResultViewModel vm)
     {
-        InitializeComponent(); DataContext = vm;
+        Ui.EnsureTheme(); InitializeComponent(); DataContext = vm;
         Loaded += async (_, _) =>
         {
             vm.WindowOpened();

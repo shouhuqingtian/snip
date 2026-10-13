@@ -55,7 +55,7 @@ public sealed class EditorCanvas : FrameworkElement
                 editingId = a.Id;
                 textBox = new TextBox { Text = a.Text, FontSize = a.FontSize, FontFamily = new FontFamily("Microsoft YaHei UI"),
                     Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString(a.Color)), Background = new SolidColorBrush(Color.FromArgb(210, 255, 255, 255)),
-                    AcceptsReturn = true, Padding = new Thickness(2), BorderBrush = Brushes.SeaGreen, BorderThickness = new Thickness(1), MinWidth = 100,
+                    AcceptsReturn = true, Padding = new Thickness(2), BorderBrush = Ui.Brush("AccentBrush"), BorderThickness = new Thickness(1), MinWidth = 100,
                     ToolTip = "Ctrl+Enter 提交；Esc 取消；点击其他位置提交" };
                 textBox.PreviewKeyDown += (_, e) =>
                 {

@@ -9,7 +9,7 @@ public partial class EditorWindow : Window
     public EditorToolbar Toolbar => ToolbarControl;
     public EditorWindow()
     {
-        InitializeComponent();
+        Ui.EnsureTheme(); InitializeComponent();
         Loaded += (_, _) => Fit();
         Closing += (_, e) => { if (DataContext is EditorViewModel vm) e.Cancel = !vm.CanClose(); };
         PreviewKeyDown += (_, e) => { if (e.Key == Key.Escape && DataContext is EditorViewModel vm) { vm.CancelCurrent(); e.Handled = true; } };

@@ -21,12 +21,13 @@ public sealed class PinWindow : Window
     [DllImport("user32.dll", EntryPoint = "SetWindowLongPtrW")] private static extern IntPtr SetStyle(IntPtr hwnd, int index, IntPtr style);
     public PinWindow(BitmapSource bitmap, IImageExportService export)
     {
+        Ui.EnsureTheme();
         this.bitmap = bitmap; Title = "自用截图 · 贴图"; WindowStyle = WindowStyle.None; ResizeMode = ResizeMode.NoResize;
         Topmost = true; ShowInTaskbar = false; AllowsTransparency = true; Background = Brushes.Transparent;
         scale = Math.Min(1, Math.Min(650.0 / bitmap.PixelWidth, 500.0 / bitmap.PixelHeight));
         Width = Math.Max(120, bitmap.PixelWidth * scale + 4); Height = Math.Max(80, bitmap.PixelHeight * scale + 4);
         image = new Image { Source = bitmap, Stretch = Stretch.Uniform };
-        Content = new Border { Child = image, Background = Brushes.White, BorderBrush = Brushes.SeaGreen, BorderThickness = new Thickness(2) };
+        Content = new Border { Child = image, Background = Brushes.White, BorderBrush = Ui.Brush("AccentBrush"), BorderThickness = new Thickness(2), CornerRadius = new CornerRadius(6) };
         var menu = new ContextMenu(); ContextMenu = menu;
         void Add(string text, Action action) { var item = new MenuItem { Header = text }; item.Click += (_, _) => action(); menu.Items.Add(item); }
         Add("复制图片", async () => { try { await export.CopyAsync(bitmap); } catch (Exception e) { MessageBox.Show(e.Message); } });

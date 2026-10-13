@@ -10,8 +10,8 @@
     <KeyBinding Key="Delete" Command="{Binding DeleteCommand}"/>
   </Window.InputBindings>
   <DockPanel>
-    <local:EditorToolbar x:Name="ToolbarControl" DockPanel.Dock="Top" Margin="10"/>
-    <Border DockPanel.Dock="Bottom" Background="White" Padding="12,6">
+    <local:EditorToolbar x:Name="ToolbarControl" DockPanel.Dock="Top" Margin="16,12,16,12"/>
+    <Border DockPanel.Dock="Bottom" Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource StrokeBrush}" BorderThickness="0,1,0,0" Padding="16,8">
       <DockPanel>
         <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
           <Button Content="−" Command="{Binding ZoomOutCommand}" Padding="10,3"/>
@@ -19,10 +19,10 @@
           <Button Content="+" Command="{Binding ZoomInCommand}" Padding="10,3"/>
           <Button Content="适应窗口" Click="FitClick" Padding="10,3"/>
         </StackPanel>
-        <TextBlock Text="{Binding Status}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" Foreground="#61758B" Margin="0,0,10,0"/>
+        <TextBlock Text="{Binding Status}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" Foreground="{StaticResource MutedBrush}" Margin="0,0,10,0"/>
       </DockPanel>
     </Border>
-    <ScrollViewer x:Name="Viewport" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto" Background="#E3E9EF" Padding="16">
+    <ScrollViewer x:Name="Viewport" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto" Background="{StaticResource CanvasBrush}" Padding="24">
       <local:EditorCanvas HorizontalAlignment="Left" VerticalAlignment="Top">
         <local:EditorCanvas.LayoutTransform><ScaleTransform ScaleX="{Binding Zoom}" ScaleY="{Binding Zoom}"/></local:EditorCanvas.LayoutTransform>
       </local:EditorCanvas>

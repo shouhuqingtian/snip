@@ -36,9 +36,9 @@ public sealed class SelectionWindow : Window
         toolbar.OcrRequested += (_, _) => session.Request(SelectionAction.Ocr);
         toolbar.TranslateRequested += (_, _) => session.Request(SelectionAction.Translate);
         overlay.Children.Add(toolbar);
-        hint = new TextBlock { Text = "拖动选区 · 悬停自动选择窗口 · 单击选窗口 · 方向键微调 · Esc取消", Foreground = Brushes.White,
-            Background = new SolidColorBrush(Color.FromArgb(200, 27, 40, 55)), Padding = new Thickness(10), IsHitTestVisible = false };
-        overlay.Children.Add(hint); Canvas.SetLeft(hint, 14); Canvas.SetTop(hint, 14); Content = root;
+        hint = new TextBlock { Text = "拖动选区 · 悬停自动选择窗口 · 单击选窗口 · 方向键微调 · Esc取消", Foreground = Brushes.White, FontSize = 12, Padding = new Thickness(12, 8, 12, 8), IsHitTestVisible = false };
+        var hintFrame = new Border { Child = hint, CornerRadius = new CornerRadius(8), Background = new SolidColorBrush(Color.FromArgb(225, 36, 50, 57)), IsHitTestVisible = false };
+        overlay.Children.Add(hintFrame); Canvas.SetLeft(hintFrame, 16); Canvas.SetTop(hintFrame, 16); Content = root;
         SourceInitialized += (_, _) => capture.PlaceOverlay(this, display.Bounds);
         PreviewKeyDown += OnKey; session.EditorChanged += RefreshEditor; session.ViewModel.Changed += Position;
         SizeChanged += (_, _) => { Position(this, EventArgs.Empty); PositionEditor(); };
@@ -129,21 +129,21 @@ internal sealed class SelectionSurface : FrameworkElement
         var local = new Rect((r.X - display.Bounds.X) * sx, (r.Y - display.Bounds.Y) * sy, r.Width * sx, r.Height * sy);
         dc.DrawGeometry(new SolidColorBrush(Color.FromArgb(135, 0, 0, 0)), null,
             new CombinedGeometry(GeometryCombineMode.Exclude, new RectangleGeometry(bounds), new RectangleGeometry(local)));
-        if (!r.IsEmpty) dc.DrawRectangle(null, new System.Windows.Media.Pen(Brushes.SpringGreen, 1.5), local);
+        if (!r.IsEmpty) dc.DrawRectangle(null, new System.Windows.Media.Pen(Ui.Brush("AccentBrush"), 1.5), local);
         if (!session.Editing)
         {
             if (!r.IsEmpty && !vm.Selection.IsEmpty)
                 foreach (double hx in new[] { local.Left, (local.Left + local.Right) / 2, local.Right })
                 foreach (double hy in new[] { local.Top, (local.Top + local.Bottom) / 2, local.Bottom })
                     if (hx != (local.Left + local.Right) / 2 || hy != (local.Top + local.Bottom) / 2)
-                        dc.DrawRectangle(Brushes.White, new System.Windows.Media.Pen(Brushes.SeaGreen, 1), new Rect(hx - 3, hy - 3, 6, 6));
+                        dc.DrawRectangle(Brushes.White, new System.Windows.Media.Pen(Ui.Brush("AccentBrush"), 1), new Rect(hx - 3, hy - 3, 6, 6));
             double x = (cursor.X - display.Bounds.X) * sx, y = (cursor.Y - display.Bounds.Y) * sy;
             if (x < 0 || y < 0 || x >= ActualWidth || y >= ActualHeight) return;
             int px = Math.Clamp((int)(cursor.X - display.Bounds.X), 0, image.PixelWidth - 1), py = Math.Clamp((int)(cursor.Y - display.Bounds.Y), 0, image.PixelHeight - 1);
             int left = Math.Max(0, px - 8), top = Math.Max(0, py - 8), w = Math.Min(17, image.PixelWidth - left), h = Math.Min(17, image.PixelHeight - top);
             var zoom = new CroppedBitmap(image, new Int32Rect(left, top, w, h));
             double mx = Math.Clamp(x + 22, 0, Math.Max(0, ActualWidth - 120)), my = Math.Clamp(y + 22, 0, Math.Max(0, ActualHeight - 120));
-            dc.DrawRectangle(Brushes.White, new System.Windows.Media.Pen(Brushes.SeaGreen, 2), new Rect(mx, my, 112, 112));
+            dc.DrawRoundedRectangle(Brushes.White, new System.Windows.Media.Pen(Ui.Brush("AccentBrush"), 1.5), new Rect(mx, my, 112, 112), 6, 6);
             dc.DrawImage(zoom, new Rect(mx + 1, my + 1, 110, 110));
             dc.DrawLine(new System.Windows.Media.Pen(Brushes.Red, 1), new(mx + 56, my), new(mx + 56, my + 112));
             dc.DrawLine(new System.Windows.Media.Pen(Brushes.Red, 1), new(mx, my + 56), new(mx + 112, my + 56));

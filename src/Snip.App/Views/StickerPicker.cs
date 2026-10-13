@@ -1,6 +1,7 @@
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using Microsoft.Win32;
@@ -14,17 +15,19 @@ public sealed class StickerPicker : Window
     public double ImageHeight { get; private set; }
     public StickerPicker()
     {
-        Title = "表情与图片贴纸"; Width = 410; Height = 310; ResizeMode = ResizeMode.NoResize; WindowStartupLocation = WindowStartupLocation.CenterOwner; ShowInTaskbar = false;
-        var root = new StackPanel { Margin = new Thickness(18) };
-        root.Children.Add(new TextBlock { Text = "选择通用表情，或导入自己的 PNG/JPEG 图片", TextWrapping = TextWrapping.Wrap });
-        var grid = new WrapPanel { Margin = new Thickness(0, 14, 0, 12) }; root.Children.Add(grid);
+        Ui.EnsureTheme();
+        Title = "表情与图片贴纸"; Width = 460; Height = 440; ResizeMode = ResizeMode.NoResize; WindowStartupLocation = WindowStartupLocation.CenterOwner; ShowInTaskbar = false;
+        var root = new StackPanel { Margin = new Thickness(24) };
+        root.Children.Add(Ui.Title("让画面更有趣"));
+        var description = Ui.Subtitle("选择一个表情，或导入自己的图片贴纸。"); description.Margin = new Thickness(0, 6, 0, 16); root.Children.Add(description);
+        var grid = new UniformGrid { Columns = 4, Rows = 2 }; root.Children.Add(Ui.Card(grid, new Thickness(10)));
         for (int i = 0; i < 8; i++)
         {
             var bitmap = Face(i);
-            var button = new Button { Content = new Image { Source = bitmap, Width = 60, Height = 60 }, Padding = new Thickness(8) };
+            var button = new Button { Content = new Image { Source = bitmap, Width = 54, Height = 54 }, Padding = new Thickness(12), ToolTip = "插入表情贴纸" }; Ui.Style(button, "QuietButton");
             button.Click += (_, _) => Select(bitmap); grid.Children.Add(button);
         }
-        var import = new Button { Content = "导入图片贴纸…" };
+        var import = new Button { Content = "导入图片贴纸…", Margin = new Thickness(0, 18, 0, 0) }; Ui.Style(import, "PrimaryButton");
         import.Click += (_, _) =>
         {
             var dialog = new OpenFileDialog { Filter = "图片 (*.png;*.jpg;*.jpeg)|*.png;*.jpg;*.jpeg", Title = "导入贴纸" };
@@ -42,7 +45,8 @@ public sealed class StickerPicker : Window
             }
             catch (Exception e) { MessageBox.Show(this, e.Message, "无法导入贴纸", MessageBoxButton.OK, MessageBoxImage.Warning); }
         };
-        root.Children.Add(import); Content = root;
+        root.Children.Add(import);
+        var formats = Ui.Subtitle("支持 PNG、JPEG · 单张图片不超过 20 MB"); formats.FontSize = 12; formats.Margin = new Thickness(0, 10, 0, 0); root.Children.Add(formats); Content = root;
     }
     private void Select(BitmapSource bitmap)
     {

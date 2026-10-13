@@ -10,7 +10,7 @@ public partial class TextDialog : Window
     public double FontSizeValue => (double)SizeBox.SelectedItem;
     public TextDialog(string text, string color, double fontSize)
     {
-        InitializeComponent(); Input.Text = text; ColorBox.Text = color;
+        Ui.EnsureTheme(); InitializeComponent(); Input.Text = text; ColorBox.Text = color;
         SizeBox.ItemsSource = new double[] { 16, 20, 24, 32, 48, 64 }; SizeBox.SelectedItem = fontSize;
         Loaded += (_, _) => { Input.Focus(); Input.CaretIndex = Input.Text.Length; };
     }
