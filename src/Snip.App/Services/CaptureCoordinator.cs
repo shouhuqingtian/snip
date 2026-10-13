@@ -27,7 +27,7 @@ public sealed class CaptureCoordinator(IDesktopCaptureService capture, Annotatio
             var frame = capture.Capture();
             operation?.Stage("desktop-captured", new { frame.Image.PixelWidth, frame.Image.PixelHeight, DisplayCount = frame.Displays.Count });
             var targets = DesktopWindows.Snapshot();
-            using var active = new SelectionSession(frame, capture, renderer, export, targets) { RecognizeRequested = features.ShowText };
+            using var active = new SelectionSession(frame, capture, renderer, export, targets);
             session = active; active.Show();
             var selection = await active.Completion;
             operation?.Stage("selection-ended", new { Action = selection?.Action.ToString(), Width = selection?.Region.Width, Height = selection?.Region.Height });

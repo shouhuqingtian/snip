@@ -25,6 +25,7 @@ public sealed class TextResultViewModel : ObservableObject, IDisposable
     private string? language;
     private IReadOnlyList<string> languages = [];
     private bool busy, downloading, disposed, initialized, userCancelled;
+    private bool autoTranslate, showTranslation;
     private double progress;
     public TextResultViewModel(BitmapSource image, IOcrService ocr, ModelStore models, ITranslationService translator, DiagnosticJournal? diagnostics = null)
     {
@@ -59,11 +60,14 @@ public sealed class TextResultViewModel : ObservableObject, IDisposable
         initialized = true;
         return Run("准备文字识别", TimeSpan.FromSeconds(45), Recognize);
     }
-    public Task TranslateAsync() => Run("离线翻译", TimeSpan.FromSeconds(90), Translate);
+    public Task TranslateAsync() { ShowTranslation = true; return Run("离线翻译", TimeSpan.FromSeconds(90), Translate); }
     public IReadOnlyList<string> Languages { get => languages; private set => Set(ref languages, value); }
-    public bool AutoTranslate { get; init; }
-    public string? Language { get => language; set => Set(ref language, value); }
-    public string Direction { get => direction; set => Set(ref direction, value); }
+    public bool AutoTranslate { get => autoTranslate; init { autoTranslate = value; ShowTranslation = value; } }
+    public BitmapSource PreviewImage => snapshot;
+    public bool ShowTranslation { get => showTranslation; private set { if (Set(ref showTranslation, value)) Notify(nameof(WindowTitle)); } }
+    public string WindowTitle => ShowTranslation ? "自用截图 · 文字识别与离线翻译" : "自用截图 · 文字识别";
+    public string? Language { get => language; set { if (value is not null) Set(ref language, value); } }
+    public string Direction { get => direction; set { if (value is "en-zh" or "zh-en") Set(ref direction, value); } }
     public string Source { get => source; set { if (Set(ref source, value)) TranslateCommand.Refresh(); } }
     public string Translated { get => translated; private set => Set(ref translated, value); }
     public string Status { get => status; private set => Set(ref status, value); }
@@ -76,6 +80,8 @@ public sealed class TextResultViewModel : ObservableObject, IDisposable
     public RelayCommand CopySourceCommand { get; }
     public RelayCommand CopyTranslationCommand { get; }
     public RelayCommand CancelCommand { get; }
+    public void WindowOpened() => diagnostics?.Record("text-window", "loaded", new { AutoTranslate });
+    public void WindowFailed(Exception error) => Report(error);
     private async Task Recognize(CancellationToken token)
     {
         if (Languages.Count == 0)
@@ -85,8 +91,9 @@ public sealed class TextResultViewModel : ObservableObject, IDisposable
             var available = await Task.Run(() => ocr.Languages, token);
             token.ThrowIfCancellationRequested(); Languages = available;
             diagnosticOperation?.Stage("ocr-languages-loaded", new { Count = available.Count });
-            Language = Languages.FirstOrDefault(x => x.StartsWith("zh", StringComparison.OrdinalIgnoreCase)) ?? Languages.FirstOrDefault();
-            if (Language is null) throw new InvalidOperationException("未安装 Windows OCR 语言组件，请在 Windows 语言设置中添加中文/英语文字识别组件。");
+            if (Languages.Count == 0) throw new InvalidOperationException("未安装 Windows OCR 语言组件，请在 Windows 语言设置中添加中文/英语文字识别组件。");
+            Language = Language is { } selected && Languages.Contains(selected) ? selected :
+                Languages.FirstOrDefault(x => x.StartsWith("zh", StringComparison.OrdinalIgnoreCase)) ?? Languages[0];
         }
         SetStage("正在识别文字");
         if (image is null)
@@ -156,5 +163,10 @@ public sealed class TextResultViewModel : ObservableObject, IDisposable
     }
     private void Report(Exception e) { diagnostics?.Record("text-result", "operation-failed", error: e); Status = "操作失败：" + e.Message + "；可从主窗口导出诊断包。"; }
     private void Copy(string value) { try { if (!string.IsNullOrEmpty(value)) Clipboard.SetText(value); } catch (Exception e) { Report(e); } }
-    public void Dispose() { disposed = true; heartbeat.Stop(); if (operation is { } current) _ = current.CancelAsync(); }
+    public void Dispose()
+    {
+        if (disposed) return;
+        disposed = true; diagnostics?.Record("text-window", "closed", new { Busy });
+        heartbeat.Stop(); if (operation is { } current) _ = current.CancelAsync();
+    }
 }

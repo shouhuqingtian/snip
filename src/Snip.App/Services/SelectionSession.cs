@@ -21,7 +21,6 @@ public sealed class SelectionSession : IDisposable
     public bool Editing { get; private set; }
     public IReadOnlyList<WindowCaptureInfo> Targets { get; }
     public event EventHandler? EditorChanged;
-    public Action<EditorViewModel, Window, bool>? RecognizeRequested { get; set; }
     private readonly AnnotationRenderer renderer;
     private readonly IImageExportService export;
     public string? CancellationReason { get; private set; }
@@ -106,5 +105,5 @@ public sealed class SelectionSession : IDisposable
     public void Dispose() => Finish(null);
 }
 
-public enum SelectionAction { Editor, Pin, Scroll, WeChat }
+public enum SelectionAction { Editor, Pin, Scroll, WeChat, Ocr, Translate }
 public sealed record SelectionResult(EditorViewModel Editor, PixelRect Region, SelectionAction Action, BrowserCaptureMode BrowserMode = BrowserCaptureMode.EntirePage);

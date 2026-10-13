@@ -33,8 +33,8 @@ public sealed class SelectionWindow : Window
         toolbar.PinRequested += (_, _) => session.Request(SelectionAction.Pin);
         toolbar.ScrollRequested += mode => session.Request(SelectionAction.Scroll, mode);
         toolbar.WeChatRequested += (_, _) => session.Request(SelectionAction.WeChat);
-        toolbar.OcrRequested += (_, _) => { if (session.Editor is { } vm) session.RecognizeRequested?.Invoke(vm, this, false); };
-        toolbar.TranslateRequested += (_, _) => { if (session.Editor is { } vm) session.RecognizeRequested?.Invoke(vm, this, true); };
+        toolbar.OcrRequested += (_, _) => session.Request(SelectionAction.Ocr);
+        toolbar.TranslateRequested += (_, _) => session.Request(SelectionAction.Translate);
         overlay.Children.Add(toolbar);
         hint = new TextBlock { Text = "拖动选区 · 悬停自动选择窗口 · 单击选窗口 · 方向键微调 · Esc取消", Foreground = Brushes.White,
             Background = new SolidColorBrush(Color.FromArgb(200, 27, 40, 55)), Padding = new Thickness(10), IsHitTestVisible = false };

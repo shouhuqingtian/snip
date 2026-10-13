@@ -4,7 +4,7 @@
 
 ## 下载
 
-当前开发版 **2.0.3 测试便携版** 在 [GitHub Releases](https://github.com/shouhuqingtian/snip/releases) 下载最新带“测试便携版”的条目，选择 `self-snip-preview-win-x64.zip`。每个测试版对应一个明确提交，包含检查记录、版本信息和完整源码附件。
+当前开发版 **2.0.4 测试便携版** 在 [GitHub Releases](https://github.com/shouhuqingtian/snip/releases) 下载最新带“测试便携版”的条目，选择 `self-snip-preview-win-x64.zip`。每个测试版对应一个明确提交，包含检查记录、版本信息和完整源码附件。
 
 下面是历史 **2.0.2** 发行文件：
 

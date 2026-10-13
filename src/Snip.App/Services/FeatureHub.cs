@@ -15,16 +15,41 @@ public sealed class FeatureHub
     private readonly IImageExportService export;
     private readonly IDesktopCaptureService capture;
     private readonly PinManager pins;
-    private readonly OfflineOcrService ocr = new();
-    private readonly ModelStore models = new(System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SelfSnip", "Models"));
-    private readonly OfflineTranslator translator;
+    private readonly IOcrService ocr;
+    private readonly ModelStore models;
+    private readonly ITranslationService translator;
     private readonly DiagnosticJournal? diagnostics;
-    public FeatureHub(AnnotationRenderer renderer, IImageExportService export, IDesktopCaptureService capture, PinManager pins, DiagnosticJournal? diagnostics = null)
-    { this.renderer = renderer; this.export = export; this.capture = capture; this.pins = pins; this.diagnostics = diagnostics; translator = new(models); }
-    public void ShowText(EditorViewModel vm, Window owner, bool translate)
+    public FeatureHub(AnnotationRenderer renderer, IImageExportService export, IDesktopCaptureService capture, PinManager pins, DiagnosticJournal? diagnostics = null,
+        IOcrService? ocr = null, ITranslationService? translator = null, ModelStore? models = null)
     {
-        var text = new TextResultViewModel(vm.Compose(), ocr, models, translator, diagnostics) { AutoTranslate = translate };
-        var window = new TextResultWindow(text) { Owner = owner }; window.ShowDialog();
+        this.renderer = renderer; this.export = export; this.capture = capture; this.pins = pins; this.diagnostics = diagnostics;
+        this.ocr = ocr ?? new OfflineOcrService();
+        this.models = models ?? new(System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SelfSnip", "Models"));
+        this.translator = translator ?? new OfflineTranslator(this.models);
+    }
+    public TextResultWindow? ShowText(EditorViewModel vm, bool translate)
+    {
+        using var operation = diagnostics?.Begin("text-window", new { Translate = translate });
+        TextResultViewModel? text = null;
+        TextResultWindow? window = null;
+        try
+        {
+            var image = vm.Compose();
+            operation?.Stage("image-composed", new { image.PixelWidth, image.PixelHeight });
+            text = new TextResultViewModel(image, ocr, models, translator, diagnostics) { AutoTranslate = translate };
+            operation?.Stage("view-model-created");
+            // A result must outlive the screenshot overlay. Do not give it the overlay as owner.
+            window = new TextResultWindow(text) { WindowStartupLocation = WindowStartupLocation.CenterScreen };
+            operation?.Stage("window-created");
+            window.Show(); window.Activate();
+            operation?.Complete(); return window;
+        }
+        catch (Exception error)
+        {
+            operation?.Fail(error); text?.Dispose(); window?.Close();
+            MessageBox.Show("无法打开识别结果窗口：" + error.Message + "\n软件仍在运行，可从托盘导出诊断包。", "自用截图", MessageBoxButton.OK, MessageBoxImage.Error);
+            return null;
+        }
     }
     public EditorWindow OpenEditor(EditorViewModel vm)
     {
@@ -36,8 +61,8 @@ public sealed class FeatureHub
             if (picker.ShowDialog() == true && picker.Png is { } png) vm.AddSticker(png, picker.ImageWidth, picker.ImageHeight);
         };
         window.Toolbar.PinRequested += (_, _) => pins.Add(vm.Compose());
-        window.Toolbar.OcrRequested += (_, _) => ShowText(vm, window, false);
-        window.Toolbar.TranslateRequested += (_, _) => ShowText(vm, window, true);
+        window.Toolbar.OcrRequested += (_, _) => ShowText(vm, false);
+        window.Toolbar.TranslateRequested += (_, _) => ShowText(vm, true);
         window.Toolbar.WeChatRequested += (_, _) => ShowWeChat(vm, window);
         window.Toolbar.WindowRequested += (_, _) => window.Activate();
         window.Toolbar.ScrollRequested += _ => MessageBox.Show(window, "请通过 Ctrl+Alt+A 选取 Chrome/Edge 网页正文，再选择网页截图模式。", "网页截图");
@@ -55,6 +80,8 @@ public sealed class FeatureHub
     {
         switch (result.Action)
         {
+            case SelectionAction.Ocr: ShowText(result.Editor, false); break;
+            case SelectionAction.Translate: ShowText(result.Editor, true); break;
             case SelectionAction.Pin: pins.Add(result.Editor.Compose()); break;
             case SelectionAction.Editor: OpenEditor(result.Editor); break;
             case SelectionAction.WeChat:
