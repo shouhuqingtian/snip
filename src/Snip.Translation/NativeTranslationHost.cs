@@ -5,11 +5,13 @@ using System.Net.Http.Json;
 using System.Net.Sockets;
 using System.Runtime.InteropServices;
 using System.Text.Json;
+using System.Text;
+using System.Text.RegularExpressions;
 using Microsoft.Win32.SafeHandles;
 
 namespace Snip.Translation;
 
-/// <summary>Private loopback CPU worker. Input never appears in command lines, files or logs.
+/// <summary>Private loopback CPU/GPU worker. Input never appears in command lines, files or logs.
 /// A Windows job closes the entire worker tree if the application exits unexpectedly.</summary>
 internal sealed class NativeTranslationHost : IAsyncDisposable
 {
@@ -21,25 +23,33 @@ internal sealed class NativeTranslationHost : IAsyncDisposable
     private readonly Process parent = Process.GetCurrentProcess();
     private long peak;
     private long combinedPeak;
+    private int offloadedLayers;
+    public int OffloadedLayers => Volatile.Read(ref offloadedLayers);
+    public TranslationBackend Backend { get; }
     public int ProcessId { get; }
     public long PeakWorkingSetBytes => Interlocked.Read(ref peak);
     public long PeakCombinedWorkingSetBytes => Interlocked.Read(ref combinedPeak);
     public bool Exited { get; private set; }
     public int? ExitCode { get; private set; }
-    public NativeTranslationHost(ModelStore models)
+    public NativeTranslationHost(ModelStore models, TranslationBackend backend = TranslationBackend.Cpu, string? device = null)
     {
+        Backend = backend;
+        if (backend == TranslationBackend.Vulkan && (device is null || !Regex.IsMatch(device, @"^Vulkan\d+$"))) throw new ArgumentException("Invalid GPU device.");
         var listener = new TcpListener(IPAddress.Loopback, 0); listener.Start();
         int port = ((IPEndPoint)listener.LocalEndpoint).Port; listener.Stop();
-        var start = new ProcessStartInfo(models.ExecutablePath)
+        var start = new ProcessStartInfo(models.ExecutablePathFor(backend))
         {
-            UseShellExecute = false, CreateNoWindow = true, WorkingDirectory = models.RuntimeDirectory,
+            UseShellExecute = false, CreateNoWindow = true, WorkingDirectory = models.RuntimeDirectoryFor(backend),
             RedirectStandardOutput = true, RedirectStandardError = true
         };
         string key = Guid.NewGuid().ToString("N");
         start.Environment["LLAMA_API_KEY"] = key;
-        foreach (string value in new[] { "-m", models.ModelPath, "-c", "2048", "-t", "2", "-tb", "2", "-ngl", "0", "--no-op-offload",
+        foreach (string value in backend == TranslationBackend.Vulkan
+            ? new[] { "--device", device!, "-ngl", "all", "--fit", "off", "-b", "128", "-ub", "128", "--log-verbosity", "3" }
+            : new[] { "--device", "none", "-ngl", "0", "--no-op-offload", "--log-disable" }) start.ArgumentList.Add(value);
+        foreach (string value in new[] { "-m", models.ModelPath, "-c", "2048", "-t", "2", "-tb", "2",
             "--parallel", "1", "--threads-http", "1", "--cache-ram", "0", "--no-cache-prompt", "--host", "127.0.0.1", "--port", port.ToString(System.Globalization.CultureInfo.InvariantCulture),
-            "--alias", "self-snip-offline", "--no-webui", "--no-slots", "--log-disable", "--offline", "--no-warmup", "--jinja" }) start.ArgumentList.Add(value);
+            "--alias", "self-snip-offline", "--no-webui", "--no-slots", "--offline", "--no-warmup", "--jinja" }) start.ArgumentList.Add(value);
         try
         {
             process = Process.Start(start) ?? throw new InvalidOperationException();
@@ -49,13 +59,35 @@ internal sealed class NativeTranslationHost : IAsyncDisposable
         catch
         {
             if (process is not null) { try { process.Kill(entireProcessTree: true); } catch { } process.Dispose(); }
-            throw new InvalidOperationException("无法启动本地翻译推理器，请下载 / 修复模型；如安全软件拦截，请核对官方下载来源。");
+            parent.Dispose();
+            throw new NativeWorkerException("无法启动本地翻译推理器，请下载 / 修复模型；如安全软件拦截，请核对官方下载来源。");
         }
-        drain = Task.WhenAll(process.StandardOutput.BaseStream.CopyToAsync(Stream.Null), process.StandardError.BaseStream.CopyToAsync(Stream.Null));
+        drain = Task.WhenAll(process.StandardOutput.BaseStream.CopyToAsync(Stream.Null), backend == TranslationBackend.Vulkan ? ReadGpuLayerSignalAsync(process.StandardError) : process.StandardError.BaseStream.CopyToAsync(Stream.Null));
         sampler = new Timer(_ => Sample(), null, TimeSpan.Zero, TimeSpan.FromMilliseconds(100));
         http = new HttpClient(new SocketsHttpHandler { UseProxy = false, AllowAutoRedirect = false, ConnectTimeout = TimeSpan.FromSeconds(2) })
         { BaseAddress = new Uri($"http://127.0.0.1:{port}/"), Timeout = Timeout.InfiniteTimeSpan };
         http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", key);
+    }
+    private async Task ReadGpuLayerSignalAsync(StreamReader reader)
+    {
+        // Never retain raw model/driver output. Only the numeric startup offload signal survives.
+        var line = new StringBuilder(512); var buffer = new char[1024]; bool overflow = false;
+        for (int count; (count = await reader.ReadAsync(buffer.AsMemory()).ConfigureAwait(false)) > 0;)
+            for (int i = 0; i < count; i++)
+            {
+                char value = buffer[i];
+                if (value == '\n')
+                {
+                    if (!overflow)
+                    {
+                        var match = Regex.Match(line.ToString(), @"offloaded (\d+)/\d+ layers to GPU");
+                        if (match.Success && int.TryParse(match.Groups[1].Value, out int layers)) Interlocked.Exchange(ref offloadedLayers, layers);
+                    }
+                    line.Clear(); overflow = false;
+                }
+                else if (line.Length < 512 && !overflow) line.Append(value);
+                else overflow = true;
+            }
     }
     private void Sample()
     {
@@ -79,26 +111,34 @@ internal sealed class NativeTranslationHost : IAsyncDisposable
         while (deadline.Elapsed < TimeSpan.FromSeconds(30))
         {
             token.ThrowIfCancellationRequested();
-            if (process.HasExited) throw new InvalidOperationException("本地推理器启动失败，请下载 / 修复模型，或更新微软 Visual C++ x64 运行库并核对安全软件提示。");
+            if (process.HasExited) throw new NativeWorkerException("本地推理器启动失败，请下载 / 修复模型，或更新微软 Visual C++ x64 运行库并核对安全软件提示。");
             using var attempt = CancellationTokenSource.CreateLinkedTokenSource(token); attempt.CancelAfter(TimeSpan.FromSeconds(1));
             try
             {
                 using var response = await http.GetAsync("health", HttpCompletionOption.ResponseHeadersRead, attempt.Token).ConfigureAwait(false);
-                if (response.IsSuccessStatusCode && !process.HasExited) return;
+                if (response.IsSuccessStatusCode && !process.HasExited)
+                {
+                    if (Backend == TranslationBackend.Vulkan)
+                    {
+                        for (int i = 0; i < 10 && OffloadedLayers == 0; i++) await Task.Delay(50, token).ConfigureAwait(false);
+                        if (OffloadedLayers == 0) throw new NativeWorkerException("GPU 未实际加载模型层，已准备回退 CPU。");
+                    }
+                    return;
+                }
             }
             catch (HttpRequestException) { }
             catch (OperationCanceledException) when (!token.IsCancellationRequested) { }
             await Task.Delay(100, token).ConfigureAwait(false);
         }
-        throw new TimeoutException("本地模型加载超过 30 秒，已停止；请重试或导出诊断包。");
+        throw new NativeWorkerException("本地模型加载超过 30 秒，已停止；请重试或导出诊断包。");
     }
     public async Task<JsonDocument> PostAsync(string path, object body, CancellationToken token)
     {
-        if (process.HasExited) throw new InvalidOperationException("本地翻译推理器已停止，请重试。");
+        if (process.HasExited) throw new NativeWorkerException("本地翻译推理器已停止，请重试。");
         using var registration = token.Register(Kill);
         using var request = new HttpRequestMessage(HttpMethod.Post, path) { Content = JsonContent.Create(body) };
         using var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, token).ConfigureAwait(false);
-        if (!response.IsSuccessStatusCode) throw new InvalidOperationException("本地模型拒绝请求，请缩短原文或下载 / 修复模型。");
+        if (!response.IsSuccessStatusCode) throw new NativeWorkerException("本地模型拒绝请求，请缩短原文或下载 / 修复模型。");
         await using var input = await response.Content.ReadAsStreamAsync(token).ConfigureAwait(false);
         using var buffer = new MemoryStream(); var block = new byte[8192];
         for (int count; (count = await input.ReadAsync(block, token).ConfigureAwait(false)) > 0;)
@@ -126,7 +166,7 @@ internal sealed class NativeTranslationHost : IAsyncDisposable
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)] private static extern SafeFileHandle CreateJobObject(IntPtr security, string? name);
     [DllImport("kernel32.dll", SetLastError = true)] private static extern bool SetInformationJobObject(SafeFileHandle job, int type, ref ExtendedLimits limits, uint length);
     [DllImport("kernel32.dll", SetLastError = true)] private static extern bool AssignProcessToJobObject(SafeFileHandle job, IntPtr process);
-    private static SafeFileHandle AttachJob(Process process)
+    internal static SafeFileHandle AttachJob(Process process)
     {
         var job = CreateJobObject(IntPtr.Zero, null);
         var limits = new ExtendedLimits { Basic = new BasicLimits { Flags = 0x2000 } }; // KILL_ON_JOB_CLOSE

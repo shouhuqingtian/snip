@@ -15,11 +15,11 @@ try {
     $output = Join-Path $root 'artifacts/validation'
     New-Item -ItemType Directory -Path $output -Force | Out-Null
     $results = [System.Collections.Generic.List[object]]::new()
-    function Check([string]$Name, [string[]]$Arguments, [switch]$AllowsMissingOcr, [switch]$AllowsMissingShare) {
+    function Check([string]$Name, [string[]]$Arguments, [switch]$AllowsMissingOcr, [switch]$AllowsMissingShare, [switch]$AllowsMissingGpu) {
         $watch = [System.Diagnostics.Stopwatch]::StartNew()
         & dotnet @Arguments 2>&1 | Tee-Object -FilePath (Join-Path $output "$Name.log") | Out-Host
         $code = $LASTEXITCODE
-        $outcome = if ($code -eq 0) { 'Passed' } elseif (($AllowsMissingOcr -or $AllowsMissingShare) -and $code -eq 2) { 'Unrun' } else { 'Failed' }
+        $outcome = if ($code -eq 0) { 'Passed' } elseif (($AllowsMissingOcr -or $AllowsMissingShare -or $AllowsMissingGpu) -and $code -eq 2) { 'Unrun' } else { 'Failed' }
         $results.Add([pscustomobject]@{ Name = $Name; Outcome = $outcome; ExitCode = $code; ElapsedSeconds = [Math]::Round($watch.Elapsed.TotalSeconds, 2) })
         $results | ConvertTo-Json -Depth 4 -AsArray | Set-Content (Join-Path $output "validation-$($Scope.ToLower()).json") -Encoding utf8
         if ($outcome -eq 'Unrun') { Write-Output "::warning::$Name unrun: required Windows capability is unavailable; see $Name.log." }
@@ -47,6 +47,8 @@ try {
         Check 'clipboard-ui' @('run','--project','tests/Snip.Windows.Checks/Snip.Windows.Checks.csproj','-c','Release','--no-build','--','--clipboard-ui')
         Check 'ui-gallery' @('run','--project','tests/Snip.Windows.Checks/Snip.Windows.Checks.csproj','-c','Release','--no-build','--','--ui-gallery')
         Check 'translation' @('run','--project','tests/Snip.Translation.Checks/Snip.Translation.Checks.csproj','-c','Release','--no-build','--',$ModelPath,'--install')
+        Check 'gpu-runtime' @('run','--project','tests/Snip.Translation.Checks/Snip.Translation.Checks.csproj','-c','Release','--no-build','--',$ModelPath,'--gpu-runtime')
+        Check 'gpu-inference' @('run','--project','tests/Snip.Translation.Checks/Snip.Translation.Checks.csproj','-c','Release','--no-build','--',$ModelPath,'--gpu-inference') -AllowsMissingGpu
         Check 'chrome' @('run','--project','tests/Snip.Windows.Checks/Snip.Windows.Checks.csproj','-c','Release','--no-build','--','--chrome')
         Check 'ocr' @('run','--project','tests/Snip.Windows.Checks/Snip.Windows.Checks.csproj','-c','Release','--no-build','--','--ocr') -AllowsMissingOcr
         Check 'ocr-ui' @('run','--project','tests/Snip.Windows.Checks/Snip.Windows.Checks.csproj','-c','Release','--no-build','--','--ocr-ui') -AllowsMissingOcr

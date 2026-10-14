@@ -1,4 +1,4 @@
-自用截图 2.0.14 第三方组件与模型说明
+自用截图 2.0.16 第三方组件与模型说明
 
 唯一离线中英翻译模型：Tencent Hy-MT2-1.8B，Apache License 2.0。
 原始模型：https://huggingface.co/tencent/Hy-MT2-1.8B
@@ -11,7 +11,7 @@ SHA256：d843f052e1adb61197156f534099cf9fb58353af7cc30999a2f1f717819936b8
 本项目没有重新训练权重，量化模型为第三方转换。
 Apache-2.0 完整许可随便携包提供在 licenses/Hy-MT2-Apache-2.0.txt，源码位于 docs/licenses。
 
-本地 CPU 推理器：llama.cpp b11612，MIT License。
+本地 CPU / Vulkan GPU 推理器：llama.cpp b11612，MIT License。
 官方来源：https://github.com/ggml-org/llama.cpp/releases/tag/b11612
 Copyright (c) 2023-2026 The ggml authors
 MIT 完整许可随便携包提供在 licenses/llama.cpp-MIT.txt，源码位于 docs/licenses。
@@ -22,3 +22,7 @@ MIT 完整许可随便携包提供在 licenses/llama.cpp-MIT.txt，源码位于 
 版本与 SHA256（包括原生可执行文件和依赖库）固定并校验。
 2.0.14 不再引用 Microsoft.ML.OnnxRuntime、Microsoft.ML.Tokenizers 或旧 OPUS 模型。
 表情图像由本软件绘制，不包含微信专有表情资源。
+
+2.0.16 的 Vulkan GPU 支持使用同版本 llama.cpp 官方 Windows x64 Vulkan 发行包。
+GPU 运行库与 CPU 运行库分目录安装，两者复用同一模型文件。
+Vulkan 设备能力由系统显卡驱动提供；本软件不安装或分发显卡驱动。

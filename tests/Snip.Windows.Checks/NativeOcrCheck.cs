@@ -77,6 +77,8 @@ internal static class NativeOcrCheck
                     if (window.FindName("RecognizedText") is not TextBox sourceBox || sourceBox.Text != vm.Source ||
                         window.FindName("TranslatedText") is not TextBox translatedBox || translatedBox.Text != vm.Translated || !translatedBox.IsVisible)
                         throw new InvalidOperationException("Native OCR/translation text was not visible in the result window.");
+                    string expectedBackend = metrics?.Backend == TranslationBackend.Vulkan ? "计算方式：GPU" : "计算方式：CPU";
+                    if (!vm.ComputeStatus.StartsWith(expectedBackend, StringComparison.Ordinal)) throw new InvalidOperationException("Visible compute status does not match actual backend.");
                     Console.WriteLine("PASS actual result window: native English OCR → real offline translation → both visible results; window stays open.");
                     if (metrics is null || !metrics.ProcessExited || metrics.PeakCombinedWorkingSetBytes <= 0 || metrics.PeakCombinedWorkingSetBytes > 2L * 1024 * 1024 * 1024)
                         throw new InvalidOperationException("4K result UI and native model cleanup/memory budget failed.");

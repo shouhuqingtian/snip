@@ -34,12 +34,16 @@ public sealed class TextResultViewModel : ObservableObject, IDisposable
     private bool busy, downloading, disposed, initialized, userCancelled;
     private bool autoTranslate, showTranslation;
     private double progress;
+    private TranslationComputeMode computeMode;
+    private string computeStatus = "本地计算：尚未运行";
     public TextResultViewModel(BitmapSource image, IOcrService ocr, ModelStore models, ITranslationService translator, DiagnosticJournal? diagnostics = null, ITextClipboardService? clipboard = null, ITranslationService? onlineTranslator = null, Action? configureOnline = null, bool defaultOnline = false)
     {
         snapshot = image.IsFrozen ? image : image.Clone(); snapshot.Freeze();
         this.ocr = ocr; this.models = models; this.translator = translator;
         this.onlineTranslator = onlineTranslator; useOnlineTranslation = defaultOnline && onlineTranslator is not null;
         this.diagnostics = diagnostics;
+        try { computeMode = models.ComputeSettings.Read(); }
+        catch (InvalidOperationException error) { computeMode = TranslationComputeMode.Auto; diagnostics?.Record("translation-compute", "invalid-configuration", error: error); }
         this.clipboard = clipboard ?? new TextClipboardService();
         // No codec, WinRT or model calls in the constructor: first paint must not wait on native work.
         heartbeat.Tick += (_, _) => ShowStage();
@@ -60,6 +64,22 @@ public sealed class TextResultViewModel : ObservableObject, IDisposable
             await Task.Run(() => models.InstallAsync(updates, token), token);
             token.ThrowIfCancellationRequested(); Status = "Hy-MT2 中英互译模型和推理器已校验，可断网翻译。";
         }), Report, () => !Busy);
+        DownloadGpuCommand = new(() => Run("下载 GPU 运行库", TimeSpan.FromMinutes(5), async token =>
+        {
+            downloading = true; Notify(nameof(Indeterminate));
+            int loggedPercent = -1;
+            var updates = new Progress<DownloadProgress>(p =>
+            {
+                if (disposed || operation is null || operation.Token != token || token.IsCancellationRequested) return;
+                Progress = p.CompletedBytes * 100.0 / p.TotalBytes;
+                int bucket = (int)Progress / 10;
+                if (bucket != loggedPercent) { loggedPercent = bucket; diagnosticOperation?.Stage("gpu-download-progress", new { p.CompletedBytes, p.TotalBytes }); }
+                SetStage($"下载 GPU 运行库：{Progress:F1}%（约 {p.TotalBytes / 1000000} MB）");
+            });
+            await Task.Run(() => models.InstallGpuRuntimeAsync(updates, token), token);
+            token.ThrowIfCancellationRequested(); ComputeStatus = "GPU 运行库已校验；下次离线翻译时检测兼容 GPU。";
+            Status = "GPU 运行库已准备好，复用现有翻译模型；自动 / 优先 GPU 模式下可尝试加速。";
+        }), Report, () => !Busy && !UseOnlineTranslation);
         CopySourceCommand = new(() => CopyAsync(Source, false), Report, () => !disposed && copying is null && Source.Length > 0);
         CopyTranslationCommand = new(() => CopyAsync(Translated, true), Report, () => !disposed && copying is null && Translated.Length > 0);
         ConfigureOnlineCommand = new(configureOnline ?? (() => { }), () => configureOnline is not null && !Busy);
@@ -75,9 +95,26 @@ public sealed class TextResultViewModel : ObservableObject, IDisposable
     public bool UseOnlineTranslation
     {
         get => useOnlineTranslation;
-        set { if (!Busy && Set(ref useOnlineTranslation,value)) { Notify(nameof(TranslationActionText)); Notify(nameof(TranslationNotice)); Notify(nameof(WindowTitle)); } }
+        set { if (!Busy && Set(ref useOnlineTranslation,value)) { Notify(nameof(TranslationActionText)); Notify(nameof(TranslationNotice)); Notify(nameof(WindowTitle)); Notify(nameof(CanUseLocalCompute)); DownloadGpuCommand.Refresh(); } }
     }
     public bool CanChangeTranslationMode => !Busy;
+    public bool CanUseLocalCompute => !Busy && !UseOnlineTranslation;
+    public TranslationComputeMode ComputeMode
+    {
+        get => computeMode;
+        set
+        {
+            if (Busy || UseOnlineTranslation || computeMode == value || !Enum.IsDefined(value)) return;
+            try
+            {
+                models.ComputeSettings.Save(value); Set(ref computeMode, value);
+                ComputeStatus = value == TranslationComputeMode.Cpu ? "已保存：仅 CPU" : value == TranslationComputeMode.Gpu ? "已保存：优先 GPU，不可用时回退 CPU" : "已保存：自动选择 GPU / CPU";
+            }
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException or ArgumentException)
+            { diagnostics?.Record("translation-compute", "save-failed", error: error); ComputeStatus = "计算方式保存失败，原设置保留；请检查设置目录权限。"; Notify(); }
+        }
+    }
+    public string ComputeStatus { get => computeStatus; private set => Set(ref computeStatus, value); }
     public bool NeedsWindowsRuntime => ModelStore.NeedsWindowsRuntime || runtimeHelpRequested;
     public string TranslationActionText => UseOnlineTranslation ? "在线翻译" : "离线翻译";
     public string TranslationNotice => UseOnlineTranslation ? "原文将发送给所配置的大模型服务，按服务商规则计费。" : "Hy-MT2 专业中英翻译，文字留在本机。";
@@ -93,12 +130,13 @@ public sealed class TextResultViewModel : ObservableObject, IDisposable
     public string Translated { get => translated; private set { if (Set(ref translated, value)) CopyTranslationCommand.Refresh(); } }
     public string Status { get => status; private set => Set(ref status, value); }
     public string CopyStatus { get => copyStatus; private set => Set(ref copyStatus, value); }
-    public bool Busy { get => busy; private set { Set(ref busy, value); Notify(nameof(Indeterminate)); Notify(nameof(CanChangeTranslationMode)); OcrCommand.Refresh(); TranslateCommand.Refresh(); DownloadCommand.Refresh(); CancelCommand.Refresh(); ConfigureOnlineCommand.Refresh(); } }
+    public bool Busy { get => busy; private set { Set(ref busy, value); Notify(nameof(Indeterminate)); Notify(nameof(CanChangeTranslationMode)); Notify(nameof(CanUseLocalCompute)); OcrCommand.Refresh(); TranslateCommand.Refresh(); DownloadCommand.Refresh(); DownloadGpuCommand.Refresh(); CancelCommand.Refresh(); ConfigureOnlineCommand.Refresh(); } }
     public bool Indeterminate => Busy && !downloading;
     public double Progress { get => progress; private set => Set(ref progress, value); }
     public AsyncCommand OcrCommand { get; }
     public AsyncCommand TranslateCommand { get; }
     public AsyncCommand DownloadCommand { get; }
+    public AsyncCommand DownloadGpuCommand { get; }
     public AsyncCommand CopySourceCommand { get; }
     public AsyncCommand CopyTranslationCommand { get; }
     public RelayCommand CancelCommand { get; }
@@ -163,12 +201,14 @@ public sealed class TextResultViewModel : ObservableObject, IDisposable
     private async Task Translate(CancellationToken token)
     {
         bool online = UseOnlineTranslation;
+        ComputeStatus = online ? "在线翻译由服务商计算，本机 GPU 不启用" : "本地计算：正在准备";
         var service = online ? onlineTranslator : translator;
         bool available = service is not null && await Task.Run(() => service.IsAvailableAsync(token), token);
         token.ThrowIfCancellationRequested();
         if (!available)
         {
             if (Translated.Length == 0) ShowTranslation = false;
+            if (!online) ComputeStatus = "本地计算：未加载翻译模型";
             diagnosticOperation?.Stage("ocr-only-fallback", new { Online = online, CharacterCount = Source.Length });
             Status = online ? "文字已识别，可修改和复制。在线翻译尚未配置，请先打开在线设置；OCR 不需要翻译模型。"
                 : "文字已识别，可修改和复制。当前默认仅识别文字；需要翻译时可下载离线模型或配置在线服务。";
@@ -177,7 +217,8 @@ public sealed class TextResultViewModel : ObservableObject, IDisposable
         ShowTranslation = true;
         SetStage(online ? "正在连接在线翻译服务" : "正在校验并加载翻译模型");
         var input = Source; var selectedDirection = Direction;
-        diagnosticOperation?.Stage("translation-starting", new { Direction = selectedDirection, CharacterCount = input.Length, Online = online });
+        diagnosticOperation?.Stage("translation-starting", new { Direction = selectedDirection, CharacterCount = input.Length, Online = online, ComputeMode = ComputeMode.ToString() });
+        string? cpuFallback = null;
         string? loggedStage = null; int loggedSegments = -1, loggedTokens = -1;
         var updates = new Progress<TranslationProgress>(p =>
         {
@@ -187,6 +228,8 @@ public sealed class TextResultViewModel : ObservableObject, IDisposable
                 loggedStage = p.Stage; loggedSegments = p.CompletedSegments; loggedTokens = p.GeneratedTokens / 25;
                 diagnosticOperation?.Stage("translation-progress", new { EngineStage = p.Stage, p.CompletedSegments, p.TotalSegments, p.GeneratedTokens });
             }
+            if (p.Stage.Contains("回退 CPU", StringComparison.Ordinal) || p.Stage.Contains("运行库未安装", StringComparison.Ordinal)) cpuFallback = p.Stage;
+            if (p.Stage.StartsWith("计算方式：", StringComparison.Ordinal)) ComputeStatus = p.Stage == "计算方式：CPU" && cpuFallback is not null ? p.Stage + " · " + cpuFallback : p.Stage;
             SetStage(p.TotalSegments == 0 ? p.Stage : $"{p.Stage}：已完成 {p.CompletedSegments}/{p.TotalSegments} 段");
         });
         var result = await Task.Run(() => service!.TranslateAsync(input, selectedDirection, updates, token), token);
@@ -198,7 +241,7 @@ public sealed class TextResultViewModel : ObservableObject, IDisposable
     {
         if (Busy || disposed) return;
         using var current = new CancellationTokenSource(timeout); operation = current;
-        using var log = diagnostics?.Begin(name is "离线翻译" or "在线翻译" ? "translation" : name == "下载模型" ? "model-download" : "ocr",
+        using var log = diagnostics?.Begin(name is "离线翻译" or "在线翻译" ? "translation" : name is "下载模型" or "下载 GPU 运行库" ? "model-download" : "ocr",
             new { snapshot.PixelWidth, snapshot.PixelHeight, TimeoutSeconds = timeout.TotalSeconds });
         diagnosticOperation = log;
         userCancelled = false; downloading = false; Progress = 0; Busy = true; elapsed.Restart(); SetStage(name); heartbeat.Start();

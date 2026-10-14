@@ -1,5 +1,5 @@
 <Window x:Class="Snip.App.Views.TextResultWindow" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
- xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" Title="{Binding WindowTitle}" Width="1140" Height="760" MinWidth="850" MinHeight="700" WindowStartupLocation="CenterScreen">
+ xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:translation="clr-namespace:Snip.Translation;assembly=Snip.Translation" Title="{Binding WindowTitle}" Width="1140" Height="760" MinWidth="850" MinHeight="700" WindowStartupLocation="CenterScreen">
  <Window.Resources><BooleanToVisibilityConverter x:Key="BoolVisibility"/></Window.Resources>
  <DockPanel Margin="16">
   <DockPanel DockPanel.Dock="Top" Margin="8,0,8,8">
@@ -20,6 +20,16 @@
     <Button Content="在线设置" Style="{StaticResource QuietButton}" Command="{Binding ConfigureOnlineCommand}"/>
     <Button Content="下载 / 修复模型" Style="{StaticResource QuietButton}" Command="{Binding DownloadCommand}"/>
     <Button Content="取消操作" Style="{StaticResource QuietButton}" Command="{Binding CancelCommand}"/>
+   </WrapPanel></Border>
+   <Border Style="{StaticResource Card}" Padding="12,6" Margin="0,8,0,0"><WrapPanel>
+    <TextBlock Text="离线计算" Foreground="{StaticResource MutedBrush}" Margin="6,0,8,0" VerticalAlignment="Center"/>
+    <ComboBox x:Name="ComputeModeBox" SelectedValue="{Binding ComputeMode, Mode=TwoWay}" SelectedValuePath="Tag" IsEnabled="{Binding CanUseLocalCompute}" Width="198" ToolTip="Vulkan 支持兼容的 NVIDIA、AMD、Intel 显卡；无兼容设备或失败时回退 CPU。">
+     <ComboBoxItem Content="自动（GPU 可用时优先）" Tag="{x:Static translation:TranslationComputeMode.Auto}"/>
+     <ComboBoxItem Content="仅 CPU" Tag="{x:Static translation:TranslationComputeMode.Cpu}"/>
+     <ComboBoxItem Content="优先 GPU（可回退 CPU）" Tag="{x:Static translation:TranslationComputeMode.Gpu}"/>
+    </ComboBox>
+    <Button x:Name="DownloadGpuButton" Content="下载 / 修复 GPU 支持" Command="{Binding DownloadGpuCommand}" Style="{StaticResource QuietButton}" ToolTip="仅下载约 32 MB Vulkan 运行库，不重新下载翻译模型。"/>
+    <TextBlock Text="{Binding ComputeStatus}" Style="{StaticResource Subtitle}" FontSize="12" Margin="10,0,6,0" VerticalAlignment="Center"/>
    </WrapPanel></Border>
    <TextBlock Visibility="{Binding NeedsWindowsRuntime, Converter={StaticResource BoolVisibility}}" Style="{StaticResource Subtitle}" FontSize="12" Margin="6,8,0,0" TextWrapping="Wrap">离线翻译需要微软 Visual C++ x64 运行库：<Hyperlink NavigateUri="https://aka.ms/vs/17/release/vc_redist.x64.exe" RequestNavigate="RuntimeDownloadNavigate">微软官网下载</Hyperlink>，安装后重启软件。</TextBlock>
   </StackPanel>

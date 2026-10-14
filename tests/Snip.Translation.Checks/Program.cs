@@ -1,6 +1,11 @@
 using Snip.Translation;
 
-if (args.Length == 1 && args[0] == "--online") return await OnlineTranslationChecks.RunAsync();
+if (args.Length == 1 && args[0] == "--online")
+{
+    int compute = await ComputeBackendChecks.RunAsync();
+    return compute == 0 ? await OnlineTranslationChecks.RunAsync() : compute;
+}
+if (args.Length == 2 && args[1] is "--gpu-runtime" or "--gpu-inference") return await GpuRuntimeChecks.RunAsync(args[0], args[1] == "--gpu-inference");
 if (args.Length < 1 || args.Length > 2) { Console.Error.WriteLine("Pass a model directory and optional --install to download missing pinned files."); return 2; }
 var store = new ModelStore(args[0]); var translator = new OfflineTranslator(store);
 var metrics = new List<OfflineInferenceMetrics>();

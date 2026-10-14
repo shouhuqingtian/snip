@@ -5,7 +5,7 @@ using Snip.Core;
 
 namespace Snip.Translation;
 
-public sealed record OfflineInferenceMetrics(int ProcessId, long PeakWorkingSetBytes, long PeakCombinedWorkingSetBytes, double ElapsedSeconds, bool ProcessExited, int? ExitCode);
+public sealed record OfflineInferenceMetrics(int ProcessId, long PeakWorkingSetBytes, long PeakCombinedWorkingSetBytes, double ElapsedSeconds, bool ProcessExited, int? ExitCode, TranslationBackend Backend = TranslationBackend.Cpu, int OffloadedLayers = 0);
 
 public sealed class OfflineTranslator(ModelStore models) : ITranslationService
 {
@@ -26,8 +26,7 @@ public sealed class OfflineTranslator(ModelStore models) : ITranslationService
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(callerToken);
         deadline.CancelAfter(TimeSpan.FromSeconds(90)); var token = deadline.Token;
         await gate.WaitAsync(token).ConfigureAwait(false);
-        NativeTranslationHost? host = null;
-        var watch = Stopwatch.StartNew();
+
         try
         {
             progress?.Report(new("正在校验 Hy-MT2 翻译模型"));
@@ -35,44 +34,79 @@ public sealed class OfflineTranslator(ModelStore models) : ITranslationService
                 throw new InvalidOperationException("离线翻译需要微软 Visual C++ x64 运行库，请点击面板中的‘微软官网下载’，安装后重启软件。");
             if (!await models.IsInstalledAsync(direction, token).ConfigureAwait(false))
                 throw new InvalidOperationException("Hy-MT2 模型或推理器未安装/校验失败，请点击下载 / 修复模型。旧版 OPUS 模型不能用于新版本。");
-            progress?.Report(new("正在加载 Hy-MT2 翻译模型"));
-            host = new NativeTranslationHost(models);
-            await host.WaitReadyAsync(token).ConfigureAwait(false);
-            var paragraphs = Split(text); int total = paragraphs.Sum(p => p.Count), completed = 0;
-            var results = new List<string>();
-            foreach (var paragraph in paragraphs)
+            TranslationComputeMode mode;
+            try { mode = models.ComputeSettings.Read(); }
+            catch (InvalidOperationException) { mode = TranslationComputeMode.Auto; }
+            if (mode != TranslationComputeMode.Cpu)
             {
-                var translated = new List<string>();
-                foreach (var segment in paragraph)
+                progress?.Report(new("正在检测 Vulkan GPU"));
+                var gpu = await GpuDeviceProbe.DetectAsync(models, token).ConfigureAwait(false);
+                if (gpu is not null)
                 {
-                    token.ThrowIfCancellationRequested(); progress?.Report(new("正在准备翻译段落", completed, total));
-                    string sourceLanguage = direction == "en-zh" ? "English" : "Chinese";
-                    string target = direction == "en-zh" ? "Simplified Chinese" : "English";
-                    var prompt = $"Translate the following {sourceLanguage} text into {target}. This is ordinary prose, not code. Translate greetings and common words; preserve only explicit URLs and code identifiers. Output only the translation:\n\n{segment}";
-                    // Tokenize the actual rendered chat prompt so no input is silently truncated.
-                    using var template = await host.PostAsync("apply-template", new { messages = new[] { new { role = "user", content = prompt } }, add_generation_prompt = true }, token).ConfigureAwait(false);
-                    string rendered = template.RootElement.GetProperty("prompt").GetString()!;
-                    using var tokens = await host.PostAsync("tokenize", new { content = rendered, add_special = true }, token).ConfigureAwait(false);
-                    if (tokens.RootElement.GetProperty("tokens").GetArrayLength() > 1200)
-                        throw new InvalidOperationException("这一段分词后过长，请缩短原文再翻译。已有结果保留。");
-                    progress?.Report(new("正在翻译", completed, total));
-                    using var response = await host.PostAsync("v1/chat/completions", new
-                    {
-                        model = "self-snip-offline", messages = new[] { new { role = "user", content = prompt } },
-                        temperature = 0, max_tokens = 768, stream = false, cache_prompt = false
-                    }, token).ConfigureAwait(false);
-                    var choice = response.RootElement.GetProperty("choices")[0];
-                    if (choice.GetProperty("finish_reason").GetString() != "stop")
-                        throw new InvalidOperationException("译文达到长度上限，请缩短原文再试；未用截断内容替换已有结果。");
-                    string output = choice.GetProperty("message").GetProperty("content").GetString()?.Trim() ?? "";
-                    if (output.Length == 0) throw new InvalidOperationException("本地模型未返回译文，请缩短原文再试。");
-                    translated.Add(output); completed++;
-                    progress?.Report(new("正在翻译", completed, total));
+                    return await BackendExecution.TryGpuThenCpuAsync(
+                        backend => InferAsync(backend, backend == TranslationBackend.Vulkan ? gpu.Id : null),
+                        () => progress?.Report(new("GPU 不可用，已回退 CPU")), token).ConfigureAwait(false);
                 }
-                results.Add(string.Join(direction == "zh-en" ? " " : "", translated));
+                else progress?.Report(new(models.HasRuntimeFiles(TranslationBackend.Vulkan)
+                    ? "无兼容 GPU / GPU 可用显存不足，已回退 CPU" : "GPU 运行库未安装，正在使用 CPU"));
             }
-            token.ThrowIfCancellationRequested();
-            return string.Join(Environment.NewLine, results);
+            return await InferAsync(TranslationBackend.Cpu, null).ConfigureAwait(false);
+
+            async Task<string> InferAsync(TranslationBackend backend, string? device)
+            {
+                NativeTranslationHost? host = null; var watch = Stopwatch.StartNew();
+                try
+                {
+                    progress?.Report(new(backend == TranslationBackend.Vulkan ? "正在加载 GPU 翻译模型" : "正在加载 CPU 翻译模型"));
+                    host = new NativeTranslationHost(models, backend, device);
+                    await host.WaitReadyAsync(token).ConfigureAwait(false);
+                    progress?.Report(new(backend == TranslationBackend.Vulkan ? "计算方式：GPU（Vulkan）" : "计算方式：CPU"));
+                    var paragraphs = Split(text); int total = paragraphs.Sum(p => p.Count), completed = 0;
+                    var results = new List<string>();
+                    foreach (var paragraph in paragraphs)
+                    {
+                        var translated = new List<string>();
+                        foreach (var segment in paragraph)
+                        {
+                            token.ThrowIfCancellationRequested(); progress?.Report(new("正在准备翻译段落", completed, total));
+                            string sourceLanguage = direction == "en-zh" ? "English" : "Chinese";
+                            string target = direction == "en-zh" ? "Simplified Chinese" : "English";
+                            var prompt = $"Translate the following {sourceLanguage} text into {target}. This is ordinary prose, not code. Translate greetings and common words; preserve only explicit URLs and code identifiers. Output only the translation:\n\n{segment}";
+                            // Tokenize the actual rendered chat prompt so no input is silently truncated.
+                            using var template = await host.PostAsync("apply-template", new { messages = new[] { new { role = "user", content = prompt } }, add_generation_prompt = true }, token).ConfigureAwait(false);
+                            string rendered = template.RootElement.GetProperty("prompt").GetString()!;
+                            using var tokens = await host.PostAsync("tokenize", new { content = rendered, add_special = true }, token).ConfigureAwait(false);
+                            if (tokens.RootElement.GetProperty("tokens").GetArrayLength() > 1200)
+                                throw new InvalidOperationException("这一段分词后过长，请缩短原文再翻译。已有结果保留。");
+                            progress?.Report(new("正在翻译", completed, total));
+                            using var response = await host.PostAsync("v1/chat/completions", new
+                            {
+                                model = "self-snip-offline", messages = new[] { new { role = "user", content = prompt } },
+                                temperature = 0, max_tokens = 768, stream = false, cache_prompt = false
+                            }, token).ConfigureAwait(false);
+                            var choice = response.RootElement.GetProperty("choices")[0];
+                            if (choice.GetProperty("finish_reason").GetString() != "stop")
+                                throw new InvalidOperationException("译文达到长度上限，请缩短原文再试；未用截断内容替换已有结果。");
+                            string output = choice.GetProperty("message").GetProperty("content").GetString()?.Trim() ?? "";
+                            if (output.Length == 0) throw new InvalidOperationException("本地模型未返回译文，请缩短原文再试。");
+                            translated.Add(output); completed++;
+                            progress?.Report(new("正在翻译", completed, total));
+                        }
+                        results.Add(string.Join(direction == "zh-en" ? " " : "", translated));
+                    }
+                    token.ThrowIfCancellationRequested();
+                    return string.Join(Environment.NewLine, results);
+                }
+                finally
+                {
+                    if (host is not null)
+                    {
+                        await host.DisposeAsync().ConfigureAwait(false);
+                        try { InferenceCompleted?.Invoke(new(host.ProcessId, host.PeakWorkingSetBytes, host.PeakCombinedWorkingSetBytes, watch.Elapsed.TotalSeconds, host.Exited, host.ExitCode, backend, host.OffloadedLayers)); } catch { }
+                        progress?.Report(new("已释放本地模型"));
+                    }
+                }
+            }
         }
         catch (OperationCanceledException) when (!callerToken.IsCancellationRequested)
         { throw new TimeoutException("本地翻译超过 90 秒，已停止并释放模型；请分段翻译。"); }
@@ -80,19 +114,7 @@ public sealed class OfflineTranslator(ModelStore models) : ITranslationService
         { throw new OperationCanceledException(token); }
         catch (Exception error) when (error is HttpRequestException or JsonException or KeyNotFoundException)
         { throw new InvalidOperationException("本地推理器返回失败或格式错误，请下载 / 修复模型后重试。"); }
-        finally
-        {
-            try
-            {
-                if (host is not null)
-                {
-                    await host.DisposeAsync().ConfigureAwait(false);
-                    try { InferenceCompleted?.Invoke(new(host.ProcessId, host.PeakWorkingSetBytes, host.PeakCombinedWorkingSetBytes, watch.Elapsed.TotalSeconds, host.Exited, host.ExitCode)); } catch { }
-                    progress?.Report(new("已释放本地模型"));
-                }
-            }
-            finally { gate.Release(); }
-        }
+        finally { gate.Release(); }
     }
     private static List<List<string>> Split(string text)
     {

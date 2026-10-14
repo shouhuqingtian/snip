@@ -71,6 +71,25 @@ internal static class TextWindowChecks
             Require(!Directory.Exists(Path.Combine(folder, "no-models")) && !File.Exists(Path.Combine(folder, "no-online.json")), "OCR-only fallback installed a model or wrote online settings.");
             window.Close(); Console.WriteLine("PASS real FeatureHub: no model or online settings keeps editable, copyable OCR for automatic and manual translation.");
 
+            stage = "compute settings actual XAML and restart";
+            var computeModels = new ModelStore(Path.Combine(folder, "compute-models"));
+            var compute = new TextResultViewModel(image, new FakeOcr(), computeModels, new FakeTranslation());
+            window = new TextResultWindow(compute); window.Show();
+            PumpUntil(() => !compute.Busy && compute.Source.Length > 0, TimeSpan.FromSeconds(8));
+            var computeBox = (ComboBox)window.FindName("ComputeModeBox");
+            computeBox.SelectedValue = TranslationComputeMode.Gpu;
+            Require(compute.ComputeMode == TranslationComputeMode.Gpu && new ModelStore(computeModels.DirectoryPath).ComputeSettings.Read() == TranslationComputeMode.Gpu,
+                "GPU preference did not persist through actual XAML.");
+            Require(!File.Exists(computeModels.ModelPath) && !computeModels.HasRuntimeFiles(TranslationBackend.Cpu), "Changing a preference downloaded models or a runtime.");
+            compute.UseOnlineTranslation = true; window.UpdateLayout();
+            Require(!computeBox.IsEnabled && window.FindName("DownloadGpuButton") is Button gpuDownload && !gpuDownload.IsEnabled,
+                "Online mode left local GPU controls enabled.");
+            Require(compute.DownloadGpuCommand.CanExecute(null) == false, "Online mode can start a GPU download.");
+            window.Close();
+            using (var restarted = new TextResultViewModel(image, new FakeOcr(), computeModels, new FakeTranslation()))
+                Require(restarted.ComputeMode == TranslationComputeMode.Gpu, "Restart lost GPU preference.");
+            Console.WriteLine("PASS actual compute mode selector persists; selecting a mode does not download; online mode disables local GPU controls.");
+
             stage = "missing Windows OCR language component";
             window = Show(true, new NoLanguageOcr());
             text = (TextResultViewModel)window.DataContext;
