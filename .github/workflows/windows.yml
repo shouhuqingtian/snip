@@ -80,7 +80,15 @@ jobs:
         run: |
           dotnet run --project tests/Snip.Windows.Checks/Snip.Windows.Checks.csproj -c Release --no-build -- --ui-gallery
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Verify UI, translation, browser and OCR before packaging
+      - name: Verify browser capture before model checks
+        # Browser regressions should surface before model inference/download checks.
+        # The complete desktop suite below also covers this scenario in its ordinary sequence.
+        shell: pwsh
+        timeout-minutes: 3
+        run: |
+          dotnet run --project tests/Snip.Windows.Checks/Snip.Windows.Checks.csproj -c Release --no-build -- --chrome
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Verify complete UI, translation, browser and OCR suite before packaging
         shell: pwsh
         timeout-minutes: 18
         run: ./packaging/Validate.ps1 -Scope Desktop -NoBuild

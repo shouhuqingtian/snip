@@ -89,6 +89,9 @@ internal static class ChromeCaptureCheck
                 throw new InvalidOperationException("Current-page capture restarted at the top or lost the remaining document.");
             Console.WriteLine($"PASS real Chrome from current viewport to bottom: {suffix.PixelWidth}x{suffix.PixelHeight}; excludes content above.");
             stage = "current viewport already at bottom";
+            // Chrome can expose a ScrollPattern on demand even with renderer accessibility disabled.
+            // Capture then restores the original position, so explicitly place this fixture at the bottom.
+            Wheel(region, -12000); Task.Delay(650).GetAwaiter().GetResult();
             var bottom = Capture(region, BrowserCaptureMode.FromCurrentPage);
             if (bottom.PixelHeight >= 1000 || bottom.PixelWidth != entire.PixelWidth) throw new InvalidOperationException("At-bottom current capture must return the visible viewport.");
             Console.WriteLine("PASS current mode at page bottom returns one viewport without failure.");
