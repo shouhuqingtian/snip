@@ -25,7 +25,6 @@ public sealed class BrowserScrollCapture(IDesktopCaptureService capture)
     [DllImport("user32.dll")] private static extern bool IsWindowVisible(IntPtr hwnd);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern int GetClassName(IntPtr hwnd, System.Text.StringBuilder name, int size);
     [DllImport("user32.dll", SetLastError = true)] private static extern uint SendInput(uint count, Input[] inputs, int size);
-    [DllImport("user32.dll", SetLastError = true)] private static extern IntPtr SendMessageTimeout(IntPtr hwnd, uint message, IntPtr wParam, IntPtr lParam, uint flags, uint timeout, out IntPtr result);
     [StructLayout(LayoutKind.Sequential)] private struct Input { public uint Type; public InputUnion Data; }
     // Include the full native union so INPUT has the correct size on both architectures.
     [StructLayout(LayoutKind.Explicit)] private struct InputUnion
@@ -233,12 +232,16 @@ public sealed class BrowserScrollCapture(IDesktopCaptureService capture)
             var input = new Input { Type = 0, Data = new InputUnion { Mouse = new MouseInput { Wheel = unchecked((uint)-wheelUnits), Flags = 0x0800, Extra = new UIntPtr(0x534E4950) } } };
             if (keepPointer && GetPhysicalCursorPos(out var pointer) && !region.Contains(new(pointer.X, pointer.Y)))
             {
-                // While dragging below the viewport, route only to this browser; never scroll
-                // an unrelated window under the cursor or move the user's physical pointer.
-                int x = (int)Math.Clamp(pointer.X, region.X + 2, region.Right - 2), y = (int)region.Bottom - 4;
-                using var pixels = new PhysicalDesktopScope();
-                if (SendMessageTimeout(target, 0x020A, new(unchecked((uint)-wheelUnits << 16)), new((y & 65535) << 16 | x & 65535), 2, 1000, out _) == IntPtr.Zero)
-                    throw new InvalidOperationException("无法向目标浏览器发送边缘滚动，请保持浏览器在前台后重试。");
+                // SendInput serializes the three tagged records without interleaving other input.
+                // Route the wheel over the target viewport and immediately restore the pointer;
+                // the drag controller ignores only these tagged moves, retaining the user's endpoint.
+                double left = layout.Min(d => d.Bounds.X), top = layout.Min(d => d.Bounds.Y);
+                double width = layout.Max(d => d.Bounds.Right) - left, height = layout.Max(d => d.Bounds.Bottom) - top;
+                Input Move(int x, int y) => new() { Type = 0, Data = new() { Mouse = new() {
+                    X = Math.Clamp((int)Math.Ceiling((x - left) * 65536 / width), 0, 65535),
+                    Y = Math.Clamp((int)Math.Ceiling((y - top) * 65536 / height), 0, 65535), Flags = 0xC001, Extra = new UIntPtr(0x534E4950) } } };
+                var burst = new[] { Move((int)Math.Clamp(pointer.X, region.X + 2, region.Right - 2), (int)region.Bottom - 4), input, Move(pointer.X, pointer.Y) };
+                if (SendInput(3, burst, Marshal.SizeOf<Input>()) != 3) throw new InvalidOperationException("浏览器拒绝边缘滚动输入，请让浏览器和截图软件都以普通用户权限运行。");
             }
             else if (SendInput(1, [input], Marshal.SizeOf<Input>()) != 1) throw new InvalidOperationException("浏览器拒绝滚轮输入。请让浏览器和截图软件都以普通用户权限运行。");
             // Wait for smooth scrolling to settle, rather than photographing an intermediate animation.

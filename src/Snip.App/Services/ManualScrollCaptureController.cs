@@ -128,7 +128,7 @@ public sealed class ManualScrollCaptureController : IDisposable
             var local = new PixelPoint(point.X - Region.X, point.Y - Region.Y);
             if (kind == 0x0201 && Region.Contains(physical) && Control.Begin(local))
             { RefreshSelection(); return new(1); }
-            if (kind == 0x0200 && Control.Dragging) { Control.Move(local); RefreshSelection(); }
+            if (kind == 0x0200 && Control.Dragging && Marshal.ReadIntPtr(data, 24).ToInt64() != 0x534E4950) { Control.Move(local); RefreshSelection(); }
             if (kind == 0x0202 && Control.Dragging)
             { Control.Release(local); RefreshSelection(); return new(1); }
             // The program owns scrolling until release; don't allow an uncontrolled wheel jump.
