@@ -68,7 +68,7 @@ WPF 应用和 Windows 检查只能在 Windows 运行。Linux 可使用 Windows t
 | `Snip.Core` | 图像像素坐标、选区、标注、历史、OCR/AI 接口 |
 | `Snip.Infrastructure` | Windows 屏幕采集、全局快捷键、托盘、绘图、导出 |
 | `Snip.App` | WPF UI、ViewModel、应用服务与依赖组合 |
-| `Snip.Translation` | 本地 ONNX 翻译、模型清单及下载校验 |
+| `Snip.Translation` | 单一 Hy-MT2 GGUF 翻译、CPU 进程生命周期及下载校验 |
 | `Snip.Core.Tests` | 不依赖桌面的核心回归测试 |
 | `Snip.Windows.Checks` | STA 环境下的渲染、PNG 及编辑行为检查 |
 | `packaging` | 自包含发布与 NSIS 配置 |
@@ -77,13 +77,13 @@ WPF 应用和 Windows 检查只能在 Windows 运行。Linux 可使用 Windows t
 
 ## 扩展
 
-OCR/AI 契约位于 `Snip.Core/Services.cs`。后续在 Infrastructure 中实现 `IOcrService` / `IAiImageService`，在组合根注入，保持 ViewModel 与供应商无关。在线 OCR/AI 供应商留待后续；当前识别与翻译不上传图片或文字，联网仅用于下载模型。
+OCR/AI 契约位于 `Snip.Core/Services.cs`。后续在 Infrastructure 中实现 `IOcrService` / `IAiImageService`，在组合根注入，保持 ViewModel 与供应商无关。OCR 使用 Windows 本地组件；离线翻译不上传图片或文字。可选在线翻译已经支持 DeepSeek/通义千问，开启时会发送识别后的文字；模型首次下载需要联网。
 
 CI 分为快速编译/Core 检查、Windows 桌面集成验证、交付三个阶段。验证通过才发布便携版；普通 main 推送发布测试版，`v<版本>` 标签生成正式安装包并发布。文档和历史下载文件的单独修改不会触发全量流程（使用说明作为包内容仍会触发）。失败日志和截图保留为 Actions 附件，独立检查失败后仍继续收集其余检查结果。
 
 2.0.3 可从主窗口或托盘 **导出诊断包**，反馈问题时提供 ZIP 和操作现象即可；诊断记录不包含截图、识别文本或译文。具体修改文件、流程和验收边界见 [诊断与开发效率改进](docs/2.0.3诊断与开发效率改进.md)。
 
-离线翻译集成检查（模型目录可在首次使用时通过 --install 自动下载约 221 MB）：
+离线翻译集成检查（模型目录可在首次使用时通过 --install 自动下载约 951 MB 模型与约 20 MB 推理器）：
 
 ```powershell
 dotnet run --project tests/Snip.Translation.Checks/Snip.Translation.Checks.csproj -c Release -- .model-cache/translation --install
