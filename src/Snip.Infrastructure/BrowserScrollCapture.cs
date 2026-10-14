@@ -240,7 +240,7 @@ public sealed class BrowserScrollCapture(IDesktopCaptureService capture)
                 Input Move(int x, int y) => new() { Type = 0, Data = new() { Mouse = new() {
                     X = Math.Clamp((int)Math.Ceiling((x - left) * 65536 / width), 0, 65535),
                     Y = Math.Clamp((int)Math.Ceiling((y - top) * 65536 / height), 0, 65535), Flags = 0xC001, Extra = new UIntPtr(0x534E4950) } } };
-                var burst = new[] { Move((int)Math.Clamp(pointer.X, region.X + 2, region.Right - 2), (int)region.Bottom - 4), input, Move(pointer.X, pointer.Y) };
+                var burst = new[] { Move((int)Math.Clamp(pointer.X, region.X + 32, region.Right - 32), (int)(region.Y + region.Height / 2)), input, Move(pointer.X, pointer.Y) };
                 if (SendInput(3, burst, Marshal.SizeOf<Input>()) != 3) throw new InvalidOperationException("浏览器拒绝边缘滚动输入，请让浏览器和截图软件都以普通用户权限运行。");
             }
             else if (SendInput(1, [input], Marshal.SizeOf<Input>()) != 1) throw new InvalidOperationException("浏览器拒绝滚轮输入。请让浏览器和截图软件都以普通用户权限运行。");

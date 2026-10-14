@@ -18,6 +18,7 @@ namespace Snip.Windows.Checks;
 internal static class ChromeCaptureCheck
 {
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern int GetWindowText(IntPtr hwnd, StringBuilder title, int size);
+    [DllImport("user32.dll")] private static extern IntPtr SendMessageTimeout(IntPtr hwnd, uint message, IntPtr wParam, IntPtr lParam, uint flags, uint timeout, out IntPtr result);
     private static string Title(IntPtr hwnd) { var title = new StringBuilder(256); GetWindowText(hwnd, title, title.Capacity); return title.ToString(); }
     public static int Run()
     {
@@ -180,6 +181,13 @@ internal static class ChromeCaptureCheck
                 TextWindowChecks.PumpUntil(() => captureTask.IsCompleted || app.Windows.OfType<ManualScrollCaptureWindow>().Any(w => ((ManualScrollCaptureViewModel)w.DataContext).Ready), TimeSpan.FromSeconds(12));
                 if (captureTask.IsCompleted) throw new InvalidOperationException("Selected fixture capture stopped before dragging.");
                 var bar = app.Windows.OfType<ManualScrollCaptureWindow>().Single(); var viewport = bar.Viewport;
+                int Hit(double x, double y)
+                {
+                    using var physical = new PhysicalDesktopScope();
+                    if (SendMessageTimeout(selectedWindow.Handle, 0x0084, IntPtr.Zero, new(((int)y & 65535) << 16 | (int)x & 65535), 2, 500, out var result) == IntPtr.Zero) throw new InvalidOperationException("Browser native hit test failed.");
+                    return result.ToInt32();
+                }
+                Console.WriteLine($"::notice title=Edge wheel hit test::old-point={Hit(viewport.X + 385, viewport.Bottom - 4)}; new-point={Hit(viewport.X + 385, viewport.Y + viewport.Height / 2)}; HTCLIENT=1; HTBOTTOM=15");
                 ((Border)bar.Content).Background = Brushes.Magenta;
                 Move(new(viewport.X + 65, viewport.Y + 65));
                 Send([new() { Type = 0, Data = new() { Mouse = new() { Flags = 2 } } }]);
