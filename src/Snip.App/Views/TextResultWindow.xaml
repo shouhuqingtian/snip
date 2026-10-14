@@ -7,7 +7,7 @@
    <TextBlock Text="文字工作台" Style="{StaticResource PageTitle}" VerticalAlignment="Center"/>
   </DockPanel>
   <ScrollViewer x:Name="WorkspaceScroll" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" CanContentScroll="False">
-  <Grid MinWidth="786" MinHeight="596" Height="{Binding ElementName=WorkspaceScroll, Path=ViewportHeight, Mode=OneWay}">
+  <Grid MinWidth="786" MinHeight="596" Width="{Binding ElementName=WorkspaceScroll, Path=ViewportWidth, Mode=OneWay}" Height="{Binding ElementName=WorkspaceScroll, Path=ViewportHeight, Mode=OneWay}">
   <DockPanel Margin="8">
   <StackPanel DockPanel.Dock="Top" Margin="0,0,0,18"><TextBlock Text="从画面提取文字，修正、复制，或进行离线中英互译。" Style="{StaticResource Subtitle}" Margin="0,6,0,14"/>
    <Border Style="{StaticResource Card}" Padding="12,9"><WrapPanel VerticalAlignment="Center">

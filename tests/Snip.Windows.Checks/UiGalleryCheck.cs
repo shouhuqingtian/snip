@@ -45,7 +45,7 @@ internal static class UiGalleryCheck
                 foreach (var button in TextWindowChecks.Descendants<Button>(content).Where(b => b.IsVisible && b.ActualWidth > 0))
                 {
                     var bounds = button.TransformToAncestor(content).TransformBounds(new Rect(0, 0, button.ActualWidth, button.ActualHeight));
-                    Require(bounds.Left >= -1 && bounds.Top >= -1 && bounds.Right <= content.ActualWidth + 1 && bounds.Bottom <= content.ActualHeight + 1, "Button clipped outside the window in " + name);
+                    Require(bounds.Left >= -1 && bounds.Top >= -1 && bounds.Right <= content.ActualWidth + 1 && bounds.Bottom <= content.ActualHeight + 1, "Button clipped outside the window in " + name + ": " + button.Content + "; bounds=" + bounds + "; content=" + content.ActualWidth + "x" + content.ActualHeight);
                 }
                 if (window is TextResultWindow)
                     foreach (var field in TextWindowChecks.Descendants<TextBox>(content).Where(b => b.IsVisible && b.Name is "RecognizedText" or "TranslatedText"))
