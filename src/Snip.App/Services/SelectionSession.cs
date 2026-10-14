@@ -108,5 +108,5 @@ public sealed class SelectionSession : IDisposable
     public void Dispose() => Finish(null);
 }
 
-public enum SelectionAction { Editor, Pin, Scroll, WeChat, Ocr, Translate }
+public enum SelectionAction { Editor, Pin, Scroll, Share, Ocr, Translate }
 public sealed record SelectionResult(EditorViewModel Editor, PixelRect Region, SelectionAction Action, BrowserCaptureMode BrowserMode = BrowserCaptureMode.EntirePage);

@@ -6,4 +6,5 @@
     <ImplicitUsings>disable</ImplicitUsings>
   </PropertyGroup>
   <ItemGroup><ProjectReference Include="../Snip.Core/Snip.Core.csproj" /></ItemGroup>
+  <ItemGroup><EmbeddedResource Include="Assets/sheep.ico" LogicalName="Snip.Infrastructure.sheep.ico" /></ItemGroup>
 </Project>

@@ -37,10 +37,6 @@ public partial class App : Application
             catch (Exception error) { diagnostics.Record("diagnostics", "export-failed", error: error); Shutdown(1); }
             return;
         }
-        if (e.Args.Contains("--wechat-diagnostics", StringComparer.Ordinal))
-        {
-            var diagnostics = new WeChatDiagnosticsWindow(); diagnostics.Closed += (_, _) => Shutdown(); diagnostics.Show(); return;
-        }
         activation = new EventWaitHandle(false, EventResetMode.AutoReset, @"Local\SelfSnip.Activate.v1");
         instance = new Mutex(true, @"Local\SelfSnip.Instance.v1", out ownsMutex);
         if (!ownsMutex) { activation.Set(); Shutdown(); return; }

@@ -14,7 +14,7 @@ using Snip.Translation;
 
 namespace Snip.Windows.Checks;
 
-/// <summary>Renders the real WPF windows using public fixtures; never touches a user's desktop or WeChat.</summary>
+/// <summary>Renders the real WPF windows using public fixtures; never touches a user's screenshot or selects a live sharing target.</summary>
 internal static class UiGalleryCheck
 {
     public static int Run()
@@ -89,8 +89,7 @@ internal static class UiGalleryCheck
             Capture(result, "05-translation-compact", () => TextWindowChecks.PumpUntil(() => !((TextResultViewModel)result.DataContext).Busy && ((TextResultViewModel)result.DataContext).Translated.Length > 0, TimeSpan.FromSeconds(5)));
             Capture(new TextDialog("为画面添加一点说明。\n截图、标注，然后分享。", "#079B70", 24), "06-text-dialog");
             Capture(new StickerPicker(), "07-stickers");
-            Capture(new WeChatShareWindow(image, export), "08-wechat-share");
-            Capture(new WeChatDiagnosticsWindow(), "09-wechat-diagnostics");
+            Capture(new WindowsShareWindow(image, export, autoOpen: false), "08-windows-share");
             Capture(new PinManagerWindow([]), "10-pins-empty");
             var pin = new PinWindow(image, export); pin.Show();
             Capture(new PinManagerWindow([pin]), "11-pins-manager");
@@ -99,7 +98,7 @@ internal static class UiGalleryCheck
             using var selection = new SelectionSession(new(image, new(0, 0, 1280, 800), capture.GetDisplays()), capture, renderer, export, []);
             selection.Show(); selection.ViewModel.SetSelection(new(90, 110, 1050, 460)); selection.BeginEditing();
             Capture(app.Windows.OfType<SelectionWindow>().Single(), "13-selection-toolbar");
-            Console.WriteLine("PASS 13 actual UI previews; no live WeChat or user screenshot used."); return 0;
+            Console.WriteLine("PASS 12 actual UI previews; no share target invoked or user screenshot used."); return 0;
         }
         catch (Exception error)
         {

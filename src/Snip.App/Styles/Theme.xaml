@@ -5,6 +5,7 @@
  <SolidColorBrush x:Key="MutedBrush" Color="#64747B"/><SolidColorBrush x:Key="StrokeBrush" Color="#E1E8EB"/>
  <SolidColorBrush x:Key="DangerBrush" Color="#C64444"/>
  <Style TargetType="Window">
+  <Setter Property="Icon" Value="/Snip;component/Assets/sheep.ico"/>
   <Setter Property="FontFamily" Value="Microsoft YaHei UI, Segoe UI"/><Setter Property="FontSize" Value="13"/>
   <Setter Property="Background" Value="{StaticResource WindowBrush}"/><Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
   <Setter Property="UseLayoutRounding" Value="True"/><Setter Property="TextOptions.TextFormattingMode" Value="Display"/>

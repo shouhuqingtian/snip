@@ -19,13 +19,14 @@ public sealed class FeatureHub
     private readonly ModelStore models;
     private readonly ITranslationService translator;
     private readonly DiagnosticJournal? diagnostics;
+    private readonly Func<IntPtr, IWindowsShareSession>? shareFactory;
     public FeatureHub(AnnotationRenderer renderer, IImageExportService export, IDesktopCaptureService capture, PinManager pins, DiagnosticJournal? diagnostics = null,
-        IOcrService? ocr = null, ITranslationService? translator = null, ModelStore? models = null)
+        IOcrService? ocr = null, ITranslationService? translator = null, ModelStore? models = null, Func<IntPtr, IWindowsShareSession>? shareFactory = null)
     {
         this.renderer = renderer; this.export = export; this.capture = capture; this.pins = pins; this.diagnostics = diagnostics;
         this.ocr = ocr ?? new OfflineOcrService();
         this.models = models ?? new(System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SelfSnip", "Models"));
-        this.translator = translator ?? new OfflineTranslator(this.models);
+        this.translator = translator ?? new OfflineTranslator(this.models); this.shareFactory = shareFactory;
     }
     public TextResultWindow? ShowText(EditorViewModel vm, bool translate)
     {
@@ -63,7 +64,7 @@ public sealed class FeatureHub
         window.Toolbar.PinRequested += (_, _) => pins.Add(vm.Compose());
         window.Toolbar.OcrRequested += (_, _) => ShowText(vm, false);
         window.Toolbar.TranslateRequested += (_, _) => ShowText(vm, true);
-        window.Toolbar.WeChatRequested += (_, _) => ShowWeChat(vm, window);
+        window.Toolbar.ShareRequested += (_, _) => ShowShare(vm);
         window.Toolbar.WindowRequested += (_, _) => window.Activate();
         window.Toolbar.ScrollRequested += _ => MessageBox.Show(window, "请通过 Ctrl+Alt+A 选取 Chrome/Edge 网页正文，再选择网页截图模式。", "网页截图");
         window.Toolbar.SelectionRequested += (_, _) => MessageBox.Show(window, "请通过 Ctrl+Alt+A 重新选择屏幕区域。", "调整选区");
@@ -75,7 +76,11 @@ public sealed class FeatureHub
         };
         window.Show(); window.Activate(); return window;
     }
-    public void ShowWeChat(EditorViewModel vm, Window owner) => new WeChatShareWindow(vm.Compose(), export) { Owner = owner }.ShowDialog();
+    public WindowsShareWindow ShowShare(EditorViewModel vm)
+    {
+        var window = new WindowsShareWindow(vm.Compose(), export, diagnostics, createSession: shareFactory);
+        window.Show(); window.Activate(); return window;
+    }
     public async Task HandleAsync(SelectionResult result)
     {
         switch (result.Action)
@@ -84,8 +89,7 @@ public sealed class FeatureHub
             case SelectionAction.Translate: ShowText(result.Editor, true); break;
             case SelectionAction.Pin: pins.Add(result.Editor.Compose()); break;
             case SelectionAction.Editor: OpenEditor(result.Editor); break;
-            case SelectionAction.WeChat:
-                var editor = OpenEditor(result.Editor); ShowWeChat(result.Editor, editor); break;
+            case SelectionAction.Share: ShowShare(result.Editor); break;
             case SelectionAction.Scroll:
                 if (result.BrowserMode == BrowserCaptureMode.SelectedRegion) { OpenEditor(result.Editor); return; }
                 if (result.Editor.IsDirty && MessageBox.Show("自动长截图使用网页原画面，不包含当前标注。继续？", "自动长截图", MessageBoxButton.OKCancel) != MessageBoxResult.OK)

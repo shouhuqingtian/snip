@@ -12,7 +12,7 @@ namespace Snip.App.Views;
 public sealed class EditorToolbar : UserControl
 {
     public event EventHandler? CompleteRequested, CancelRequested, WindowRequested, SelectionRequested;
-    public event EventHandler? StickerRequested, PinRequested, OcrRequested, TranslateRequested, WeChatRequested;
+    public event EventHandler? StickerRequested, PinRequested, OcrRequested, TranslateRequested, ShareRequested;
     public event Action<BrowserCaptureMode>? ScrollRequested;
     public EditorToolbar()
     {
@@ -57,7 +57,7 @@ public sealed class EditorToolbar : UserControl
         var redo = Add("redo", "重做 Ctrl+Y", () => { }); redo.SetBinding(Button.CommandProperty, new Binding(nameof(EditorViewModel.RedoCommand)));
         var save = Add("save", "保存 PNG Ctrl+S", () => { }); save.SetBinding(Button.CommandProperty, new Binding(nameof(EditorViewModel.SaveCommand)));
         Add("pin", "钉在桌面", () => PinRequested?.Invoke(this, EventArgs.Empty));
-        Add("share", "选择微信联系人并发送", () => WeChatRequested?.Invoke(this, EventArgs.Empty));
+        Add("share", "Windows 系统分享", () => ShareRequested?.Invoke(this, EventArgs.Empty));
         Add("editor", "独立编辑窗口", () => WindowRequested?.Invoke(this, EventArgs.Empty));
         Add("adjust", "重新调整选区（清除当前标注）", () => SelectionRequested?.Invoke(this, EventArgs.Empty));
         Divider();

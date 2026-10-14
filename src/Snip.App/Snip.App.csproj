@@ -5,6 +5,7 @@
     <UseWPF>true</UseWPF>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <AssemblyName>Snip</AssemblyName>
+    <ApplicationIcon>../Snip.Infrastructure/Assets/sheep.ico</ApplicationIcon>
     <Product>自用截图</Product>
     <Description>Windows 区域截图与标注工具</Description>
   </PropertyGroup>
@@ -13,4 +14,5 @@
     <ProjectReference Include="../Snip.Infrastructure/Snip.Infrastructure.csproj" />
     <ProjectReference Include="../Snip.Translation/Snip.Translation.csproj" />
   </ItemGroup>
+  <ItemGroup><Resource Include="../Snip.Infrastructure/Assets/sheep.ico" Link="Assets/sheep.ico" /></ItemGroup>
 </Project>

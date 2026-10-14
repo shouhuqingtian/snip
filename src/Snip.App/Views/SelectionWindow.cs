@@ -33,7 +33,7 @@ public sealed class SelectionWindow : Window
         toolbar.StickerRequested += (_, _) => session.AddSticker(this);
         toolbar.PinRequested += (_, _) => session.Request(SelectionAction.Pin);
         toolbar.ScrollRequested += mode => session.Request(SelectionAction.Scroll, mode);
-        toolbar.WeChatRequested += (_, _) => session.Request(SelectionAction.WeChat);
+        toolbar.ShareRequested += (_, _) => session.Request(SelectionAction.Share);
         toolbar.OcrRequested += (_, _) => session.Request(SelectionAction.Ocr);
         toolbar.TranslateRequested += (_, _) => session.Request(SelectionAction.Translate);
         overlay.Children.Add(toolbar);

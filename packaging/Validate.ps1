@@ -15,14 +15,14 @@ try {
     $output = Join-Path $root 'artifacts/validation'
     New-Item -ItemType Directory -Path $output -Force | Out-Null
     $results = [System.Collections.Generic.List[object]]::new()
-    function Check([string]$Name, [string[]]$Arguments, [switch]$AllowsMissingOcr) {
+    function Check([string]$Name, [string[]]$Arguments, [switch]$AllowsMissingOcr, [switch]$AllowsMissingShare) {
         $watch = [System.Diagnostics.Stopwatch]::StartNew()
         & dotnet @Arguments 2>&1 | Tee-Object -FilePath (Join-Path $output "$Name.log") | Out-Host
         $code = $LASTEXITCODE
-        $outcome = if ($code -eq 0) { 'Passed' } elseif ($AllowsMissingOcr -and $code -eq 2) { 'Unrun' } else { 'Failed' }
+        $outcome = if ($code -eq 0) { 'Passed' } elseif (($AllowsMissingOcr -or $AllowsMissingShare) -and $code -eq 2) { 'Unrun' } else { 'Failed' }
         $results.Add([pscustomobject]@{ Name = $Name; Outcome = $outcome; ExitCode = $code; ElapsedSeconds = [Math]::Round($watch.Elapsed.TotalSeconds, 2) })
         $results | ConvertTo-Json -Depth 4 -AsArray | Set-Content (Join-Path $output "validation-$($Scope.ToLower()).json") -Encoding utf8
-        if ($outcome -eq 'Unrun') { Write-Output '::warning::Native English OCR unrun: Windows language component is missing.' }
+        if ($outcome -eq 'Unrun') { Write-Output "::warning::$Name unrun: required Windows capability is unavailable; see $Name.log." }
         if ($outcome -eq 'Failed' -and $env:GITHUB_ACTIONS -eq 'true') {
             # Readable through GitHub check annotations even when artifact/log download is unavailable.
             $detail = (Get-Content (Join-Path $output "$Name.log") -Tail 30 | Out-String)
@@ -37,6 +37,8 @@ try {
         # Independent checks all run, with their real exit codes preserved.
         Check 'windows' @('run','--project','tests/Snip.Windows.Checks/Snip.Windows.Checks.csproj','-c','Release','--no-build')
         Check 'editor-performance' @('run','--project','tests/Snip.Windows.Checks/Snip.Windows.Checks.csproj','-c','Release','--no-build','--','--editor-performance')
+        Check 'share-ui' @('run','--project','tests/Snip.Windows.Checks/Snip.Windows.Checks.csproj','-c','Release','--no-build','--','--share-ui')
+        Check 'share-native' @('run','--project','tests/Snip.Windows.Checks/Snip.Windows.Checks.csproj','-c','Release','--no-build','--','--share-native') -AllowsMissingShare
         Check 'text-ui' @('run','--project','tests/Snip.Windows.Checks/Snip.Windows.Checks.csproj','-c','Release','--no-build','--','--text-ui')
         Check 'clipboard-ui' @('run','--project','tests/Snip.Windows.Checks/Snip.Windows.Checks.csproj','-c','Release','--no-build','--','--clipboard-ui')
         Check 'ui-gallery' @('run','--project','tests/Snip.Windows.Checks/Snip.Windows.Checks.csproj','-c','Release','--no-build','--','--ui-gallery')
