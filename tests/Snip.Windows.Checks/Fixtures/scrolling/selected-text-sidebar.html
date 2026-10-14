@@ -1,0 +1,21 @@
+<!doctype html><meta charset="utf-8"><title>Snip selected drag fixture</title>
+<style>
+body{margin:0;background:#eef0f2;font:14px Arial;line-height:20px}
+main{margin:20px 32% 40px 5%;padding:24px;background:#fff}
+section{min-height:400px}h2{font-size:17px}p{margin:0 0 8px}::selection{background:#b7d7ff;color:#13273f}
+aside{position:fixed;right:4%;top:110px;width:24%;padding:16px;box-sizing:border-box;background:white;box-shadow:0 1px 3px #999}
+footer{position:fixed;bottom:12px;left:35%;background:#555;color:white;padding:8px}
+</style>
+<main id="article"></main><aside>Public details panel<br>Project: screenshot regression<br>Status: ready<br>Priority: normal<br>Owner: local fixture</aside><footer>Return · Examples · Create task</footer>
+<script>
+const article=document.querySelector('main');
+for(let i=0;i<10;i++){
+ const section=document.createElement('section');
+ const heading=document.createElement('h2'); heading.textContent=`Instruction ${i}: update document ${i*7919+41}`; section.append(heading);
+ for(let j=0;j<12;j++){
+  const p=document.createElement('p'); p.textContent=`${i}.${j} Review record ${i*313+j*17}, confirm the new supplier details, and preserve the original identifier before approval.`; section.append(p);
+ } article.append(section);
+}
+const range=document.createRange();range.selectNodeContents(article);getSelection().removeAllRanges();getSelection().addRange(range);
+document.addEventListener('mousedown',e=>{if(e.isTrusted && e.clientY>100)document.title='Snip selected drag fixture leaked mouse input';});
+</script>

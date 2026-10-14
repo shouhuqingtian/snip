@@ -9,8 +9,12 @@ public sealed class ManualScrollCaptureViewModel : ObservableObject
     private bool ready, canFinish;
     private int frames, height;
     public ManualScrollCaptureViewModel(ManualCaptureControl control, Action cancel)
+        : this(control.RequestFinish, cancel) { }
+    public ManualScrollCaptureViewModel(DragCaptureControl control, Action cancel)
+        : this(control.RequestFinish, cancel) { }
+    private ManualScrollCaptureViewModel(Action finish, Action cancel)
     {
-        CompleteCommand = new(control.RequestFinish, () => CanFinish);
+        CompleteCommand = new(finish, () => CanFinish);
         CancelCommand = new(cancel);
     }
     public string Status { get => status; private set => Set(ref status, value); }

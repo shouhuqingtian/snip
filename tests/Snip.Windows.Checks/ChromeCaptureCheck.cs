@@ -95,7 +95,7 @@ internal static class ChromeCaptureCheck
             var bottom = Capture(region, BrowserCaptureMode.FromCurrentPage);
             if (bottom.PixelHeight >= 1000 || bottom.PixelWidth != entire.PixelWidth) throw new InvalidOperationException("At-bottom current capture must return the visible viewport.");
             Console.WriteLine("PASS current mode at page bottom returns one viewport without failure.");
-            stage = "real manual toolbar, wheel input and finish";
+            stage = "real dragging at page edge and release";
             Wheel(region, 12000); Task.Delay(650).GetAwaiter().GetResult();
             var previousContext = SynchronizationContext.Current;
             SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext());
@@ -106,7 +106,7 @@ internal static class ChromeCaptureCheck
                 EditorViewModel Original() => new(desktop.CaptureRegion(region), renderer, export, new EditorDialogs(() => null));
                 var task = features.HandleAsync(new(Original(), region, SelectionAction.Scroll, BrowserCaptureMode.ManualScroll));
                 TextWindowChecks.PumpUntil(() => task.IsCompleted || app.Windows.OfType<ManualScrollCaptureWindow>().Any(w => ((ManualScrollCaptureViewModel)w.DataContext).Ready), TimeSpan.FromSeconds(12));
-                if (task.IsCompleted) { task.GetAwaiter().GetResult(); throw new InvalidOperationException("Manual capture returned before wheel/finish input."); }
+                if (task.IsCompleted) { task.GetAwaiter().GetResult(); throw new InvalidOperationException("Drag capture returned before mouse input."); }
                 var toolbar = app.Windows.OfType<ManualScrollCaptureWindow>().Single();
                 ((Border)toolbar.Content).Background = Brushes.Magenta; toolbar.UpdateLayout();
                 if (DesktopWindows.Foreground != window.Handle) throw new InvalidOperationException("Manual controls stole browser focus.");
@@ -114,29 +114,32 @@ internal static class ChromeCaptureCheck
                 var end = toolbar.PointToScreen(new Point(toolbar.ActualWidth, toolbar.ActualHeight));
                 if (!new PixelRect(bounds.X, bounds.Y, end.X - bounds.X, end.Y - bounds.Y).Intersect(region).IsEmpty)
                     throw new InvalidOperationException("Manual controls overlap the captured rectangle.");
-                for (int step = 0; step < 3; step++)
-                {
-                    Wheel(region, -120);
-                    var settled = Task.Delay(700); TextWindowChecks.PumpUntil(() => settled.IsCompleted || task.IsCompleted, TimeSpan.FromSeconds(3));
-                }
+                var viewport = toolbar.Viewport;
+                var startPoint = new Point(viewport.X + 80, viewport.Y + 80);
+                var edgePoint = new Point(viewport.X + 400, viewport.Bottom - 10);
+                SetPhysicalCursorPos((int)startPoint.X, (int)startPoint.Y);
+                Send([new() { Type = 0, Data = new() { Mouse = new() { Flags = 2 } } }]);
+                SetPhysicalCursorPos((int)edgePoint.X, (int)edgePoint.Y);
                 var vm = (ManualScrollCaptureViewModel)toolbar.DataContext;
-                TextWindowChecks.PumpUntil(() => task.IsCompleted || vm.CanFinish && vm.Frames > 1, TimeSpan.FromSeconds(5));
-                if (task.IsCompleted) { task.GetAwaiter().GetResult(); throw new InvalidOperationException("Manual capture stopped during user scrolling."); }
-                var finalViewport = desktop.CaptureRegion(region);
-                var done = TextWindowChecks.Descendants<Button>(toolbar).Single(b => b.Name == "CompleteManualButton");
-                Click(done.PointToScreen(new Point(done.ActualWidth / 2, done.ActualHeight / 2)));
+                TextWindowChecks.PumpUntil(() => task.IsCompleted || vm.Frames >= 3, TimeSpan.FromSeconds(12));
+                if (task.IsCompleted) { task.GetAwaiter().GetResult(); throw new InvalidOperationException("Drag capture stopped before release."); }
+                var releasePoint = new Point(edgePoint.X, viewport.Y + 200);
+                SetPhysicalCursorPos((int)releasePoint.X, (int)releasePoint.Y);
+                Send([new() { Type = 0, Data = new() { Mouse = new() { Flags = 4 } } }]);
                 TextWindowChecks.PumpUntil(() => task.IsCompleted, TimeSpan.FromSeconds(12)); task.GetAwaiter().GetResult();
-                if (app.Windows.OfType<ManualScrollCaptureWindow>().Any()) throw new InvalidOperationException("Manual controls were not closed after completion.");
+                if (app.Windows.OfType<ManualScrollCaptureWindow>().Any()) throw new InvalidOperationException("Drag controls were not closed after release.");
                 var editor = app.Windows.OfType<EditorWindow>().Single();
                 var manual = ((EditorViewModel)editor.DataContext).Compose(); export.SavePng(manual, Path.Combine(output, "manual-region.png"));
-                if (manual.PixelWidth != (int)region.Width || manual.PixelHeight <= region.Height + 50 || manual.PixelHeight >= 1500)
-                    throw new InvalidOperationException("Manual mode ignored region dimensions or captured the whole document instead of user stop.");
-                if (ContainsMagenta(manual)) throw new InvalidOperationException("Manual operation controls were photographed into the result.");
+                if (manual.PixelWidth != 320 || manual.PixelHeight <= 200 || manual.PixelHeight >= 2000)
+                    throw new InvalidOperationException("Drag selection ignored the selected coordinates or captured the whole document.");
+                if (ContainsMagenta(manual)) throw new InvalidOperationException("Drag controls were photographed into the result.");
+                BitmapSource finalStrip;
+                using (var hiddenEditor = new CaptureWindowScope([editor]))
+                    finalStrip = desktop.CaptureRegion(new(startPoint.X, releasePoint.Y - 50, 320, 50));
                 var a = new CroppedBitmap(manual, new Int32Rect(0, manual.PixelHeight - 50, manual.PixelWidth, 50));
-                var b = new CroppedBitmap(finalViewport, new Int32Rect(0, finalViewport.PixelHeight - 50, finalViewport.PixelWidth, 50));
-                var aBytes = new byte[manual.PixelWidth * 50 * 4]; var bBytes = new byte[aBytes.Length]; a.CopyPixels(aBytes, manual.PixelWidth * 4, 0); b.CopyPixels(bBytes, manual.PixelWidth * 4, 0);
-                if (!aBytes.SequenceEqual(bBytes)) throw new InvalidOperationException("Manual screenshot did not end at the user's final visible area.");
-                editor.Close(); Console.WriteLine($"PASS real manual Chrome capture: {manual.PixelWidth}x{manual.PixelHeight}; real wheel, clickable finish, exact final strip, controls excluded.");
+                var aBytes = new byte[320 * 50 * 4]; var bBytes = new byte[aBytes.Length]; a.CopyPixels(aBytes, 320 * 4, 0); finalStrip.CopyPixels(bBytes, 320 * 4, 0);
+                if (!aBytes.SequenceEqual(bBytes)) throw new InvalidOperationException("Drag screenshot did not end at the released document point or includes its border.");
+                editor.Close(); Console.WriteLine($"PASS real drag Chrome capture: {manual.PixelWidth}x{manual.PixelHeight}; native left drag, edge auto scroll, release, exact final strip, controls excluded.");
                 stage = "manual native Esc cancellation";
                 var cancelTask = features.HandleAsync(new(Original(), region, SelectionAction.Scroll, BrowserCaptureMode.ManualScroll));
                 TextWindowChecks.PumpUntil(() => cancelTask.IsCompleted || app.Windows.OfType<ManualScrollCaptureWindow>().Any(w => ((ManualScrollCaptureViewModel)w.DataContext).Ready), TimeSpan.FromSeconds(12));
@@ -145,6 +148,45 @@ internal static class ChromeCaptureCheck
                 if (app.Windows.OfType<ManualScrollCaptureWindow>().Any()) throw new InvalidOperationException("Esc left manual capture controls running.");
                 foreach (var restored in app.Windows.OfType<EditorWindow>().ToArray()) restored.Close();
                 Console.WriteLine("PASS real native Esc cancels manual capture and closes controls/hooks.");
+            }
+            finally { SynchronizationContext.SetSynchronizationContext(previousContext); }
+            stage = "selected text, sidebar and native drag gesture";
+            var selectedStart = new ProcessStartInfo(chrome) { UseShellExecute = false };
+            selectedStart.ArgumentList.Add("--user-data-dir=" + Path.Combine(directory, "profile")); selectedStart.ArgumentList.Add(new Uri(Fixture("selected-text-sidebar.html")).AbsoluteUri);
+            using var selectedHandoff = Process.Start(selectedStart);
+            WindowCaptureInfo? selectedWindow = null;
+            for (int i = 0; i < 100; i++)
+            {
+                selectedWindow = DesktopWindows.Snapshot().FirstOrDefault(w => Title(w.Handle).Contains("Snip selected drag fixture", StringComparison.Ordinal));
+                if (selectedWindow is not null) break; Task.Delay(100).GetAwaiter().GetResult();
+            }
+            if (selectedWindow is null) throw new InvalidOperationException("Selected text fixture did not load.");
+            DesktopWindows.Activate(selectedWindow.Handle); Task.Delay(650).GetAwaiter().GetResult();
+            SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext());
+            try
+            {
+                var renderer = new AnnotationRenderer(); using var pins = new PinManager(export);
+                var features = new FeatureHub(renderer, export, desktop, pins, diagnostics);
+                var selectedRegion = new PixelRect(selectedWindow.Bounds.X + 80, selectedWindow.Bounds.Y + 180, 400, 280);
+                var original = new EditorViewModel(desktop.CaptureRegion(selectedRegion), renderer, export, new EditorDialogs(() => null));
+                var captureTask = features.HandleAsync(new(original, selectedRegion, SelectionAction.Scroll, BrowserCaptureMode.ManualScroll));
+                TextWindowChecks.PumpUntil(() => captureTask.IsCompleted || app.Windows.OfType<ManualScrollCaptureWindow>().Any(w => ((ManualScrollCaptureViewModel)w.DataContext).Ready), TimeSpan.FromSeconds(12));
+                if (captureTask.IsCompleted) throw new InvalidOperationException("Selected fixture capture stopped before dragging.");
+                var bar = app.Windows.OfType<ManualScrollCaptureWindow>().Single(); var viewport = bar.Viewport;
+                ((Border)bar.Content).Background = Brushes.Magenta;
+                SetPhysicalCursorPos((int)viewport.X + 65, (int)viewport.Y + 65);
+                Send([new() { Type = 0, Data = new() { Mouse = new() { Flags = 2 } } }]);
+                SetPhysicalCursorPos((int)viewport.X + 385, (int)viewport.Bottom + 8);
+                TextWindowChecks.PumpUntil(() => captureTask.IsCompleted || ((ManualScrollCaptureViewModel)bar.DataContext).Frames >= 4, TimeSpan.FromSeconds(12));
+                if (captureTask.IsCompleted) throw new InvalidOperationException("Selected text fixture failed while dragging.");
+                SetPhysicalCursorPos((int)viewport.X + 385, (int)viewport.Y + 250);
+                Send([new() { Type = 0, Data = new() { Mouse = new() { Flags = 4 } } }]);
+                TextWindowChecks.PumpUntil(() => captureTask.IsCompleted, TimeSpan.FromSeconds(12)); captureTask.GetAwaiter().GetResult();
+                var resultEditor = app.Windows.OfType<EditorWindow>().Single();
+                var result = ((EditorViewModel)resultEditor.DataContext).Compose(); export.SavePng(result, Path.Combine(output,"selected-drag.png"));
+                if (result.PixelWidth != 320 || result.PixelHeight <= 300 || ContainsMagenta(result)) throw new InvalidOperationException("Selected text drag produced incorrect pixels or included controls.");
+                if (Title(selectedWindow.Handle).Contains("leaked mouse input", StringComparison.Ordinal)) throw new InvalidOperationException("Screenshot drag leaked into browser text selection.");
+                resultEditor.Close(); Console.WriteLine($"PASS selected text + fixed sidebar + footer native drag: {result.PixelWidth}x{result.PixelHeight}; mouse gesture consumed before browser selection.");
             }
             finally { SynchronizationContext.SetSynchronizationContext(previousContext); }
             // A normal white article with embedded screenshots and a fixed bottom toolbar.

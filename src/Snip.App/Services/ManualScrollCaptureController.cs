@@ -36,8 +36,10 @@ public sealed class ManualScrollCaptureController : IDisposable
     private IntPtr mouseHook, keyHook, browser;
     private ManualScrollCaptureWindow? window;
     private Window? outline;
+    private Canvas? canvas;
+    private Border? selection;
     private bool disposed;
-    public ManualCaptureControl Control { get; } = new();
+    public DragCaptureControl Control { get; } = new();
     public ManualScrollCaptureViewModel ViewModel { get; }
     public PixelRect ToolbarBounds { get; private set; }
     public PixelRect Region { get; private set; }
@@ -56,11 +58,12 @@ public sealed class ManualScrollCaptureController : IDisposable
     {
         if (disposed) throw new ObjectDisposedException(nameof(ManualScrollCaptureController));
         Region = region; browser = target;
+        Control.Configure((int)region.Width, (int)region.Height);
         var info = new MonitorInfo { Size = Marshal.SizeOf<MonitorInfo>(), Device = "" };
         var monitor = MonitorFromPoint(new() { X = (int)(region.X + region.Width / 2), Y = (int)(region.Y + region.Height / 2) }, 2);
         if (!GetMonitorInfo(monitor, ref info)) throw new Win32Exception();
         var area = new PixelRect(info.Work.Left, info.Work.Top, info.Work.Right - info.Work.Left, info.Work.Bottom - info.Work.Top);
-        window = new(ViewModel); window.Show();
+        window = new(ViewModel) { Viewport = region }; window.Show();
         // Move onto the destination monitor before consulting that HWND's authoritative DPI.
         Move(window, new(region.X, Math.Max(area.Y, region.Y - 90), 410, 58));
         double scale = Math.Max(96, DesktopWindows.GetDpiForWindow(new WindowInteropHelper(window).Handle)) / 96.0;
@@ -79,15 +82,16 @@ public sealed class ManualScrollCaptureController : IDisposable
         {
             Style = null, WindowStyle = WindowStyle.None, ResizeMode = ResizeMode.NoResize, AllowsTransparency = true,
             Background = Brushes.Transparent, ShowInTaskbar = false, ShowActivated = false, Topmost = true,
-            Content = new Border { BorderBrush = Ui.Brush("AccentBrush"), BorderThickness = new(1), Background = Brushes.Transparent }
+            Content = canvas = new Canvas { Background = Brushes.Transparent, ClipToBounds = true }
         };
         outline.SourceInitialized += (_, _) =>
         {
             var hwnd = new WindowInteropHelper(outline).Handle;
             SetStyle(hwnd, -20, new(GetStyle(hwnd, -20).ToInt64() | 0x08000000 | 0x20 | 0x80));
         };
-        outline.Show(); Move(outline, new(region.X - 4, region.Y - 4, region.Width + 8, region.Height + 8));
-        ((Border)outline.Content).BorderThickness = new(2 / (Math.Max(96, DesktopWindows.GetDpiForWindow(new WindowInteropHelper(outline).Handle)) / 96.0));
+        outline.Show(); Move(outline, region);
+        selection = new Border { BorderBrush = Ui.Brush("AccentBrush"), Background = Brushes.Transparent, BorderThickness = new(2), Visibility = Visibility.Collapsed };
+        canvas.Children.Add(selection);
         mouseHook = SetWindowsHookEx(14, mouse, GetModuleHandle(null), 0);
         keyHook = SetWindowsHookEx(13, keyboard, GetModuleHandle(null), 0);
         if (mouseHook == IntPtr.Zero || keyHook == IntPtr.Zero) throw new Win32Exception();
@@ -97,10 +101,39 @@ public sealed class ManualScrollCaptureController : IDisposable
     {
         if (!SetWindowPos(new WindowInteropHelper(window).Handle, new(-1), (int)bounds.X, (int)bounds.Y, (int)bounds.Width, (int)bounds.Height, 0x0050)) throw new Win32Exception();
     }
+    public void RefreshSelection()
+    {
+        if (disposed || outline is null || selection is null) return;
+        double scale = Math.Max(96, DesktopWindows.GetDpiForWindow(new WindowInteropHelper(outline).Handle)) / 96.0;
+        var r = Control.VisibleSelection;
+        selection.Visibility = r.IsEmpty ? Visibility.Collapsed : Visibility.Visible;
+        Canvas.SetLeft(selection, r.X / scale); Canvas.SetTop(selection, r.Y / scale);
+        selection.Width = r.Width / scale; selection.Height = r.Height / scale;
+    }
+    // The outline is inside the browser viewport. Hide it explicitly for every native read;
+    // GDI capture cannot be assumed to honor display-affinity exclusion.
+    public void SetPreviewVisible(bool visible)
+    {
+        if (disposed || outline is null) return;
+        if (visible) { outline.Show(); RefreshSelection(); }
+        else outline.Hide();
+    }
     private IntPtr Mouse(int code, IntPtr message, IntPtr data)
     {
-        if (!disposed && code >= 0 && ViewModel.Ready && DesktopWindows.Foreground == browser && message.ToInt32() is 0x020A or 0x0202)
-            Control.RequestFrame();
+        if (!disposed && code >= 0 && ViewModel.Ready && DesktopWindows.Foreground == browser)
+        {
+            int kind = message.ToInt32();
+            var point = Marshal.PtrToStructure<Point>(data);
+            var physical = new PixelPoint(point.X, point.Y);
+            var local = new PixelPoint(point.X - Region.X, point.Y - Region.Y);
+            if (kind == 0x0201 && Region.Contains(physical) && Control.Begin(local))
+            { RefreshSelection(); return new(1); }
+            if (kind == 0x0200 && Control.Dragging) { Control.Move(local); RefreshSelection(); }
+            if (kind == 0x0202 && Control.Dragging)
+            { Control.Release(local); RefreshSelection(); return new(1); }
+            // The program owns scrolling until release; don't allow an uncontrolled wheel jump.
+            if (kind == 0x020A && Region.Contains(physical) && Marshal.ReadIntPtr(data, 24).ToInt64() != 0x534E4950) return new(1);
+        }
         return CallNextHookEx(mouseHook, code, message, data);
     }
     private IntPtr Keyboard(int code, IntPtr message, IntPtr data)

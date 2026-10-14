@@ -25,6 +25,7 @@ public sealed class BrowserScrollCapture(IDesktopCaptureService capture)
     [DllImport("user32.dll")] private static extern bool IsWindowVisible(IntPtr hwnd);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern int GetClassName(IntPtr hwnd, System.Text.StringBuilder name, int size);
     [DllImport("user32.dll", SetLastError = true)] private static extern uint SendInput(uint count, Input[] inputs, int size);
+    [DllImport("user32.dll", SetLastError = true)] private static extern IntPtr SendMessageTimeout(IntPtr hwnd, uint message, IntPtr wParam, IntPtr lParam, uint flags, uint timeout, out IntPtr result);
     [StructLayout(LayoutKind.Sequential)] private struct Input { public uint Type; public InputUnion Data; }
     // Include the full native union so INPUT has the correct size on both architectures.
     [StructLayout(LayoutKind.Explicit)] private struct InputUnion
@@ -34,13 +35,13 @@ public sealed class BrowserScrollCapture(IDesktopCaptureService capture)
     }
     [StructLayout(LayoutKind.Sequential)] private struct MouseInput { public int X, Y; public uint Wheel, Flags, Time; public UIntPtr Extra; }
     [StructLayout(LayoutKind.Sequential)] private struct KeyboardInput { public ushort Key, Scan; public uint Flags, Time; public UIntPtr Extra; }
-    public async Task<BitmapSource> CaptureAsync(PixelRect region, IProgress<string> progress, CancellationToken token, BrowserCaptureMode mode = BrowserCaptureMode.EntirePage, DiagnosticOperation? diagnostics = null, ManualCaptureControl? manualControl = null, IProgress<ManualCaptureProgress>? manualProgress = null, Func<PixelRect, IntPtr, Task>? manualReady = null)
+    public async Task<BitmapSource> CaptureAsync(PixelRect region, IProgress<string> progress, CancellationToken token, BrowserCaptureMode mode = BrowserCaptureMode.EntirePage, DiagnosticOperation? diagnostics = null, DragCaptureControl? manualControl = null, IProgress<ManualCaptureProgress>? manualProgress = null, Func<PixelRect, IntPtr, Task>? manualReady = null, Func<bool, Task>? previewVisibility = null)
     {
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(token); deadline.CancelAfter(mode == BrowserCaptureMode.ManualScroll ? TimeSpan.FromMinutes(5) : TimeSpan.FromSeconds(90));
-        try { return await Task.Run(() => CaptureCoreAsync(region, progress, deadline.Token, mode, diagnostics, manualControl, manualProgress, manualReady), deadline.Token).WaitAsync(deadline.Token).ConfigureAwait(false); }
+        try { return await Task.Run(() => CaptureCoreAsync(region, progress, deadline.Token, mode, diagnostics, manualControl, manualProgress, manualReady, previewVisibility), deadline.Token).WaitAsync(deadline.Token).ConfigureAwait(false); }
         catch (OperationCanceledException) when (!token.IsCancellationRequested) { throw new TimeoutException("网页采集超时，已停止；请分段截图。"); }
     }
-    private async Task<BitmapSource> CaptureCoreAsync(PixelRect region, IProgress<string> progress, CancellationToken token, BrowserCaptureMode mode, DiagnosticOperation? diagnostics, ManualCaptureControl? manualControl, IProgress<ManualCaptureProgress>? manualProgress, Func<PixelRect, IntPtr, Task>? manualReady)
+    private async Task<BitmapSource> CaptureCoreAsync(PixelRect region, IProgress<string> progress, CancellationToken token, BrowserCaptureMode mode, DiagnosticOperation? diagnostics, DragCaptureControl? manualControl, IProgress<ManualCaptureProgress>? manualProgress, Func<PixelRect, IntPtr, Task>? manualReady, Func<bool, Task>? previewVisibility)
     {
         if (region.IsEmpty || mode == BrowserCaptureMode.ManualScroll && (region.Width < 80 || region.Height < 160)) throw new InvalidOperationException("长截图选区至少需要 80×160 像素，请选择网页正文区域。");
         var center = new PixelPoint(region.X + region.Width / 2, region.Y + region.Height / 2);
@@ -62,7 +63,7 @@ public sealed class BrowserScrollCapture(IDesktopCaptureService capture)
         SetForegroundWindow(target.Handle);
         await Task.Delay(200, token).ConfigureAwait(false);
         if (GetForegroundWindow() != target.Handle) throw new InvalidOperationException("无法激活目标浏览器，请切换到浏览器后重试。");
-        if (mode is BrowserCaptureMode.EntirePage or BrowserCaptureMode.FromCurrentPage)
+        if (mode is BrowserCaptureMode.EntirePage or BrowserCaptureMode.FromCurrentPage or BrowserCaptureMode.ManualScroll)
         {
             var viewport = FindNativeViewport(target, region);
             if (viewport is null)
@@ -70,7 +71,7 @@ public sealed class BrowserScrollCapture(IDesktopCaptureService capture)
                 try { viewport = await Task.Run(() => FindDocumentBounds(region), token).WaitAsync(TimeSpan.FromSeconds(1), token).ConfigureAwait(false); }
                 catch (Exception e) when (e is not OperationCanceledException) { }
             }
-            region = viewport ?? throw new InvalidOperationException("无法确定浏览器正文边界。请选取正文区域，再使用‘手动滚动长截图’；不要求开启浏览器辅助功能。");
+            region = viewport ?? throw new InvalidOperationException("无法确定浏览器正文边界，请让 Chrome/Edge 正文显示在前台后重试。");
         }
         diagnostics?.Stage("viewport-found", new { region.Width, region.Height, Mode = mode.ToString() });
         if (mode == BrowserCaptureMode.ManualScroll)
@@ -92,15 +93,15 @@ public sealed class BrowserScrollCapture(IDesktopCaptureService capture)
             double height = mode == BrowserCaptureMode.EntirePage ? region.Height : FindNativeViewport(target, region)?.Height ?? 0;
             state = (measured.Pattern, measured.Position, height);
         }
-        var source = new WheelSource(capture, region, target.Handle, target.Bounds, state);
+        var source = new WheelSource(capture, region, target.Handle, target.Bounds, state, mode == BrowserCaptureMode.ManualScroll, previewVisibility);
         diagnostics?.Stage("scroll-interface", new { PositionAvailable = state is not null });
         GetPhysicalCursorPos(out var originalCursor);
         bool completed = false;
         try
         {
-            progress.Report(mode == BrowserCaptureMode.ManualScroll ? "正在准备手动长截图；请等待控件提示后滚动…" : "正在使用浏览器滚轮自动采集…");
+            progress.Report(mode == BrowserCaptureMode.ManualScroll ? "正在准备网页拖选；等待提示后按住左键拖动…" : "正在使用浏览器滚轮自动采集…");
             var frame = mode == BrowserCaptureMode.ManualScroll
-                ? await new ManualScrollCaptureSession().CaptureAsync(source, manualControl!, manualProgress, token, diagnostics).ConfigureAwait(false)
+                ? await new DragScrollCaptureSession().CaptureAsync(source, manualControl!, manualProgress, token, diagnostics).ConfigureAwait(false)
                 : await new ScrollCaptureSession().CaptureAsync(source, mode == BrowserCaptureMode.EntirePage, progress, token, diagnostics, allowSingleFrame: mode == BrowserCaptureMode.FromCurrentPage).ConfigureAwait(false);
             var image = BitmapSource.Create(frame.Width, frame.Height, 96, 96, PixelFormats.Bgra32, null, frame.Bgra, frame.Width * 4); image.Freeze();
             completed = true; return image;
@@ -169,14 +170,17 @@ public sealed class BrowserScrollCapture(IDesktopCaptureService capture)
         private readonly PixelRect region;
         private readonly IntPtr target;
         private readonly PixelRect targetBounds;
+        private readonly bool keepPointer;
+        private readonly Func<bool, Task>? previewVisibility;
         private readonly DisplayInfo[] layout;
         private (ScrollPattern Pattern, double Position, double ViewportHeight)? scrollState;
         public ScrollCapturePosition? Position { get; private set; }
         public int PointerX { get; }
         public int PointerY { get; }
-        public WheelSource(IDesktopCaptureService capture, PixelRect region, IntPtr target, PixelRect targetBounds, (ScrollPattern Pattern, double Position, double ViewportHeight)? scrollState)
+        public WheelSource(IDesktopCaptureService capture, PixelRect region, IntPtr target, PixelRect targetBounds, (ScrollPattern Pattern, double Position, double ViewportHeight)? scrollState, bool keepPointer, Func<bool, Task>? previewVisibility)
         {
             this.scrollState = scrollState;
+            this.keepPointer = keepPointer; this.previewVisibility = previewVisibility;
             this.capture = capture; this.region = region; this.target = target; this.targetBounds = targetBounds; layout = capture.GetDisplays().ToArray();
             PointerX = (int)(region.Right - 32); PointerY = (int)(region.Y + region.Height / 2);
         }
@@ -194,10 +198,15 @@ public sealed class BrowserScrollCapture(IDesktopCaptureService capture)
         public async Task<PixelFrame> ReadAsync(CancellationToken token)
         {
             Check(token);
-            var image = new FormatConvertedBitmap(capture.CaptureRegion(region), PixelFormats.Bgra32, null, 0);
-            image.Freeze();
-            int width = image.PixelWidth, height = image.PixelHeight;
-            var bytes = new byte[width * height * 4]; image.CopyPixels(bytes, width * 4, 0);
+            byte[] bytes; int width, height;
+            if (previewVisibility is not null) await previewVisibility(false).ConfigureAwait(false);
+            try
+            {
+                var image = new FormatConvertedBitmap(capture.CaptureRegion(region), PixelFormats.Bgra32, null, 0);
+                image.Freeze(); width = image.PixelWidth; height = image.PixelHeight;
+                bytes = new byte[width * height * 4]; image.CopyPixels(bytes, width * 4, 0);
+            }
+            finally { if (previewVisibility is not null) await previewVisibility(true).ConfigureAwait(false); }
             Position = null;
             if (scrollState is { } saved)
             {
@@ -220,9 +229,18 @@ public sealed class BrowserScrollCapture(IDesktopCaptureService capture)
         public async Task<PixelFrame> ScrollAsync(int wheelUnits, CancellationToken token)
         {
             Check(token);
-            if (!SetPhysicalCursorPos(PointerX, PointerY)) throw new InvalidOperationException("无法将鼠标定位到网页正文。");
-            var input = new Input { Type = 0, Data = new InputUnion { Mouse = new MouseInput { Wheel = unchecked((uint)-wheelUnits), Flags = 0x0800 } } };
-            if (SendInput(1, [input], Marshal.SizeOf<Input>()) != 1) throw new InvalidOperationException("浏览器拒绝滚轮输入。请让浏览器和截图软件都以普通用户权限运行。");
+            if (!keepPointer && !SetPhysicalCursorPos(PointerX, PointerY)) throw new InvalidOperationException("无法将鼠标定位到网页正文。");
+            var input = new Input { Type = 0, Data = new InputUnion { Mouse = new MouseInput { Wheel = unchecked((uint)-wheelUnits), Flags = 0x0800, Extra = new UIntPtr(0x534E4950) } } };
+            if (keepPointer && GetPhysicalCursorPos(out var pointer) && !region.Contains(new(pointer.X, pointer.Y)))
+            {
+                // While dragging below the viewport, route only to this browser; never scroll
+                // an unrelated window under the cursor or move the user's physical pointer.
+                int x = (int)Math.Clamp(pointer.X, region.X + 2, region.Right - 2), y = (int)region.Bottom - 4;
+                using var pixels = new PhysicalDesktopScope();
+                if (SendMessageTimeout(target, 0x020A, new(unchecked((uint)-wheelUnits << 16)), new((y & 65535) << 16 | x & 65535), 2, 1000, out _) == IntPtr.Zero)
+                    throw new InvalidOperationException("无法向目标浏览器发送边缘滚动，请保持浏览器在前台后重试。");
+            }
+            else if (SendInput(1, [input], Marshal.SizeOf<Input>()) != 1) throw new InvalidOperationException("浏览器拒绝滚轮输入。请让浏览器和截图软件都以普通用户权限运行。");
             // Wait for smooth scrolling to settle, rather than photographing an intermediate animation.
             await Task.Delay(300, token).ConfigureAwait(false);
             var previous = await ReadAsync(token).ConfigureAwait(false);

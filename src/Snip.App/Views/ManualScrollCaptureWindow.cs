@@ -5,6 +5,7 @@ using System.Windows.Data;
 using System.Windows.Interop;
 using System.Windows.Media;
 using Snip.App.ViewModels;
+using Snip.Core;
 
 namespace Snip.App.Views;
 
@@ -13,9 +14,10 @@ public sealed class ManualScrollCaptureWindow : Window
 {
     [DllImport("user32.dll", EntryPoint = "GetWindowLongPtrW")] private static extern IntPtr GetStyle(IntPtr hwnd, int index);
     [DllImport("user32.dll", EntryPoint = "SetWindowLongPtrW")] private static extern IntPtr SetStyle(IntPtr hwnd, int index, IntPtr style);
+    public PixelRect Viewport { get; internal set; }
     public ManualScrollCaptureWindow(ManualScrollCaptureViewModel vm)
     {
-        Ui.ApplyWindow(this); Title = "自用截图 · 手动滚动长截图";
+        Ui.ApplyWindow(this); Title = "自用截图 · 网页选区拖选";
         WindowStyle = WindowStyle.None; ResizeMode = ResizeMode.NoResize; ShowInTaskbar = false;
         ShowActivated = false; Topmost = true; AllowsTransparency = true; Background = Brushes.Transparent;
         Width = 410; Height = 58; DataContext = vm;

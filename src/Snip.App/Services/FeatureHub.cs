@@ -141,10 +141,11 @@ public sealed class FeatureHub
             var feedback = manual is null ? null : new Progress<ManualCaptureProgress>(value =>
             {
                 if (browserCancellation == cancellation && !cancellation.IsCancellationRequested)
-                { manual.ViewModel.Update(value); CaptureStatus?.Invoke(value.Status); }
+                { manual.ViewModel.Update(value); manual.RefreshSelection(); CaptureStatus?.Invoke(value.Status); }
             });
             image = await new BrowserScrollCapture(capture).CaptureAsync(result.Region, progress, cancellation.Token, result.BrowserMode, operation,
-                manual?.Control, feedback, manual is null ? null : (region, target) => Application.Current.Dispatcher.InvokeAsync(() => manual.Bind(region, target)).Task);
+                manual?.Control, feedback, manual is null ? null : (region, target) => Application.Current.Dispatcher.InvokeAsync(() => manual.Bind(region, target)).Task,
+                manual is null ? null : visible => Application.Current.Dispatcher.InvokeAsync(() => manual.SetPreviewVisible(visible)).Task);
             manual?.Dispose();
             operation?.Complete(new { image.PixelWidth, image.PixelHeight });
         }

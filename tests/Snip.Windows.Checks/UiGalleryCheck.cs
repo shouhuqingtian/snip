@@ -108,9 +108,10 @@ internal static class UiGalleryCheck
             using var selection = new SelectionSession(new(image, new(0, 0, 1280, 800), capture.GetDisplays()), capture, renderer, export, []);
             selection.Show(); selection.ViewModel.SetSelection(new(90, 110, 1050, 460)); selection.BeginEditing();
             Capture(app.Windows.OfType<SelectionWindow>().Single(), "13-selection-toolbar");
-            using var manualControl = new ManualCaptureControl();
+            using var manualControl = new DragCaptureControl();
+            manualControl.Configure(900, 600); manualControl.Begin(new(50, 50)); manualControl.Move(new(450, 580));
             var manualVm = new ManualScrollCaptureViewModel(manualControl, () => { });
-            manualVm.Update(new(4, 950, "已采集 4 帧，950 像素 · 滚轮向下滚动，完成 Ctrl+Enter", true));
+            manualVm.Update(new(4, 950, "已选 400×950 像素 · 松开鼠标完成", true));
             var manualWindow = new ManualScrollCaptureWindow(manualVm);
             Capture(manualWindow, "15-manual-scroll", () =>
             {

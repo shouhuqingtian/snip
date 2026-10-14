@@ -45,7 +45,7 @@ public sealed class EditorToolbar : UserControl
         foreach (var (mode, title) in new[] {
             (BrowserCaptureMode.EntirePage, "捕捉整个网页（自动从顶部到页尾）"),
             (BrowserCaptureMode.FromCurrentPage, "从当前位置向下捕捉（自动到页尾）"),
-            (BrowserCaptureMode.ManualScroll, "手动滚动长截图（框选后滚动，点击完成）") })
+            (BrowserCaptureMode.ManualScroll, "捕捉选定区域（拖到下沿滚动，松开完成）") })
         {
             var item = new MenuItem { Header = title }; item.Click += (_, _) => ScrollRequested?.Invoke(mode); browserMenu.Items.Add(item);
         }
