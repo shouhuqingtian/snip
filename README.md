@@ -4,9 +4,11 @@
 
 ## 下载
 
-当前开发版 **2.0.16 测试便携版**：[下载便携 ZIP](https://github.com/shouhuqingtian/snip/releases/download/preview-f2f8cd811a8e/self-snip-preview-win-x64.zip) · [完整源码](https://github.com/shouhuqingtian/snip/releases/download/preview-f2f8cd811a8e/self-snip-source.zip)。包含检查记录、版本信息和完整提交号。无需配置在线密钥或下载翻译模型即可使用 Windows 本地 OCR；缺翻译资源时默认保留文字识别结果，见 [修改与验证](docs/2.0.15默认OCR与翻译可用性.md)。
+当前开发版 **2.0.17 测试便携版**：[下载便携 ZIP](https://github.com/shouhuqingtian/snip/releases/download/preview-243e2cc6e1c8/self-snip-preview-win-x64.zip) · [完整源码](https://github.com/shouhuqingtian/snip/releases/download/preview-243e2cc6e1c8/self-snip-source.zip)。包含检查记录、版本信息和完整提交号。无需配置在线密钥或下载翻译模型即可使用 Windows 本地 OCR；缺翻译资源时默认保留文字识别结果，见 [修改与验证](docs/2.0.15默认OCR与翻译可用性.md)。
 
 2.0.16 增加可选 Vulkan GPU 离线翻译，支持兼容的 NVIDIA/AMD/Intel 驱动；约 32 MB GPU 运行库单独下载，复用同一模型。无兼容设备时回退 CPU。实体 GPU 加速尚待兼容设备实测，见 [修改与验证](docs/2.0.16通用GPU翻译加速.md)。
+
+2.0.17 优化 CPU 离线翻译：现有模型无需重下，Windows 同轮样例原生峰值内存约减少 21%、耗时缩短约 11%；CPU 累计计算时间有所增加。见 [实测、修改文件与边界](docs/2.0.17离线CPU翻译减负.md)。
 
 下面是历史 **2.0.2** 发行文件：
 
