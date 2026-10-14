@@ -167,6 +167,8 @@ internal static class ChromeCaptureCheck
             }
             if (selectedWindow is null) throw new InvalidOperationException("Selected text fixture did not load.");
             DesktopWindows.Activate(selectedWindow.Handle); Task.Delay(650).GetAwaiter().GetResult();
+            var selectedHit = new PixelRect(selectedWindow.Bounds.X + 80, selectedWindow.Bounds.Y + 180, 400, 280);
+            Wheel(selectedHit, 12000); Task.Delay(650).GetAwaiter().GetResult();
             SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext());
             try
             {
@@ -254,7 +256,19 @@ internal static class ChromeCaptureCheck
             Console.WriteLine("PASS real Chrome short page without scrolling.");
             return 0;
         }
-        catch (Exception e) { Console.WriteLine("::error::Chrome " + stage + ": " + e.ToString().Replace("\r", "").Replace("\n", "%0A")); Console.Error.WriteLine("FAIL real Chrome: " + e); return 1; }
+        catch (Exception e)
+        {
+            // Only public fixtures and the journal's technical, content-free fields are emitted.
+            foreach (var bar in app.Windows.OfType<ManualScrollCaptureWindow>())
+            {
+                var vm = (ManualScrollCaptureViewModel)bar.DataContext;
+                Console.WriteLine($"::notice title=Browser drag state::frames={vm.Frames}; started={vm.Drag?.Started}; dragging={vm.Drag?.Dragging}; edge={vm.Drag?.AtLowerEdge}; offset={vm.Drag?.ScrollOffset}; viewport={bar.Viewport}");
+            }
+            diagnostics.FlushAsync().GetAwaiter().GetResult();
+            var journal = Path.Combine(diagnostics.DirectoryPath, "events.jsonl");
+            if (File.Exists(journal)) foreach (var line in File.ReadLines(journal).TakeLast(12)) Console.WriteLine("::notice title=Browser phase::" + line.Replace("%", "%25"));
+            Console.WriteLine("::error::Chrome " + stage + ": " + e.ToString().Replace("\r", "").Replace("\n", "%0A")); Console.Error.WriteLine("FAIL real Chrome: " + e); return 1;
+        }
         finally
         {
             try { if (browser is not null && !browser.HasExited) { browser.Kill(true); browser.WaitForExit(5000); } } catch { }

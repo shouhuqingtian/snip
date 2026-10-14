@@ -61,11 +61,13 @@ public sealed class DragScrollCaptureSession
             { await control.WaitAsync(Timeout.Infinite, token).ConfigureAwait(false); Report(); continue; }
             // Small controlled steps avoid losing overlap or photographing smooth-scroll intermediates.
             var before = source.Position;
+            diagnostics?.Stage("drag-step", new { before?.Offset, before?.AtBottom, control.ScrollOffset, control.Dragging, control.AtLowerEdge });
             var next = await source.ScrollAsync(viewportHeight < 320 ? 30 : 120, token).ConfigureAwait(false);
             token.ThrowIfCancellationRequested();
             var after = source.Position;
             int? measured = positionReliable && before is not null && after is not null ? (int)Math.Round(after.Offset - before.Offset) : null;
             bool unchanged = ScrollMatching.Unchanged(frames.Last, next);
+            diagnostics?.Stage("drag-step-settled", new { Measured = measured, after?.AtBottom, Unchanged = unchanged });
             if (measured == 0 && !unchanged) { positionReliable = false; measured = null; }
             if (measured == 0 || measured is null && unchanged) { bottom = true; Report(); continue; }
             var match = ScrollMatching.Match(frames.Last, next);
