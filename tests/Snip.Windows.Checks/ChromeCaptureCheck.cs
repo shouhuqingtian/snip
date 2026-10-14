@@ -266,7 +266,7 @@ internal static class ChromeCaptureCheck
             }
             diagnostics.FlushAsync().GetAwaiter().GetResult();
             var journal = Path.Combine(diagnostics.DirectoryPath, "events.jsonl");
-            if (File.Exists(journal)) foreach (var line in File.ReadLines(journal).TakeLast(12)) Console.WriteLine("::notice title=Browser phase::" + line.Replace("%", "%25"));
+            if (File.Exists(journal)) foreach (var line in File.ReadLines(journal).TakeLast(8).Reverse()) Console.WriteLine("::notice title=Browser phase::" + line.Replace("%", "%25"));
             Console.WriteLine("::error::Chrome " + stage + ": " + e.ToString().Replace("\r", "").Replace("\n", "%0A")); Console.Error.WriteLine("FAIL real Chrome: " + e); return 1;
         }
         finally

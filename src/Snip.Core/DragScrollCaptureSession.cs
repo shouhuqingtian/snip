@@ -50,6 +50,7 @@ public sealed class DragScrollCaptureSession
         control.Configure(initial.Width, initial.Height);
         using var frames = new ScrollFrameAccumulator(initial);
         int viewportHeight = initial.Height;
+        int unchangedSteps = 0;
         bool bottom = false, positionReliable = true;
         void Report() => progress?.Report(new(frames.FrameCount, frames.Height,
             control.Started ? $"已选 {control.Selection.Width:0}×{control.Selection.Height:0} 像素 · 松开鼠标完成" : "按住左键拖选 · 拖到网页下沿自动滚动 · Esc 取消", control.Started && !control.Selection.IsEmpty));
@@ -60,6 +61,10 @@ public sealed class DragScrollCaptureSession
             if (!control.AtLowerEdge || bottom)
             { await control.WaitAsync(Timeout.Infinite, token).ConfigureAwait(false); Report(); continue; }
             // Small controlled steps avoid losing overlap or photographing smooth-scroll intermediates.
+            // A low-level hook observes a move before Windows has updated the physical cursor.
+            // Allow the input callback to return before choosing the native wheel target.
+            await Task.Delay(40, token).ConfigureAwait(false);
+            if (control.FinishRequested || !control.AtLowerEdge) continue;
             var before = source.Position;
             diagnostics?.Stage("drag-step", new { before?.Offset, before?.AtBottom, control.ScrollOffset, control.Dragging, control.AtLowerEdge });
             var next = await source.ScrollAsync(viewportHeight < 320 ? 30 : 120, token).ConfigureAwait(false);
@@ -69,7 +74,13 @@ public sealed class DragScrollCaptureSession
             bool unchanged = ScrollMatching.Unchanged(frames.Last, next);
             diagnostics?.Stage("drag-step-settled", new { Measured = measured, after?.AtBottom, Unchanged = unchanged });
             if (measured == 0 && !unchanged) { positionReliable = false; measured = null; }
-            if (measured == 0 || measured is null && unchanged) { bottom = true; Report(); continue; }
+            if (measured == 0 || measured is null && unchanged)
+            {
+                // One ignored/coalesced wheel event is not evidence that the page reached its end.
+                bottom = after?.AtBottom == true || ++unchangedSteps >= 2;
+                Report(); continue;
+            }
+            unchangedSteps = 0;
             var match = ScrollMatching.Match(frames.Last, next);
             if (match is not null && measured is { } known && Math.Abs(match.Offset - known) > 2)
             { positionReliable = false; measured = null; }

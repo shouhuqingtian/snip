@@ -15,6 +15,14 @@ public sealed class DragScrollCaptureTests
         Assert.Equal(Crop(source.Page, 15, 50, 75, 170), output.Bgra);
     }
     [Fact]
+    public async Task OneIgnoredWheelStepDoesNotPrematurelyStopEdgeScrolling()
+    {
+        using var control = new DragCaptureControl(); using var cancel = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+        var source = new PageSource(control, true) { IgnoreFirstWheel = true };
+        var output = await new DragScrollCaptureSession().CaptureAsync(source, control, null, cancel.Token);
+        Assert.Equal(2, source.Inputs); Assert.Equal(Crop(source.Page, 15, 50, 75, 170), output.Bgra);
+    }
+    [Fact]
     public async Task StaticDragDoesNotScrollOrIncludeUnselectedMargins()
     {
         using var control = new DragCaptureControl();
@@ -59,6 +67,7 @@ public sealed class DragScrollCaptureTests
     {
         public byte[] Page { get; } = Data();
         public bool Corrupt { get; init; }
+        public bool IgnoreFirstWheel { get; init; }
         private int position;
         public int Reads { get; private set; }
         public int Inputs { get; private set; }
@@ -74,7 +83,9 @@ public sealed class DragScrollCaptureTests
         }
         public Task<PixelFrame> ScrollAsync(int units, CancellationToken token)
         {
-            Inputs++; position += 100;
+            Inputs++;
+            if (IgnoreFirstWheel && Inputs == 1) return ReadAsync(token);
+            position += 100;
             control.Release(new(90, 120));
             var frame = ReadAsync(token).Result;
             if (Corrupt) Array.Fill(frame.Bgra, (byte)11);
