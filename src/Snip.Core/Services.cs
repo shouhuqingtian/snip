@@ -34,6 +34,8 @@ public interface IOcrService
 
 public interface ITranslationService
 {
+    // Availability is a local hint; it must not load a model or contact a provider.
+    Task<bool> IsAvailableAsync(CancellationToken cancellationToken) => Task.FromResult(true);
     Task<string> TranslateAsync(string text, string direction, CancellationToken cancellationToken);
     Task<string> TranslateAsync(string text, string direction, IProgress<TranslationProgress>? progress, CancellationToken cancellationToken)
         => TranslateAsync(text, direction, cancellationToken);

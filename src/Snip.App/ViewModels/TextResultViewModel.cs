@@ -163,7 +163,18 @@ public sealed class TextResultViewModel : ObservableObject, IDisposable
     private async Task Translate(CancellationToken token)
     {
         bool online = UseOnlineTranslation;
-        var service = online ? onlineTranslator ?? throw new InvalidOperationException("请先配置在线翻译服务。") : translator;
+        var service = online ? onlineTranslator : translator;
+        bool available = service is not null && await Task.Run(() => service.IsAvailableAsync(token), token);
+        token.ThrowIfCancellationRequested();
+        if (!available)
+        {
+            if (Translated.Length == 0) ShowTranslation = false;
+            diagnosticOperation?.Stage("ocr-only-fallback", new { Online = online, CharacterCount = Source.Length });
+            Status = online ? "文字已识别，可修改和复制。在线翻译尚未配置，请先打开在线设置；OCR 不需要翻译模型。"
+                : "文字已识别，可修改和复制。当前默认仅识别文字；需要翻译时可下载离线模型或配置在线服务。";
+            return;
+        }
+        ShowTranslation = true;
         SetStage(online ? "正在连接在线翻译服务" : "正在校验并加载翻译模型");
         var input = Source; var selectedDirection = Direction;
         diagnosticOperation?.Stage("translation-starting", new { Direction = selectedDirection, CharacterCount = input.Length, Online = online });
@@ -178,7 +189,7 @@ public sealed class TextResultViewModel : ObservableObject, IDisposable
             }
             SetStage(p.TotalSegments == 0 ? p.Stage : $"{p.Stage}：已完成 {p.CompletedSegments}/{p.TotalSegments} 段");
         });
-        var result = await Task.Run(() => service.TranslateAsync(input, selectedDirection, updates, token), token);
+        var result = await Task.Run(() => service!.TranslateAsync(input, selectedDirection, updates, token), token);
         token.ThrowIfCancellationRequested(); Translated = result; Status = online ? "在线翻译完成。" : "离线翻译完成。";
     }
     private void SetStage(string value) { stage = value; ShowStage(); }

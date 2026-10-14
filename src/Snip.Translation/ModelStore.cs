@@ -27,6 +27,19 @@ public sealed class ModelStore(string directory)
     public string ModelPath => Path.Combine(DirectoryPath, "Hy-MT2-1.8B", Model.Weight.Path);
     public string RuntimeDirectory => Path.Combine(DirectoryPath, "Hy-MT2-1.8B", Runtime.Version, Runtime.Platform);
     public string ExecutablePath => Path.Combine(RuntimeDirectory, Runtime.Executable);
+    /// <summary>Fast presence/size check for UI fallback. Full SHA256 verification still runs before inference.</summary>
+    public bool HasInstalledFiles
+    {
+        get
+        {
+            try
+            {
+                bool Matches(string path, ModelFile file) => File.Exists(path) && new FileInfo(path).Length == file.Size;
+                return Matches(ModelPath, Model.Weight) && Runtime.Files.All(file => Matches(Path.Combine(RuntimeDirectory, file.Path), file));
+            }
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException or PlatformNotSupportedException) { return false; }
+        }
+    }
     private static ModelInfo Load()
     {
         using var stream = typeof(ModelStore).Assembly.GetManifestResourceStream("Snip.Translation.translation-models.json")!;

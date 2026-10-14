@@ -12,6 +12,36 @@ internal static class OnlineTranslationChecks
         async Task Check(string name,Func<Task> action){await action();passed++;Console.WriteLine("PASS "+name);}
         try
         {
+            await Check("availability is local and tolerates absent or invalid online configuration",async()=>
+            {
+                using var client=new HttpClient(new Handler((_,_)=>throw new InvalidOperationException("Availability contacted a provider.")));
+                var configured=OnlineTranslationProviders.Defaults(OnlineTranslationProviders.DeepSeek);
+                foreach(var credentials in new Func<OnlineTranslationCredentials>[]
+                {
+                    ()=>new(configured,""),
+                    ()=>new(configured with { Model="" },"PUBLIC-TEST-KEY"),
+                    ()=>new(configured with { Endpoint="http://remote.example.com/v1" },"PUBLIC-TEST-KEY"),
+                    ()=>throw new InvalidOperationException("Settings not configured."),
+                    ()=>throw new System.Security.Cryptography.CryptographicException("Public fixture: credentials unavailable."),
+                    ()=>throw new UnauthorizedAccessException("Public fixture: settings inaccessible.")
+                })
+                    Require(!await new OnlineTranslator(credentials,client).IsAvailableAsync(CancellationToken.None),"Unavailable configuration accepted.");
+                Require(await new OnlineTranslator(()=>new(configured,"PUBLIC-TEST-KEY"),client).IsAvailableAsync(CancellationToken.None),"Configured online service rejected.");
+            });
+            await Check("availability preserves cancellation",async()=>
+            {
+                using var cancelled=new CancellationTokenSource();cancelled.Cancel();
+                var service=new OnlineTranslator(()=>throw new InvalidOperationException("Credentials must not be read after cancellation."));
+                try{await service.IsAvailableAsync(cancelled.Token);throw new Exception("Availability ignored cancellation.");}
+                catch(OperationCanceledException)when(cancelled.IsCancellationRequested){}
+            });
+            await Check("fresh offline availability does not create or download model files",async()=>
+            {
+                string folder=Path.Combine(Path.GetTempPath(),"Snip.NoModels-"+Guid.NewGuid());
+                var models=new ModelStore(folder);
+                Require(!await new OfflineTranslator(models).IsAvailableAsync(CancellationToken.None),"Fresh installation has a translation model.");
+                Require(!Directory.Exists(folder),"Availability created model files.");
+            });
             foreach(var provider in OnlineTranslationProviders.Names)
                 await Check(provider+" text-only protocol and endpoint",async()=>
                 {

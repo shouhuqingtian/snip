@@ -42,6 +42,26 @@ internal static class NativeOcrCheck
                 TextResultWindow? window = null;
                 try
                 {
+                    string freshFolder = Path.Combine(Path.GetTempPath(), "Snip.NativeOcr.NoModels-" + Guid.NewGuid());
+                    var freshModels = new ModelStore(Path.Combine(freshFolder, "models"));
+                    var freshSettings = new OnlineTranslationSettingsStore(Path.Combine(freshFolder, "online.json"));
+                    using (var fresh = new TextResultViewModel(image, service, freshModels, new OfflineTranslator(freshModels),
+                        onlineTranslator: new OnlineTranslator(() => freshSettings.ReadCredentials())) { AutoTranslate = true, Language = english })
+                    {
+                        window = new TextResultWindow(fresh); window.Show();
+                        TextWindowChecks.PumpUntil(() => !fresh.Busy && (fresh.Source.Length > 0 || fresh.Status.Contains("失败")), TimeSpan.FromSeconds(30));
+                        if (!window.IsVisible || fresh.ShowTranslation || fresh.Status.Contains("失败") || !fresh.Source.Contains("Hello", StringComparison.OrdinalIgnoreCase) ||
+                            window.FindName("RecognizedText") is not TextBox freshSource || !freshSource.IsVisible || freshSource.IsReadOnly || freshSource.Text != fresh.Source ||
+                            window.FindName("CopySourceButton") is not Button copy || !copy.IsEnabled)
+                            throw new InvalidOperationException("Native OCR without translation resources failed to show a copyable, editable result: " + fresh.Status);
+                        fresh.CopySourceCommand.Execute(null);
+                        TextWindowChecks.PumpUntil(() => fresh.CopyStatus.Contains("已复制") || fresh.CopyStatus.Contains("未完成") || fresh.CopyStatus.Contains("失败"), TimeSpan.FromSeconds(8));
+                        if (!fresh.CopyStatus.Contains("已复制") || Clipboard.GetText() != fresh.Source)
+                            throw new InvalidOperationException("Default native OCR could not copy its result.");
+                        if (Directory.Exists(freshFolder)) throw new InvalidOperationException("Default native OCR created model or online settings files.");
+                        window.Close(); window = null;
+                        Console.WriteLine("PASS fresh install: native Windows OCR with no model/key shows editable text, copies to clipboard, and creates no translation files.");
+                    }
                     var models = new ModelStore(Path.GetFullPath(".model-cache/translation"));
                     // Keep a real 4K screenshot resident while native OCR and the new model run.
                     var largeBytes = Enumerable.Repeat((byte)255, 3840 * 2160 * 4).ToArray();

@@ -23,6 +23,18 @@ public sealed class OnlineTranslator(Func<OnlineTranslationCredentials> credenti
 {
     private static readonly HttpClient Shared = new(new HttpClientHandler { AllowAutoRedirect=false,UseCookies=false }) { Timeout=Timeout.InfiniteTimeSpan };
     private readonly HttpClient http = client ?? Shared;
+    public Task<bool> IsAvailableAsync(CancellationToken token)
+    {
+        token.ThrowIfCancellationRequested();
+        try
+        {
+            var configured=credentials();
+            _=ResolveEndpoint(configured.Settings.Endpoint);
+            return Task.FromResult(!string.IsNullOrWhiteSpace(configured.ApiKey) && !string.IsNullOrWhiteSpace(configured.Settings.Model));
+        }
+        catch(Exception error) when(error is InvalidOperationException or ArgumentException or System.Security.Cryptography.CryptographicException or IOException or UnauthorizedAccessException)
+        { return Task.FromResult(false); }
+    }
     public Task<string> TranslateAsync(string text,string direction,CancellationToken token) => TranslateAsync(text,direction,null,token);
     public async Task<string> TranslateAsync(string text,string direction,IProgress<TranslationProgress>? progress,CancellationToken token)
     {

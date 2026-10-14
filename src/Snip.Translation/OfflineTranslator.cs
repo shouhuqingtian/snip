@@ -12,6 +12,8 @@ public sealed class OfflineTranslator(ModelStore models) : ITranslationService
     // All result windows share a single native inference budget, even with separate service instances.
     private static readonly SemaphoreSlim gate = new(1);
     public event Action<OfflineInferenceMetrics>? InferenceCompleted;
+    public Task<bool> IsAvailableAsync(CancellationToken token)
+    { token.ThrowIfCancellationRequested(); return Task.FromResult(models.HasInstalledFiles); }
     public Task<string> TranslateAsync(string text, string direction, CancellationToken token)
         => TranslateAsync(text, direction, null, token);
     public Task<string> TranslateAsync(string text, string direction, IProgress<TranslationProgress>? progress, CancellationToken token)

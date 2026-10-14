@@ -50,11 +50,38 @@ internal static class TextWindowChecks
             Require(window.FindName("TranslatedText") is TextBox translated && translated.Text == text.Translated && translated.IsVisible, "Translation is not visible.");
             window.Close(); Console.WriteLine("PASS actual translation XAML keeps original and translated results visible.");
 
-            stage = "missing model result retention";
+            stage = "OCR-only default with no translation resources";
+            var emptyModels = new ModelStore(Path.Combine(folder, "no-models"));
+            var emptyOnline = new OnlineTranslationSettingsStore(Path.Combine(folder, "no-online.json"));
+            using var freshPins = new PinManager(new FakeExport());
+            var noResources = new FeatureHub(new AnnotationRenderer(), new FakeExport(), new FakeCapture(image),
+                freshPins, diagnostics, new FakeOcr(), models: emptyModels, onlineSettings: emptyOnline);
+            window = noResources.ShowText(new EditorViewModel(image, new AnnotationRenderer(), new FakeExport(), new EditorDialogs(() => null)), true)!;
+            text = (TextResultViewModel)window.DataContext;
+            PumpUntil(() => !text.Busy && text.Source.Length > 0, TimeSpan.FromSeconds(8));
+            Require(window.IsVisible && text.Source == "Hello world" && !text.ShowTranslation && !text.Status.Contains("失败"), "Fresh toolbar translation did not fall back to visible OCR.");
+            Require(window.FindName("RecognizedText") is TextBox freshSource && freshSource.Text == text.Source && !freshSource.IsReadOnly && freshSource.IsVisible,
+                "Fresh OCR text is not visible and editable.");
+            Require(window.FindName("CopySourceButton") is Button copy && copy.IsEnabled, "Fresh OCR cannot be copied.");
+            var retry = text.TranslateAsync(); PumpUntil(() => retry.IsCompleted, TimeSpan.FromSeconds(8)); retry.GetAwaiter().GetResult();
+            Require(!text.ShowTranslation && !text.Status.Contains("失败") && text.Source == "Hello world", "Manual translation without a model discarded OCR or displayed an error.");
+            text.UseOnlineTranslation = true;
+            retry = text.TranslateAsync(); PumpUntil(() => retry.IsCompleted, TimeSpan.FromSeconds(8)); retry.GetAwaiter().GetResult();
+            Require(!text.ShowTranslation && text.Status.Contains("在线翻译尚未配置") && !text.Status.Contains("失败") && text.Source == "Hello world", "Online mode without credentials discarded OCR.");
+            Require(!Directory.Exists(Path.Combine(folder, "no-models")) && !File.Exists(Path.Combine(folder, "no-online.json")), "OCR-only fallback installed a model or wrote online settings.");
+            window.Close(); Console.WriteLine("PASS real FeatureHub: no model or online settings keeps editable, copyable OCR for automatic and manual translation.");
+
+            stage = "missing Windows OCR language component";
+            window = Show(true, new NoLanguageOcr());
+            text = (TextResultViewModel)window.DataContext;
+            Require(window.IsVisible && text.Status.Contains("Windows OCR 语言组件"), "Missing Windows language component did not retain the result and explain the OS dependency.");
+            window.Close(); Console.WriteLine("PASS absent Windows OCR language component keeps preview and gives explicit language-install guidance.");
+
+            stage = "translation inference failure result retention";
             window = Show(true, translator: new FakeTranslation(fail: true));
             text = (TextResultViewModel)window.DataContext;
             Require(text.Source == "Hello world" && text.Status.Contains("失败") && window.IsVisible, "Missing model discarded the original or closed the result.");
-            window.Close(); Console.WriteLine("PASS missing translation model retains window, screenshot and original text.");
+            window.Close(); Console.WriteLine("PASS translation inference failure retains window, screenshot and original text.");
 
             stage = "OCR failure result retention";
             window = Show(false, new FakeOcr(fail: true));
@@ -151,6 +178,13 @@ internal static class TextWindowChecks
     private static void Require(bool condition, string message) { if (!condition) throw new InvalidOperationException(message); }
     private static BitmapSource Image(int width, int height)
     { var image = BitmapSource.Create(width, height, 96, 96, PixelFormats.Bgra32, null, Enumerable.Repeat((byte)255, width * height * 4).ToArray(), width * 4); image.Freeze(); return image; }
+    private sealed class NoLanguageOcr : IOcrService
+    {
+        public IReadOnlyList<string> Languages => [];
+        public Task<OcrResult> RecognizeAsync(ImagePayload image, CancellationToken token) => RecognizeAsync(image, null, token);
+        public Task<OcrResult> RecognizeAsync(ImagePayload image, string? language, CancellationToken token)
+            => throw new InvalidOperationException("Recognition must not run without a language component.");
+    }
     private sealed class MultilingualOcr : IOcrService
     {
         public IReadOnlyList<string> Languages => ["zh-Hans-CN", "en-US"];

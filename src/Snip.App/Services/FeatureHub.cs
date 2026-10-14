@@ -45,7 +45,7 @@ public sealed class FeatureHub
             var image = vm.Compose();
             operation?.Stage("image-composed", new { image.PixelWidth, image.PixelHeight });
             text = new TextResultViewModel(image, ocr, models, translator, diagnostics, onlineTranslator: onlineTranslator,
-                configureOnline: () => ShowOnlineSettings(() => { if (text is not null) text.UseOnlineTranslation = onlineSettings.Read()?.DefaultOnline ?? false; }),
+                configureOnline: () => ShowOnlineSettings(() => { if (text is not null) text.UseOnlineTranslation = DefaultOnline(); }),
                 defaultOnline: DefaultOnline()) { AutoTranslate = translate };
             operation?.Stage("view-model-created");
             // A result must outlive the screenshot overlay. Do not give it the overlay as owner.
@@ -63,7 +63,7 @@ public sealed class FeatureHub
     }
     private bool DefaultOnline()
     {
-        try { return onlineSettings.Read()?.DefaultOnline ?? false; }
+        try { return onlineSettings.Read() is { DefaultOnline:true,HasApiKey:true }; }
         catch (InvalidOperationException error) { diagnostics?.Record("online-settings", "invalid-configuration", error: error); return false; }
     }
     public OnlineTranslationSettingsWindow ShowOnlineSettings(Action? saved = null)
