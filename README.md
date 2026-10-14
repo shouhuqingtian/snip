@@ -4,9 +4,9 @@
 
 ## 下载
 
-当前开发版 **2.0.18 测试便携版**：[下载便携 ZIP](https://github.com/shouhuqingtian/snip/releases/download/preview-cb35c0c957ba/self-snip-preview-win-x64.zip) · [完整源码](https://github.com/shouhuqingtian/snip/releases/download/preview-cb35c0c957ba/self-snip-source.zip)。包含检查记录、版本信息和完整提交号。无需配置在线密钥或下载翻译模型即可使用 Windows 本地 OCR；缺翻译资源时默认保留文字识别结果，见 [修改与验证](docs/2.0.15默认OCR与翻译可用性.md)。
+当前开发版 **2.0.19 测试便携版**：[下载便携 ZIP](https://github.com/shouhuqingtian/snip/releases/download/preview-439fcb620789/self-snip-preview-win-x64.zip) · [完整源码](https://github.com/shouhuqingtian/snip/releases/download/preview-439fcb620789/self-snip-source.zip)。包含检查记录、版本信息和完整提交号。无需配置在线密钥或下载翻译模型即可使用 Windows 本地 OCR；缺翻译资源时默认保留文字识别结果，见 [修改与验证](docs/2.0.15默认OCR与翻译可用性.md)。
 
-2.0.18 网页截图只保留三个入口：整个网页、从当前位置向下、手动滚动长截图。手动模式框选后用滚轮向下滚动，点击选区外的“完成”或 Ctrl+Enter 生成长图，Esc 取消；真实 Windows Chrome 的滚轮、完成按钮、取消和末尾像素回归已通过，见 [修改文件、使用与验证](docs/2.0.18三种网页截图与手动长图.md)。
+2.0.19 网页截图保留三个入口：整个网页、从当前位置向下、捕捉选定区域。第三项进入模式后按住左键重新拖选，碰到网页下沿自动滚动，松开完成，Esc 取消；真实 Windows Chrome 的拖选、越过下沿、末尾像素、取消及选中文字 / 固定侧栏页面检查通过，见 [修改文件、使用与验证](docs/2.0.19网页拖选与边缘自动滚动.md)。
 
 2.0.16 增加可选 Vulkan GPU 离线翻译，支持兼容的 NVIDIA/AMD/Intel 驱动；约 32 MB GPU 运行库单独下载，复用同一模型。无兼容设备时回退 CPU。实体 GPU 加速尚待兼容设备实测，见 [修改与验证](docs/2.0.16通用GPU翻译加速.md)。
 
