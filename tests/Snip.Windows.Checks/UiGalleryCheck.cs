@@ -79,6 +79,13 @@ internal static class UiGalleryCheck
                 var color = TextWindowChecks.Descendants<Button>(editor).Single(b => Equals(b.ToolTip, "#FF9500"));
                 color.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
                 Require(((EditorViewModel)editor.DataContext).Color == "#FF9500", "Color swatches no longer update the editor.");
+                var toolbar = TextWindowChecks.Descendants<EditorToolbar>(editor).Single();
+                var browser = TextWindowChecks.Descendants<Button>(toolbar).Single(b => Equals(b.ToolTip, "Chrome / Edge 网页截图"));
+                var entries = browser.ContextMenu.Items.OfType<MenuItem>().ToArray();
+                Require(entries.Length == 3, "Browser menu must contain exactly three capture modes.");
+                var requested = new List<BrowserCaptureMode>(); toolbar.ScrollRequested += requested.Add;
+                foreach (var entry in entries) entry.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
+                Require(requested.SequenceEqual(new[] { BrowserCaptureMode.EntirePage, BrowserCaptureMode.FromCurrentPage, BrowserCaptureMode.ManualScroll }), "Browser menu dispatches an incorrect capture mode.");
             });
             TextResultWindow Result(bool translation) => new(new TextResultViewModel(image, new GalleryOcr(), new ModelStore("unused-models"), new GalleryTranslation()) { AutoTranslate = translation });
             var result = Result(false);
@@ -101,7 +108,18 @@ internal static class UiGalleryCheck
             using var selection = new SelectionSession(new(image, new(0, 0, 1280, 800), capture.GetDisplays()), capture, renderer, export, []);
             selection.Show(); selection.ViewModel.SetSelection(new(90, 110, 1050, 460)); selection.BeginEditing();
             Capture(app.Windows.OfType<SelectionWindow>().Single(), "13-selection-toolbar");
-            Console.WriteLine("PASS 14 actual UI previews; no share target invoked or user screenshot used."); return 0;
+            using var manualControl = new ManualCaptureControl();
+            var manualVm = new ManualScrollCaptureViewModel(manualControl, () => { });
+            manualVm.Update(new(4, 950, "已采集 4 帧，950 像素 · 滚轮向下滚动，完成 Ctrl+Enter", true));
+            var manualWindow = new ManualScrollCaptureWindow(manualVm);
+            Capture(manualWindow, "15-manual-scroll", () =>
+            {
+                var done = TextWindowChecks.Descendants<Button>(manualWindow).Single(b => b.Name == "CompleteManualButton");
+                Require(done.IsEnabled, "Manual finish button is not usable after a valid frame.");
+                done.Command.Execute(done.CommandParameter);
+                Require(manualControl.FinishRequested, "Manual finish button did not end collection.");
+            });
+            Console.WriteLine("PASS 15 actual UI previews and three browser menu actions; no share target invoked or user screenshot used."); return 0;
         }
         catch (Exception error)
         {

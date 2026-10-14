@@ -113,8 +113,7 @@ public sealed class FeatureHub
             case SelectionAction.Editor: OpenEditor(result.Editor); break;
             case SelectionAction.Share: ShowShare(result.Editor); break;
             case SelectionAction.Scroll:
-                if (result.BrowserMode == BrowserCaptureMode.SelectedRegion) { OpenEditor(result.Editor); return; }
-                if (result.Editor.IsDirty && MessageBox.Show("自动长截图使用网页原画面，不包含当前标注。继续？", "自动长截图", MessageBoxButton.OKCancel) != MessageBoxResult.OK)
+                if (result.Editor.IsDirty && MessageBox.Show("网页长截图使用网页原画面，不包含当前标注。继续？", "网页长截图", MessageBoxButton.OKCancel) != MessageBoxResult.OK)
                 { OpenEditor(result.Editor); return; }
                 await CaptureBrowserAsync(result);
                 break;
@@ -129,21 +128,29 @@ public sealed class FeatureHub
         using var operation = diagnostics?.Begin("browser-capture", new { Mode = result.BrowserMode.ToString(), result.Region.Width, result.Region.Height });
         System.Windows.Media.Imaging.BitmapSource? image = null;
         Exception? failure = null;
+        using var manual = result.BrowserMode == BrowserCaptureMode.ManualScroll ? new ManualScrollCaptureController(() => _ = cancellation.CancelAsync()) : null;
         try
         {
-            // No floating progress window: GDI can photograph it even with ShowActivated=false.
-            // Hide every WPF window we own, including topmost pins, until the last frame is done.
+            // GDI can photograph floating windows even with ShowActivated=false.
+            // Hide existing windows; manual controls are created later, outside the captured region.
             using var hidden = new CaptureWindowScope(Application.Current.Windows.Cast<Window>());
             operation?.Stage("own-windows-hidden");
             CaptureStatus?.Invoke("正在采集网页 · Esc 取消");
             await Task.Delay(160, cancellation.Token);
             var progress = new Progress<string>(message => { if (browserCancellation == cancellation && !cancellation.IsCancellationRequested) CaptureStatus?.Invoke(message); });
-            image = await new BrowserScrollCapture(capture).CaptureAsync(result.Region, progress, cancellation.Token, result.BrowserMode, operation);
+            var feedback = manual is null ? null : new Progress<ManualCaptureProgress>(value =>
+            {
+                if (browserCancellation == cancellation && !cancellation.IsCancellationRequested)
+                { manual.ViewModel.Update(value); CaptureStatus?.Invoke(value.Status); }
+            });
+            image = await new BrowserScrollCapture(capture).CaptureAsync(result.Region, progress, cancellation.Token, result.BrowserMode, operation,
+                manual?.Control, feedback, manual is null ? null : (region, target) => Application.Current.Dispatcher.InvokeAsync(() => manual.Bind(region, target)).Task);
+            manual?.Dispose();
             operation?.Complete(new { image.PixelWidth, image.PixelHeight });
         }
         catch (OperationCanceledException) { operation?.Cancel("requested"); }
         catch (Exception e) { failure = e; operation?.Fail(e); }
-        finally { browserCancellation = null; CaptureStatus?.Invoke(null); }
+        finally { manual?.Dispose(); browserCancellation = null; CaptureStatus?.Invoke(null); }
         if (failure is not null) MessageBox.Show(failure.Message, "长截图未完成", MessageBoxButton.OK, MessageBoxImage.Warning);
         if (image is not null) OpenEditor(new EditorViewModel(image, renderer, export, new EditorDialogs(() => null)));
         else OpenEditor(result.Editor);

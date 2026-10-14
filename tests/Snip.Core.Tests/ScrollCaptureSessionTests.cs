@@ -22,6 +22,14 @@ public sealed class ScrollCaptureSessionTests
         Assert.DoesNotContain(source.Inputs, amount => amount < 0);
     }
     [Fact]
+    public async Task CurrentPageAlreadyAtBottomReturnsVisibleViewportWithoutScrollPattern()
+    {
+        var source = new PageSource(803, 603);
+        var output = await new ScrollCaptureSession().CaptureAsync(source, false, null, CancellationToken.None, allowSingleFrame: true);
+        Assert.Equal(200, output.Height); Assert.Equal(source.Page.Skip(603 * 120 * 4), output.Bgra);
+        Assert.DoesNotContain(source.Inputs, amount => amount < 0);
+    }
+    [Fact]
     public async Task NoMovementReportsFailureInsteadOfReturningOriginalScreenshot()
     {
         var error = await Assert.ThrowsAsync<InvalidOperationException>(() => new ScrollCaptureSession().CaptureAsync(new PageSource(200, 0), false, null, CancellationToken.None));

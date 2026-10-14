@@ -9,6 +9,9 @@ using Snip.App.Services;
 using System.Windows;
 using System.Windows.Media;
 using System.Windows.Threading;
+using System.Windows.Controls;
+using Snip.App.ViewModels;
+using Snip.App.Views;
 
 namespace Snip.Windows.Checks;
 
@@ -18,6 +21,7 @@ internal static class ChromeCaptureCheck
     private static string Title(IntPtr hwnd) { var title = new StringBuilder(256); GetWindowText(hwnd, title, title.Capacity); return title.ToString(); }
     public static int Run()
     {
+        var app = Application.Current ?? new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
         var chrome = new[] {
             Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Google/Chrome/Application/chrome.exe"),
             Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), "Google/Chrome/Application/chrome.exe")
@@ -26,6 +30,7 @@ internal static class ChromeCaptureCheck
         var output = Path.GetFullPath("artifacts/chrome-check"); Directory.CreateDirectory(output);
         using var diagnostics = new DiagnosticJournal(Path.Combine(output, "logs"));
         Process? browser = null; string stage = "launch";
+        using var watchdog = new System.Threading.Timer(_ => { Console.WriteLine("::error title=Chrome capture deadline::" + Volatile.Read(ref stage)); Environment.Exit(1); }, null, TimeSpan.FromMinutes(3), Timeout.InfiniteTimeSpan);
         try
         {
             var file = Fixture("colored-rows.html");
@@ -66,7 +71,7 @@ internal static class ChromeCaptureCheck
             stage = "physical browser target with transparent overlay";
             BrowserTargetChecks.Verify(window, region, () =>
             {
-                var throughOverlay = Capture(region, BrowserCaptureMode.VisiblePage);
+                var throughOverlay = Capture(region, BrowserCaptureMode.FromCurrentPage);
                 if (throughOverlay.PixelHeight < 160 || throughOverlay.PixelWidth < 80)
                     throw new InvalidOperationException("Physical browser viewport capture is empty.");
             });
@@ -75,16 +80,70 @@ internal static class ChromeCaptureCheck
             export.SavePng(entire, Path.Combine(output, "entire-page.png"));
             if (entire.PixelHeight < 3500 || entire.PixelHeight > 4000) throw new InvalidOperationException($"Unexpected full page height: {entire.PixelHeight}");
             Console.WriteLine($"PASS real Chrome entire page: {entire.PixelWidth}x{entire.PixelHeight}; ScrollPattern disabled.");
-            stage = "visible page";
-            var visible = Capture(region, BrowserCaptureMode.VisiblePage);
-            export.SavePng(visible, Path.Combine(output, "visible-page.png"));
-            if (visible.PixelHeight >= 1000 || visible.PixelWidth != entire.PixelWidth) throw new InvalidOperationException("Visible-page viewport mismatch.");
-            Console.WriteLine($"PASS real Chrome visible page: {visible.PixelWidth}x{visible.PixelHeight}");
-            stage = "selected region";
-            var selected = Capture(region, BrowserCaptureMode.SelectedRegion);
-            export.SavePng(selected, Path.Combine(output, "selected-region.png"));
-            if (selected.PixelHeight != (int)region.Height || selected.PixelWidth != (int)region.Width) throw new InvalidOperationException("Selected region mismatch.");
-            Console.WriteLine($"PASS real Chrome selected region: {selected.PixelWidth}x{selected.PixelHeight}");
+            stage = "current viewport from middle to bottom";
+            Wheel(region, 12000); Task.Delay(650).GetAwaiter().GetResult();
+            Wheel(region, -600); Task.Delay(650).GetAwaiter().GetResult();
+            var suffix = Capture(region, BrowserCaptureMode.FromCurrentPage);
+            export.SavePng(suffix, Path.Combine(output, "current-to-bottom.png"));
+            if (suffix.PixelWidth != entire.PixelWidth || suffix.PixelHeight >= entire.PixelHeight - 100 || suffix.PixelHeight < 1000)
+                throw new InvalidOperationException("Current-page capture restarted at the top or lost the remaining document.");
+            Console.WriteLine($"PASS real Chrome from current viewport to bottom: {suffix.PixelWidth}x{suffix.PixelHeight}; excludes content above.");
+            stage = "current viewport already at bottom";
+            var bottom = Capture(region, BrowserCaptureMode.FromCurrentPage);
+            if (bottom.PixelHeight >= 1000 || bottom.PixelWidth != entire.PixelWidth) throw new InvalidOperationException("At-bottom current capture must return the visible viewport.");
+            Console.WriteLine("PASS current mode at page bottom returns one viewport without failure.");
+            stage = "real manual toolbar, wheel input and finish";
+            Wheel(region, 12000); Task.Delay(650).GetAwaiter().GetResult();
+            var previousContext = SynchronizationContext.Current;
+            SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext());
+            try
+            {
+                var renderer = new AnnotationRenderer(); using var pins = new PinManager(export);
+                var features = new FeatureHub(renderer, export, desktop, pins, diagnostics);
+                EditorViewModel Original() => new(desktop.CaptureRegion(region), renderer, export, new EditorDialogs(() => null));
+                var task = features.HandleAsync(new(Original(), region, SelectionAction.Scroll, BrowserCaptureMode.ManualScroll));
+                TextWindowChecks.PumpUntil(() => task.IsCompleted || app.Windows.OfType<ManualScrollCaptureWindow>().Any(w => ((ManualScrollCaptureViewModel)w.DataContext).Ready), TimeSpan.FromSeconds(12));
+                if (task.IsCompleted) { task.GetAwaiter().GetResult(); throw new InvalidOperationException("Manual capture returned before wheel/finish input."); }
+                var toolbar = app.Windows.OfType<ManualScrollCaptureWindow>().Single();
+                ((Border)toolbar.Content).Background = Brushes.Magenta; toolbar.UpdateLayout();
+                if (DesktopWindows.Foreground != window.Handle) throw new InvalidOperationException("Manual controls stole browser focus.");
+                var bounds = toolbar.PointToScreen(new Point());
+                var end = toolbar.PointToScreen(new Point(toolbar.ActualWidth, toolbar.ActualHeight));
+                if (!new PixelRect(bounds.X, bounds.Y, end.X - bounds.X, end.Y - bounds.Y).Intersect(region).IsEmpty)
+                    throw new InvalidOperationException("Manual controls overlap the captured rectangle.");
+                for (int step = 0; step < 3; step++)
+                {
+                    Wheel(region, -120);
+                    var settled = Task.Delay(700); TextWindowChecks.PumpUntil(() => settled.IsCompleted || task.IsCompleted, TimeSpan.FromSeconds(3));
+                }
+                var vm = (ManualScrollCaptureViewModel)toolbar.DataContext;
+                TextWindowChecks.PumpUntil(() => task.IsCompleted || vm.CanFinish && vm.Frames > 1, TimeSpan.FromSeconds(5));
+                if (task.IsCompleted) { task.GetAwaiter().GetResult(); throw new InvalidOperationException("Manual capture stopped during user scrolling."); }
+                var finalViewport = desktop.CaptureRegion(region);
+                var done = TextWindowChecks.Descendants<Button>(toolbar).Single(b => b.Name == "CompleteManualButton");
+                Click(done.PointToScreen(new Point(done.ActualWidth / 2, done.ActualHeight / 2)));
+                TextWindowChecks.PumpUntil(() => task.IsCompleted, TimeSpan.FromSeconds(12)); task.GetAwaiter().GetResult();
+                if (app.Windows.OfType<ManualScrollCaptureWindow>().Any()) throw new InvalidOperationException("Manual controls were not closed after completion.");
+                var editor = app.Windows.OfType<EditorWindow>().Single();
+                var manual = ((EditorViewModel)editor.DataContext).Compose(); export.SavePng(manual, Path.Combine(output, "manual-region.png"));
+                if (manual.PixelWidth != (int)region.Width || manual.PixelHeight <= region.Height + 50 || manual.PixelHeight >= 1500)
+                    throw new InvalidOperationException("Manual mode ignored region dimensions or captured the whole document instead of user stop.");
+                if (ContainsMagenta(manual)) throw new InvalidOperationException("Manual operation controls were photographed into the result.");
+                var a = new CroppedBitmap(manual, new Int32Rect(0, manual.PixelHeight - 50, manual.PixelWidth, 50));
+                var b = new CroppedBitmap(finalViewport, new Int32Rect(0, finalViewport.PixelHeight - 50, finalViewport.PixelWidth, 50));
+                var aBytes = new byte[manual.PixelWidth * 50 * 4]; var bBytes = new byte[aBytes.Length]; a.CopyPixels(aBytes, manual.PixelWidth * 4, 0); b.CopyPixels(bBytes, manual.PixelWidth * 4, 0);
+                if (!aBytes.SequenceEqual(bBytes)) throw new InvalidOperationException("Manual screenshot did not end at the user's final visible area.");
+                editor.Close(); Console.WriteLine($"PASS real manual Chrome capture: {manual.PixelWidth}x{manual.PixelHeight}; real wheel, clickable finish, exact final strip, controls excluded.");
+                stage = "manual native Esc cancellation";
+                var cancelTask = features.HandleAsync(new(Original(), region, SelectionAction.Scroll, BrowserCaptureMode.ManualScroll));
+                TextWindowChecks.PumpUntil(() => cancelTask.IsCompleted || app.Windows.OfType<ManualScrollCaptureWindow>().Any(w => ((ManualScrollCaptureViewModel)w.DataContext).Ready), TimeSpan.FromSeconds(12));
+                Key(0x1B);
+                TextWindowChecks.PumpUntil(() => cancelTask.IsCompleted, TimeSpan.FromSeconds(8)); cancelTask.GetAwaiter().GetResult();
+                if (app.Windows.OfType<ManualScrollCaptureWindow>().Any()) throw new InvalidOperationException("Esc left manual capture controls running.");
+                foreach (var restored in app.Windows.OfType<EditorWindow>().ToArray()) restored.Close();
+                Console.WriteLine("PASS real native Esc cancels manual capture and closes controls/hooks.");
+            }
+            finally { SynchronizationContext.SetSynchronizationContext(previousContext); }
             // A normal white article with embedded screenshots and a fixed bottom toolbar.
             var richFile = Fixture("article-fixed-footer.html");
             var richStart = new ProcessStartInfo(chrome) { UseShellExecute = false };
@@ -152,6 +211,26 @@ internal static class ChromeCaptureCheck
             try { Directory.Delete(directory, true); } catch { }
         }
     }
+    [DllImport("user32.dll")] private static extern bool SetPhysicalCursorPos(int x, int y);
+    [DllImport("user32.dll", SetLastError = true)] private static extern uint SendInput(uint count, Input[] inputs, int size);
+    [StructLayout(LayoutKind.Sequential)] private struct Input { public uint Type; public InputUnion Data; }
+    [StructLayout(LayoutKind.Explicit)] private struct InputUnion
+    { [FieldOffset(0)] public MouseInput Mouse; [FieldOffset(0)] public KeyboardInput Keyboard; }
+    [StructLayout(LayoutKind.Sequential)] private struct MouseInput { public int X, Y; public uint Wheel, Flags, Time; public UIntPtr Extra; }
+    [StructLayout(LayoutKind.Sequential)] private struct KeyboardInput { public ushort Key, Scan; public uint Flags, Time; public UIntPtr Extra; }
+    private static void Wheel(PixelRect region, int delta)
+    {
+        SetPhysicalCursorPos((int)(region.X + region.Width / 2), (int)(region.Y + region.Height / 2));
+        Send([new() { Type = 0, Data = new() { Mouse = new() { Wheel = unchecked((uint)delta), Flags = 0x0800 } } }]);
+    }
+    private static void Click(Point point)
+    {
+        SetPhysicalCursorPos((int)point.X, (int)point.Y);
+        Send([new() { Type = 0, Data = new() { Mouse = new() { Flags = 0x0002 } } }, new() { Type = 0, Data = new() { Mouse = new() { Flags = 0x0004 } } }]);
+    }
+    private static void Key(ushort key) => Send([new() { Type = 1, Data = new() { Keyboard = new() { Key = key } } }, new() { Type = 1, Data = new() { Keyboard = new() { Key = key, Flags = 2 } } }]);
+    private static void Send(Input[] inputs)
+    { if (SendInput((uint)inputs.Length, inputs, Marshal.SizeOf<Input>()) != inputs.Length) throw new InvalidOperationException("Fixture browser input was rejected."); }
     private static string Fixture(string name)
     {
         var path = Path.Combine(AppContext.BaseDirectory, "Fixtures", "scrolling", name);

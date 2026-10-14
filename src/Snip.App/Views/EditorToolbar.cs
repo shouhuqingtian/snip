@@ -44,14 +44,14 @@ public sealed class EditorToolbar : UserControl
         var browserMenu = new ContextMenu();
         foreach (var (mode, title) in new[] {
             (BrowserCaptureMode.EntirePage, "捕捉整个网页（自动从顶部到页尾）"),
-            (BrowserCaptureMode.VisiblePage, "捕捉可见网页（不滚动）"),
-            (BrowserCaptureMode.SelectedRegion, "捕捉选定区域（不滚动）"),
-            (BrowserCaptureMode.SelectedRegionScroll, "选定区域长截图（从当前位置向下）") })
+            (BrowserCaptureMode.FromCurrentPage, "从当前位置向下捕捉（自动到页尾）"),
+            (BrowserCaptureMode.ManualScroll, "手动滚动长截图（框选后滚动，点击完成）") })
         {
             var item = new MenuItem { Header = title }; item.Click += (_, _) => ScrollRequested?.Invoke(mode); browserMenu.Items.Add(item);
         }
         Button? browser = null;
         browser = Add("scroll", "Chrome / Edge 网页截图", () => { browserMenu.PlacementTarget = browser; browserMenu.IsOpen = true; });
+        browser.ContextMenu = browserMenu;
         Divider();
         var undo = Add("undo", "撤销 Ctrl+Z", () => { }); undo.SetBinding(Button.CommandProperty, new Binding(nameof(EditorViewModel.UndoCommand)));
         var redo = Add("redo", "重做 Ctrl+Y", () => { }); redo.SetBinding(Button.CommandProperty, new Binding(nameof(EditorViewModel.RedoCommand)));
