@@ -4,7 +4,7 @@
 
 ## 下载
 
-当前开发版 **2.0.4 测试便携版** 在 [GitHub Releases](https://github.com/shouhuqingtian/snip/releases) 下载最新带“测试便携版”的条目，选择 `self-snip-preview-win-x64.zip`。每个测试版对应一个明确提交，包含检查记录、版本信息和完整源码附件。
+当前开发版 **2.0.15 测试便携版**：[下载便携 ZIP](https://github.com/shouhuqingtian/snip/releases/download/preview-1cf517a79268/self-snip-preview-win-x64.zip) · [完整源码](https://github.com/shouhuqingtian/snip/releases/download/preview-1cf517a79268/self-snip-source.zip)。包含检查记录、版本信息和完整提交号。无需配置在线密钥或下载翻译模型即可使用 Windows 本地 OCR；缺翻译资源时默认保留文字识别结果，见 [修改与验证](docs/2.0.15默认OCR与翻译可用性.md)。
 
 下面是历史 **2.0.2** 发行文件：
 
