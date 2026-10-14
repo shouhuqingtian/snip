@@ -63,6 +63,13 @@ internal static class ChromeCaptureCheck
                 }
                 catch (Exception error) { operation.Fail(error); throw; }
             }
+            stage = "physical browser target with transparent overlay";
+            BrowserTargetChecks.Verify(window, region, () =>
+            {
+                var throughOverlay = Capture(region, BrowserCaptureMode.VisiblePage);
+                if (throughOverlay.PixelHeight < 160 || throughOverlay.PixelWidth < 80)
+                    throw new InvalidOperationException("Physical browser viewport capture is empty.");
+            });
             stage = "colored whole page";
             var entire = Capture(region, BrowserCaptureMode.EntirePage);
             export.SavePng(entire, Path.Combine(output, "entire-page.png"));

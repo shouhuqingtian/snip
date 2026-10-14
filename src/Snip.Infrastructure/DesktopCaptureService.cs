@@ -32,11 +32,12 @@ public sealed class DesktopCaptureService : IDesktopCaptureService
 {
     public PixelPoint CursorPosition
     {
-        get { if (!NativeMethods.GetCursorPos(out var p)) throw new Win32Exception(); return new(p.X, p.Y); }
+        get { if (!NativeMethods.GetPhysicalCursorPos(out var p)) throw new Win32Exception(); return new(p.X, p.Y); }
     }
 
     public IReadOnlyList<DisplayInfo> GetDisplays()
     {
+        using var pixels = new PhysicalDesktopScope();
         var result = new List<DisplayInfo>();
         NativeMethods.MonitorCallback callback = (IntPtr monitor, IntPtr dc, ref NativeMethods.NativeRect rect, IntPtr data) =>
         {
@@ -70,6 +71,7 @@ public sealed class DesktopCaptureService : IDesktopCaptureService
 
     private static BitmapSource CapturePixels(PixelRect bounds, IReadOnlyList<DisplayInfo> displays)
     {
+        using var pixels = new PhysicalDesktopScope();
         NativeMethods.DwmFlush();
         using var bitmap = new Bitmap((int)bounds.Width, (int)bounds.Height, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
         using (var graphics = Graphics.FromImage(bitmap))

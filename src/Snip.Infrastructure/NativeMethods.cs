@@ -18,6 +18,7 @@ internal static class NativeMethods
     [DllImport("user32.dll")] internal static extern bool EnumDisplayMonitors(IntPtr dc, IntPtr clip, MonitorCallback callback, IntPtr data);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] internal static extern bool GetMonitorInfo(IntPtr monitor, ref MonitorInfo info);
     [DllImport("user32.dll")] internal static extern bool GetCursorPos(out NativePoint point);
+    [DllImport("user32.dll")] internal static extern bool GetPhysicalCursorPos(out NativePoint point);
     [DllImport("user32.dll", SetLastError = true)] internal static extern bool RegisterHotKey(IntPtr hwnd, int id, uint modifiers, uint key);
     [DllImport("user32.dll")] internal static extern bool UnregisterHotKey(IntPtr hwnd, int id);
     [DllImport("user32.dll", SetLastError = true)] internal static extern bool SetWindowPos(IntPtr hwnd, IntPtr after, int x, int y, int width, int height, uint flags);

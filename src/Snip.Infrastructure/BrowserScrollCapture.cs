@@ -16,8 +16,8 @@ public sealed class BrowserScrollCapture(IDesktopCaptureService capture)
     [DllImport("user32.dll")] private static extern bool SetForegroundWindow(IntPtr hwnd);
     [DllImport("user32.dll")] private static extern IntPtr GetForegroundWindow();
     [DllImport("user32.dll")] private static extern short GetAsyncKeyState(int key);
-    [DllImport("user32.dll", SetLastError = true)] private static extern bool SetCursorPos(int x, int y);
-    [DllImport("user32.dll")] private static extern bool GetCursorPos(out NativeMethods.NativePoint point);
+    [DllImport("user32.dll", SetLastError = true)] private static extern bool SetPhysicalCursorPos(int x, int y);
+    [DllImport("user32.dll")] private static extern bool GetPhysicalCursorPos(out NativeMethods.NativePoint point);
     private delegate bool ChildCallback(IntPtr hwnd, IntPtr data);
     [DllImport("user32.dll")] private static extern bool EnumChildWindows(IntPtr hwnd, ChildCallback callback, IntPtr data);
     [DllImport("user32.dll")] private static extern bool GetWindowRect(IntPtr hwnd, out NativeMethods.NativeRect rect);
@@ -42,10 +42,16 @@ public sealed class BrowserScrollCapture(IDesktopCaptureService capture)
     private async Task<BitmapSource> CaptureCoreAsync(PixelRect region, IProgress<string> progress, CancellationToken token, BrowserCaptureMode mode, DiagnosticOperation? diagnostics)
     {
         if (region.Width < 80 || region.Height < 160) throw new InvalidOperationException("长截图选区至少需要 80×160 像素，请选择网页正文区域。");
-        var target = DesktopWindows.Snapshot().FirstOrDefault(w => w.Bounds.Contains(new(region.X + region.Width / 2, region.Y + region.Height / 2)))
+        var center = new PixelPoint(region.X + region.Width / 2, region.Y + region.Height / 2);
+        var target = DesktopWindows.AtPhysicalPoint(center);
+        diagnostics?.Stage("browser-target-hit", new { Selection = region, Center = center, Found = target is not null,
+            TargetBounds = target?.Bounds, ProcessId = target?.ProcessId, Dpi = target is null ? 0 : DesktopWindows.GetDpiForWindow(target.Handle) });
+        target = target
             ?? throw new InvalidOperationException("未找到浏览器窗口。");
         using var process = Process.GetProcessById(target.ProcessId);
-        if (process.ProcessName is not "chrome" and not "msedge") throw new InvalidOperationException("当前只支持 Chrome/Edge 普通网页，请重新选择浏览器正文区域。");
+        bool supported = process.ProcessName is "chrome" or "msedge";
+        diagnostics?.Stage("browser-target-validated", new { SupportedBrowser = supported });
+        if (!supported) throw new InvalidOperationException("选区中心没有命中 Chrome/Edge。请让浏览器正文显示在前台，避开其他窗口后重新选择。");
         if (diagnostics is not null)
         {
             string? version = null;
@@ -84,7 +90,7 @@ public sealed class BrowserScrollCapture(IDesktopCaptureService capture)
         }
         var source = new WheelSource(capture, region, target.Handle, state);
         diagnostics?.Stage("scroll-interface", new { PositionAvailable = state is not null });
-        GetCursorPos(out var originalCursor);
+        GetPhysicalCursorPos(out var originalCursor);
         bool completed = false;
         try
         {
@@ -102,11 +108,12 @@ public sealed class BrowserScrollCapture(IDesktopCaptureService capture)
                 catch (Exception) { progress.Report("滚动位置未恢复，网页保留在当前采集位置。"); }
             }
             else if (completed && state is null) progress.Report("采集完成；浏览器未提供位置恢复接口，网页保留在页尾。");
-            if (GetCursorPos(out var cursor) && cursor.X == source.PointerX && cursor.Y == source.PointerY) SetCursorPos(originalCursor.X, originalCursor.Y);
+            if (GetPhysicalCursorPos(out var cursor) && cursor.X == source.PointerX && cursor.Y == source.PointerY) SetPhysicalCursorPos(originalCursor.X, originalCursor.Y);
         }
     }
     private static PixelRect? FindNativeViewport(WindowCaptureInfo target, PixelRect selection)
     {
+        using var pixels = new PhysicalDesktopScope();
         PixelRect? found = null;
         ChildCallback callback = (hwnd, _) =>
         {
@@ -201,7 +208,7 @@ public sealed class BrowserScrollCapture(IDesktopCaptureService capture)
         public async Task<PixelFrame> ScrollAsync(int wheelUnits, CancellationToken token)
         {
             Check(token);
-            if (!SetCursorPos(PointerX, PointerY)) throw new InvalidOperationException("无法将鼠标定位到网页正文。");
+            if (!SetPhysicalCursorPos(PointerX, PointerY)) throw new InvalidOperationException("无法将鼠标定位到网页正文。");
             var input = new Input { Type = 0, Data = new InputUnion { Mouse = new MouseInput { Wheel = unchecked((uint)-wheelUnits), Flags = 0x0800 } } };
             if (SendInput(1, [input], Marshal.SizeOf<Input>()) != 1) throw new InvalidOperationException("浏览器拒绝滚轮输入。请让浏览器和截图软件都以普通用户权限运行。");
             // Wait for smooth scrolling to settle, rather than photographing an intermediate animation.
