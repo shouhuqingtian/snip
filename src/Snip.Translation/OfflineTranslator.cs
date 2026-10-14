@@ -29,6 +29,8 @@ public sealed class OfflineTranslator(ModelStore models) : ITranslationService
         try
         {
             progress?.Report(new("正在校验 Hy-MT2 翻译模型"));
+            if (ModelStore.NeedsWindowsRuntime)
+                throw new InvalidOperationException("离线翻译需要微软 Visual C++ x64 运行库，请点击面板中的‘微软官网下载’，安装后重启软件。");
             if (!await models.IsInstalledAsync(direction, token).ConfigureAwait(false))
                 throw new InvalidOperationException("Hy-MT2 模型或推理器未安装/校验失败，请点击下载 / 修复模型。旧版 OPUS 模型不能用于新版本。");
             progress?.Report(new("正在加载 Hy-MT2 翻译模型"));

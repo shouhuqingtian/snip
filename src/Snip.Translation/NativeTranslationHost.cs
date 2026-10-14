@@ -79,7 +79,7 @@ internal sealed class NativeTranslationHost : IAsyncDisposable
         while (deadline.Elapsed < TimeSpan.FromSeconds(30))
         {
             token.ThrowIfCancellationRequested();
-            if (process.HasExited) throw new InvalidOperationException("本地推理器启动失败，请下载 / 修复模型并检查安全软件提示。");
+            if (process.HasExited) throw new InvalidOperationException("本地推理器启动失败，请下载 / 修复模型，或更新微软 Visual C++ x64 运行库并核对安全软件提示。");
             using var attempt = CancellationTokenSource.CreateLinkedTokenSource(token); attempt.CancelAfter(TimeSpan.FromSeconds(1));
             try
             {

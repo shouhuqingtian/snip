@@ -17,6 +17,8 @@ public sealed class ModelStore(string directory)
     private static readonly SemaphoreSlim installGate = new(1);
     private static readonly HttpClient http = new() { Timeout = TimeSpan.FromMinutes(15) };
     public static ModelInfo Model { get; } = Load();
+    public static bool NeedsWindowsRuntime => OperatingSystem.IsWindows() && new[] { "msvcp140.dll", "vcruntime140.dll", "vcruntime140_1.dll" }
+        .Any(name => !File.Exists(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), name)));
     public string DirectoryPath { get; } = Path.GetFullPath(directory);
     public NativeRuntime Runtime => Model.Runtimes.SingleOrDefault(r => r.Platform == Platform)
         ?? throw new PlatformNotSupportedException("离线翻译目前支持 Windows x64。请使用 x64 版本程序。");

@@ -25,4 +25,10 @@ public partial class TextResultWindow : Window
     }
     private void CloseClick(object sender, RoutedEventArgs args) => Close();
     private void RecoverClick(object sender, RoutedEventArgs args) => WindowWorkAreaService.Recover(this);
+    private void RuntimeDownloadNavigate(object sender, System.Windows.Navigation.RequestNavigateEventArgs args)
+    {
+        args.Handled = true;
+        try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(args.Uri.AbsoluteUri) { UseShellExecute = true }); }
+        catch (Exception error) { ((TextResultViewModel)DataContext).WindowFailed(error); }
+    }
 }

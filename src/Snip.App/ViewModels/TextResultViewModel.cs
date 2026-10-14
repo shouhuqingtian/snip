@@ -19,6 +19,7 @@ public sealed class TextResultViewModel : ObservableObject, IDisposable
     private readonly ITranslationService translator;
     private readonly ITranslationService? onlineTranslator;
     private bool useOnlineTranslation;
+    private bool runtimeHelpRequested;
     private readonly ITextClipboardService clipboard;
     private CancellationTokenSource? copying;
     private string copyStatus = "";
@@ -77,6 +78,7 @@ public sealed class TextResultViewModel : ObservableObject, IDisposable
         set { if (!Busy && Set(ref useOnlineTranslation,value)) { Notify(nameof(TranslationActionText)); Notify(nameof(TranslationNotice)); Notify(nameof(WindowTitle)); } }
     }
     public bool CanChangeTranslationMode => !Busy;
+    public bool NeedsWindowsRuntime => ModelStore.NeedsWindowsRuntime || runtimeHelpRequested;
     public string TranslationActionText => UseOnlineTranslation ? "在线翻译" : "离线翻译";
     public string TranslationNotice => UseOnlineTranslation ? "原文将发送给所配置的大模型服务，按服务商规则计费。" : "Hy-MT2 专业中英翻译，文字留在本机。";
     public RelayCommand ConfigureOnlineCommand { get; }
@@ -198,7 +200,11 @@ public sealed class TextResultViewModel : ObservableObject, IDisposable
         catch (Exception e) { log?.Fail(e); Report(e); }
         finally { heartbeat.Stop(); elapsed.Stop(); operation = null; diagnosticOperation = null; Busy = false; }
     }
-    private void Report(Exception e) { diagnostics?.Record("text-result", "operation-failed", error: e); Status = "操作失败：" + e.Message + "；可从主窗口导出诊断包。"; }
+    private void Report(Exception e)
+    {
+        if (e.Message.Contains("Visual C++", StringComparison.Ordinal)) { runtimeHelpRequested = true; Notify(nameof(NeedsWindowsRuntime)); }
+        diagnostics?.Record("text-result", "operation-failed", error: e); Status = "操作失败：" + e.Message + "；可从主窗口导出诊断包。";
+    }
     private async Task CopyAsync(string value, bool translation)
     {
         if (disposed || copying is not null || value.Length == 0) return;

@@ -41,20 +41,23 @@ using (var cancellation = new CancellationTokenSource())
     catch (OperationCanceledException) when (cancellation.IsCancellationRequested && started) { Console.WriteLine("Active inference cancellation check passed."); }
 }
 // Same-size executable corruption must be rejected, not just a missing-model check.
-string executable = store.ExecutablePath;
-byte[] original = await File.ReadAllBytesAsync(executable);
+string temporary = Path.Combine(Path.GetTempPath(), "Snip.Model.Corruption-" + Guid.NewGuid());
+var isolated = new ModelStore(temporary);
 try
 {
-    var corrupted = (byte[])original.Clone(); corrupted[0] ^= 1;
-    await File.WriteAllBytesAsync(executable, corrupted);
-    if (await store.IsInstalledAsync("en-zh", CancellationToken.None)) throw new Exception("Corrupted native runtime was accepted.");
+    Directory.CreateDirectory(isolated.Folder("en-zh")); Directory.CreateDirectory(isolated.RuntimeDirectory);
+    File.Copy(store.ModelPath, isolated.ModelPath);
+    foreach (var file in store.Runtime.Files) File.Copy(Path.Combine(store.RuntimeDirectory, file.Path), Path.Combine(isolated.RuntimeDirectory, file.Path));
+    byte[] corrupted = await File.ReadAllBytesAsync(isolated.ExecutablePath); corrupted[0] ^= 1;
+    await File.WriteAllBytesAsync(isolated.ExecutablePath, corrupted);
+    if (await isolated.IsInstalledAsync("en-zh", CancellationToken.None)) throw new Exception("Corrupted native runtime was accepted.");
     bool rejected = false;
-    try { await translator.TranslateAsync("Public test", "en-zh", CancellationToken.None); }
+    try { await new OfflineTranslator(isolated).TranslateAsync("Public test", "en-zh", CancellationToken.None); }
     catch (InvalidOperationException) { rejected = true; }
     if (!rejected) throw new Exception("Translation started an unverified executable.");
     Console.WriteLine("Same-size native runtime corruption rejected before execution.");
 }
-finally { await File.WriteAllBytesAsync(executable, original); }
+finally { Directory.Delete(temporary, recursive: true); }
 foreach (var (direction, input, expected) in new[]
 {
     ("en-zh", "Do not save the screenshot unless the user confirms.", "确认"),
