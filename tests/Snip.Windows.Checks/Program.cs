@@ -18,6 +18,7 @@ internal static class Program
         if (args.FirstOrDefault() == "--clipboard-lock") return ClipboardWindowChecks.HoldClipboard(args[1], args[2]);
         if (args.FirstOrDefault() == "--render-benchmark") return RenderPerformanceCheck.Benchmark(args[1]);
         if (args.Contains("--editor-performance")) return RenderPerformanceCheck.Run();
+        if (args.Contains("--window-placement")) return WindowPlacementChecks.Run();
         if (args.Contains("--share-ui")) return WindowsShareChecks.Run(native: false);
         if (args.Contains("--share-native")) return WindowsShareChecks.Run(native: true);
         if (args.Contains("--clipboard-ui")) return ClipboardWindowChecks.Run();

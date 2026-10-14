@@ -1,6 +1,7 @@
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
+using Snip.Infrastructure;
 
 namespace Snip.App.Views;
 
@@ -17,6 +18,7 @@ public static class Ui
         EnsureTheme();
         // WPF implicit styles use the runtime type; derived Window classes need the base style explicitly.
         window.SetResourceReference(FrameworkElement.StyleProperty, typeof(Window));
+        WindowWorkAreaService.Attach(window);
     }
     public static void Style(FrameworkElement element, string key) => element.SetResourceReference(FrameworkElement.StyleProperty, key);
     public static TextBlock Title(string text) { var value = new TextBlock { Text = text }; Style(value, "PageTitle"); return value; }
