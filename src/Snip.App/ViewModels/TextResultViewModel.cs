@@ -96,11 +96,10 @@ public sealed class TextResultViewModel : ObservableObject, IDisposable
             SetStage("正在加载 Windows 识别语言");
             diagnosticOperation?.Stage("ocr-languages-loading");
             var available = await Task.Run(() => ocr.Languages, token);
-            token.ThrowIfCancellationRequested(); Languages = available;
+            token.ThrowIfCancellationRequested(); Languages = available.Count == 0 ? [] : new[] { OcrLanguageSelection.Automatic }.Concat(available).ToArray();
             diagnosticOperation?.Stage("ocr-languages-loaded", new { Count = available.Count });
             if (Languages.Count == 0) throw new InvalidOperationException("未安装 Windows OCR 语言组件，请在 Windows 语言设置中添加中文/英语文字识别组件。");
-            Language = Language is { } selected && Languages.Contains(selected) ? selected :
-                Languages.FirstOrDefault(x => x.StartsWith("zh", StringComparison.OrdinalIgnoreCase)) ?? Languages[0];
+            Language = Language is { } selected && Languages.Contains(selected) ? selected : OcrLanguageSelection.Automatic;
         }
         SetStage("正在识别文字");
         if (image is null)
@@ -116,12 +115,28 @@ public sealed class TextResultViewModel : ObservableObject, IDisposable
             token.ThrowIfCancellationRequested(); image = payload;
         }
         var selectedLanguage = Language;
-        diagnosticOperation?.Stage("ocr-recognizing", new { Language = selectedLanguage, image.Width, image.Height });
-        var result = await Task.Run(() => ocr.RecognizeAsync(image, selectedLanguage, token), token);
-        token.ThrowIfCancellationRequested();
-        diagnosticOperation?.Stage("ocr-recognized", new { RegionCount = result.Regions.Count });
-        Source = string.Join(Environment.NewLine, result.Regions.Select(r => r.Text));
-        Status = string.IsNullOrWhiteSpace(Source) ? "没有识别到文字；可更换语言或重新截图。" : "文字已识别，可修正原文后翻译或复制。";
+        var installed = Languages.Where(value => value != OcrLanguageSelection.Automatic).ToArray();
+        var candidates = OcrLanguageSelection.Candidates(installed, selectedLanguage);
+        if (candidates.Count == 0) throw new InvalidOperationException("所选 Windows OCR 语言组件不可用，请切换到自动模式或安装相应语言组件。");
+        OcrResult? result = null;
+        string? recognizedLanguage = null;
+        foreach (var candidate in candidates)
+        {
+            token.ThrowIfCancellationRequested(); SetStage("正在识别文字（" + candidate + "）");
+            diagnosticOperation?.Stage("ocr-recognizing", new { Language = candidate, Automatic = selectedLanguage == OcrLanguageSelection.Automatic, image.Width, image.Height });
+            result = await Task.Run(() => ocr.RecognizeAsync(image, candidate, token), token);
+            token.ThrowIfCancellationRequested();
+            diagnosticOperation?.Stage("ocr-recognized", new { Language = candidate, RegionCount = result.Regions.Count });
+            if (result.Regions.Any(region => !string.IsNullOrWhiteSpace(region.Text))) { recognizedLanguage = candidate; break; }
+        }
+        Source = string.Join(Environment.NewLine, result!.Regions.Select(r => r.Text));
+        if (string.IsNullOrWhiteSpace(Source))
+            Status = !installed.Any(value => value.StartsWith("en", StringComparison.OrdinalIgnoreCase))
+                ? "没有识别到文字。英文截图需要 Windows 英语 OCR 组件；请在 Windows 语言设置中添加英语及文字识别组件后重试。"
+                : selectedLanguage != OcrLanguageSelection.Automatic
+                    ? "没有识别到文字；请切换到“自动（中英）”或与截图内容匹配的语言后重新识别，也可扩大截图边缘留白。"
+                    : "没有识别到文字；已尝试已安装的中英识别组件。请截取清晰文字并保留少量边缘留白。";
+        else Status = "文字已识别（" + recognizedLanguage + "），可修正原文后翻译或复制。";
         if (AutoTranslate && !string.IsNullOrWhiteSpace(Source))
         {
             Direction = Source.Any(c => c >= 0x4e00 && c <= 0x9fff) ? "zh-en" : "en-zh";

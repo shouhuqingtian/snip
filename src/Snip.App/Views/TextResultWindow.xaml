@@ -11,7 +11,7 @@
   <DockPanel Margin="8">
   <StackPanel DockPanel.Dock="Top" Margin="0,0,0,18"><TextBlock Text="从画面提取文字，修正、复制，或进行离线中英互译。" Style="{StaticResource Subtitle}" Margin="0,6,0,14"/>
    <Border Style="{StaticResource Card}" Padding="12,9"><WrapPanel VerticalAlignment="Center">
-    <TextBlock Text="识别语言" Foreground="{StaticResource MutedBrush}" Margin="6,0,6,0" VerticalAlignment="Center"/><ComboBox ItemsSource="{Binding Languages}" SelectedItem="{Binding Language}" Width="108"/>
+    <TextBlock Text="识别语言" Foreground="{StaticResource MutedBrush}" Margin="6,0,6,0" VerticalAlignment="Center"/><ComboBox ItemsSource="{Binding Languages}" SelectedItem="{Binding Language}" Width="142"/>
     <Button Content="重新识别" Command="{Binding OcrCommand}"/>
     <Border Width="1" Height="22" Background="{StaticResource StrokeBrush}" Margin="12,0"/>
     <ComboBox SelectedValue="{Binding Direction, Mode=TwoWay}" SelectedValuePath="Tag" Width="138"><ComboBoxItem Content="英文 → 中文" Tag="en-zh"/><ComboBoxItem Content="中文 → 英文" Tag="zh-en"/></ComboBox>

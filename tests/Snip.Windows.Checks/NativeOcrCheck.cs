@@ -33,6 +33,7 @@ internal static class NativeOcrCheck
             var text = string.Join(" ", result.Regions.Select(r => r.Text));
             if (!text.Contains("Hello", StringComparison.OrdinalIgnoreCase) || !text.Contains("world", StringComparison.OrdinalIgnoreCase)) throw new InvalidOperationException("Native OCR semantic assertion failed: " + text);
             Console.WriteLine("PASS native Windows OCR on background worker: " + text);
+            CheckSmallCrops(service, english, cancellation.Token);
             if (withResultUi)
             {
                 _ = Application.Current ?? new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
@@ -57,5 +58,26 @@ internal static class NativeOcrCheck
             return 0;
         }
         catch (Exception e) { Console.Error.WriteLine("FAIL native OCR: " + e); return 1; }
+    }
+    private static void CheckSmallCrops(OfflineOcrService service, string english, CancellationToken token)
+    {
+        foreach (double fontSize in new[] { 10.0, 12.0, 24.0 })
+        {
+            var text = new FormattedText("ChatGPT", System.Globalization.CultureInfo.InvariantCulture, FlowDirection.LeftToRight,
+                new Typeface("Segoe UI"), fontSize, Brushes.Black, 1);
+            int width=(int)Math.Ceiling(text.WidthIncludingTrailingWhitespace)+2, height=(int)Math.Ceiling(text.Height)+2;
+            var visual=new DrawingVisual(); using(var drawing=visual.RenderOpen())
+            {
+                drawing.DrawRectangle(Brushes.White,null,new Rect(0,0,width,height)); drawing.DrawText(text,new Point(1,1));
+            }
+            var bitmap=new RenderTargetBitmap(width,height,96,96,PixelFormats.Pbgra32);bitmap.Render(visual);bitmap.Freeze();
+            var encoder=new PngBitmapEncoder();encoder.Frames.Add(BitmapFrame.Create(bitmap));using var stream=new MemoryStream();encoder.Save(stream);
+            var result=service.RecognizeAsync(new(stream.ToArray(),width,height),english,token).WaitAsync(token).GetAwaiter().GetResult();
+            string recognized=string.Concat(result.Regions.Select(r=>r.Text)).Replace(" ","");
+            if(!recognized.Equals("ChatGPT",StringComparison.OrdinalIgnoreCase)) throw new InvalidOperationException("Small-crop OCR failed at " + fontSize + " px: " + recognized);
+            if(result.Regions.Any(region=>region.Bounds.IsEmpty || region.Bounds.Intersect(new(0,0,width,height))!=region.Bounds))
+                throw new InvalidOperationException("Small-crop coordinates did not map back to original screenshot.");
+            Console.WriteLine("PASS native small ChatGPT crop " + fontSize + "px, " + width + "x" + height + ": original-coordinate bounds and word semantics.");
+        }
     }
 }

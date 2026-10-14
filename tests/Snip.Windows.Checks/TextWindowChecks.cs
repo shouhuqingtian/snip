@@ -67,6 +67,21 @@ internal static class TextWindowChecks
             Require(((TextResultViewModel)window.DataContext).Status.Contains("没有识别") && window.IsVisible, "Empty OCR silently closed or gave no feedback.");
             window.Close(); Console.WriteLine("PASS empty OCR keeps preview and gives visible feedback.");
 
+            stage = "automatic language empty-result fallback";
+            var multilingual = new MultilingualOcr();
+            window = Show(true, multilingual);
+            text = (TextResultViewModel)window.DataContext;
+            Require(text.Language == OcrLanguageSelection.Automatic && text.Source == "Hello world" && text.Translated == "你好，世界", "Automatic English fallback did not reach visible source and translation.");
+            Require(multilingual.Calls.SequenceEqual(new[] { "zh-Hans-CN", "en-US" }), "Automatic OCR did not retry exactly one English recognizer.");
+            window.Close(); Console.WriteLine("PASS Chinese-empty automatic mode retries English and then translates visible result.");
+
+            stage = "manual language respects selection";
+            multilingual = new MultilingualOcr();
+            var manual = new TextResultViewModel(image, multilingual, new ModelStore("unused-models"), new FakeTranslation()) { Language = "zh-Hans-CN" };
+            window = new TextResultWindow(manual); window.Show(); PumpUntil(() => !manual.Busy && manual.Status.Contains("没有识别"), TimeSpan.FromSeconds(8));
+            Require(multilingual.Calls.SequenceEqual(new[] { "zh-Hans-CN" }) && manual.Status.Contains("自动"), "Manual language was silently changed or lacked actionable empty result.");
+            window.Close(); Console.WriteLine("PASS explicit language stays fixed; empty result recommends automatic mode.");
+
             var capture = new FakeCapture(image); var renderer = new AnnotationRenderer(); var export = new FakeExport();
             using var pins = new PinManager(export);
             var features = new FeatureHub(renderer, export, capture, pins, diagnostics, new FakeOcr(), new FakeTranslation(), new ModelStore("unused-models"));
@@ -136,6 +151,17 @@ internal static class TextWindowChecks
     private static void Require(bool condition, string message) { if (!condition) throw new InvalidOperationException(message); }
     private static BitmapSource Image(int width, int height)
     { var image = BitmapSource.Create(width, height, 96, 96, PixelFormats.Bgra32, null, Enumerable.Repeat((byte)255, width * height * 4).ToArray(), width * 4); image.Freeze(); return image; }
+    private sealed class MultilingualOcr : IOcrService
+    {
+        public IReadOnlyList<string> Languages => ["zh-Hans-CN", "en-US"];
+        public List<string> Calls { get; } = [];
+        public Task<OcrResult> RecognizeAsync(ImagePayload image, CancellationToken token) => RecognizeAsync(image, null, token);
+        public Task<OcrResult> RecognizeAsync(ImagePayload image, string? language, CancellationToken token)
+        {
+            token.ThrowIfCancellationRequested(); Calls.Add(language!);
+            return Task.FromResult(new OcrResult(language == "en-US" ? [new("Hello world", new(0, 0, 180, 40), null)] : []));
+        }
+    }
     internal sealed class FakeOcr(bool fail = false, bool empty = false) : IOcrService
     {
         public IReadOnlyList<string> Languages => ["en-US"];
