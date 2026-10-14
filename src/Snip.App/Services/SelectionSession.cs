@@ -69,7 +69,7 @@ public sealed class SelectionSession : IDisposable
     {
         if (Editor is null) BeginEditing();
         if (Editor is null) return;
-        _ = Editor.Compose();
+        Editor.CommitPendingEdits();
         Finish(new(Editor, ViewModel.Selection, action, browserMode));
     }
     public void AdjustSelection()
@@ -100,7 +100,10 @@ public sealed class SelectionSession : IDisposable
         if (closed) return;
         closed = true; timer.Stop();
         foreach (var window in windows) window.Close();
-        windows.Clear(); completion.TrySetResult(rect);
+        windows.Clear();
+        // An editor must not retain its closed overlay, session and full desktop frame.
+        Editor?.RebindDialogs(new EditorDialogs(() => null));
+        completion.TrySetResult(rect);
     }
     public void Dispose() => Finish(null);
 }

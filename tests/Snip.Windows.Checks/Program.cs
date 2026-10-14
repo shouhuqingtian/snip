@@ -16,6 +16,8 @@ internal static class Program
     private static int Main(string[] args)
     {
         if (args.FirstOrDefault() == "--clipboard-lock") return ClipboardWindowChecks.HoldClipboard(args[1], args[2]);
+        if (args.FirstOrDefault() == "--render-benchmark") return RenderPerformanceCheck.Benchmark(args[1]);
+        if (args.Contains("--editor-performance")) return RenderPerformanceCheck.Run();
         if (args.Contains("--clipboard-ui")) return ClipboardWindowChecks.Run();
         if (args.Contains("--ui-gallery")) return UiGalleryCheck.Run();
         if (args.Contains("--clipboard-persist")) return ClipboardWindowChecks.PublishFixture();

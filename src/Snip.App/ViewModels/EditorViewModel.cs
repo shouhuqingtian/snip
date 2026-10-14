@@ -248,9 +248,13 @@ public sealed class EditorViewModel : ObservableObject
         return false;
     }
 
-    public BitmapSource Compose()
+    public void CommitPendingEdits()
     {
         CommitTextRequested?.Invoke(this, EventArgs.Empty); CancelGesture();
+    }
+    public BitmapSource Compose()
+    {
+        CommitPendingEdits();
         return renderer.Render(Image, history.Current);
     }
     public async Task<bool> CopyAndMarkAsync()

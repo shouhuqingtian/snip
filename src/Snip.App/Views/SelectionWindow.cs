@@ -43,7 +43,13 @@ public sealed class SelectionWindow : Window
         SourceInitialized += (_, _) => capture.PlaceOverlay(this, display.Bounds);
         PreviewKeyDown += OnKey; session.EditorChanged += RefreshEditor; session.ViewModel.Changed += Position;
         SizeChanged += (_, _) => { Position(this, EventArgs.Empty); PositionEditor(); };
-        Closed += (_, _) => { session.EditorChanged -= RefreshEditor; session.ViewModel.Changed -= Position; session.Cancel(); };
+        Closed += (_, _) =>
+        {
+            session.EditorChanged -= RefreshEditor; session.ViewModel.Changed -= Position;
+            if (editorCanvas is not null) editorCanvas.DataContext = null;
+            toolbar.DataContext = null;
+            session.Cancel();
+        };
     }
     private void Cancel()
     {

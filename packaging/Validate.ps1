@@ -36,6 +36,7 @@ try {
     if (($Scope -in 'Desktop','All') -and $IsWindows) {
         # Independent checks all run, with their real exit codes preserved.
         Check 'windows' @('run','--project','tests/Snip.Windows.Checks/Snip.Windows.Checks.csproj','-c','Release','--no-build')
+        Check 'editor-performance' @('run','--project','tests/Snip.Windows.Checks/Snip.Windows.Checks.csproj','-c','Release','--no-build','--','--editor-performance')
         Check 'text-ui' @('run','--project','tests/Snip.Windows.Checks/Snip.Windows.Checks.csproj','-c','Release','--no-build','--','--text-ui')
         Check 'clipboard-ui' @('run','--project','tests/Snip.Windows.Checks/Snip.Windows.Checks.csproj','-c','Release','--no-build','--','--clipboard-ui')
         Check 'ui-gallery' @('run','--project','tests/Snip.Windows.Checks/Snip.Windows.Checks.csproj','-c','Release','--no-build','--','--ui-gallery')

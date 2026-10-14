@@ -13,7 +13,8 @@ public sealed class EditorCanvas : FrameworkElement
 {
     private readonly AnnotationRenderer renderer = new();
     private EditorViewModel? vm;
-    private BitmapSource? cached;
+    private DrawingGroup? cached;
+    private bool subscribed;
     private int renderedRevision = -1;
     private TextBox? textBox;
     private readonly VisualCollection children;
@@ -26,12 +27,27 @@ public sealed class EditorCanvas : FrameworkElement
         Focusable = true; ClipToBounds = true;
         DataContextChanged += (_, _) =>
         {
-            if (vm is not null) { vm.VisualChanged -= OnChanged; vm.CommitTextRequested -= CommitText; }
+            Unsubscribe();
             vm = DataContext as EditorViewModel;
-            if (vm is not null) { Width = vm.PixelWidth; Height = vm.PixelHeight; vm.UseInlineText = true; vm.VisualChanged += OnChanged; vm.CommitTextRequested += CommitText; }
+            if (vm is not null) { Width = vm.PixelWidth; Height = vm.PixelHeight; vm.UseInlineText = true; Subscribe(); }
             renderedRevision = -1; cached = null; InvalidateVisual();
         };
-        Unloaded += (_, _) => { if (vm is not null) vm.CancelGesture(); };
+        Loaded += (_, _) => { Subscribe(); SyncText(); InvalidateVisual(); };
+        Unloaded += (_, _) =>
+        {
+            Unsubscribe(); cached = null; renderedRevision = -1;
+            vm?.CancelGesture();
+        };
+    }
+    private void Subscribe()
+    {
+        if (vm is null || subscribed) return;
+        vm.VisualChanged += OnChanged; vm.CommitTextRequested += CommitText; subscribed = true;
+    }
+    private void Unsubscribe()
+    {
+        if (vm is null || !subscribed) return;
+        vm.VisualChanged -= OnChanged; vm.CommitTextRequested -= CommitText; subscribed = false;
     }
     protected override int VisualChildrenCount => children.Count;
     protected override Visual GetVisualChild(int index) => children[index];
@@ -87,9 +103,9 @@ public sealed class EditorCanvas : FrameworkElement
         if (vm is null) return;
         if (cached is null || renderedRevision != vm.BaseRevision)
         {
-            cached = renderer.Render(vm.Image, vm.BaseAnnotations); renderedRevision = vm.BaseRevision;
+            cached = renderer.BuildDrawing(vm.Image, vm.BaseAnnotations); renderedRevision = vm.BaseRevision;
         }
-        context.DrawImage(cached, new Rect(0, 0, Width, Height));
+        context.DrawDrawing(cached);
         if (vm.Preview is not null) renderer.DrawAnnotation(context, vm.Preview);
         if (vm.Selected is { } selected)
         {

@@ -37,6 +37,10 @@ public sealed class UiIcon : FrameworkElement
         ["check"] = "M 4 12 L 9 17 L 20 6",
         ["copy"] = "M 8 8 L 20 8 L 20 21 L 8 21 Z M 15 8 L 15 3 L 3 3 L 3 16 L 8 16"
     };
+    private static readonly IReadOnlyDictionary<string, Geometry> Geometries = Paths.ToDictionary(pair => pair.Key, pair =>
+    {
+        var geometry = Geometry.Parse(pair.Value); geometry.Freeze(); return geometry;
+    });
     public UiIcon() : this("capture") { }
     public UiIcon(string kind)
     {
@@ -46,11 +50,11 @@ public sealed class UiIcon : FrameworkElement
     protected override void OnRender(DrawingContext dc)
     {
         base.OnRender(dc);
-        if (!Paths.TryGetValue(Kind, out var data)) return;
+        if (!Geometries.TryGetValue(Kind, out var geometry)) return;
         double scale = Math.Min(ActualWidth, ActualHeight) / 24;
         dc.PushTransform(new TranslateTransform((ActualWidth - 24 * scale) / 2, (ActualHeight - 24 * scale) / 2));
         dc.PushTransform(new ScaleTransform(scale, scale));
-        dc.DrawGeometry(null, new Pen(Foreground, 1.7) { StartLineCap = PenLineCap.Round, EndLineCap = PenLineCap.Round, LineJoin = PenLineJoin.Round }, Geometry.Parse(data));
+        dc.DrawGeometry(null, new Pen(Foreground, 1.7) { StartLineCap = PenLineCap.Round, EndLineCap = PenLineCap.Round, LineJoin = PenLineJoin.Round }, geometry);
         dc.Pop(); dc.Pop();
     }
 }

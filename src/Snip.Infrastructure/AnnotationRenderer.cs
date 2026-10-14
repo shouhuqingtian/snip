@@ -19,6 +19,18 @@ public sealed class AnnotationRenderer
 
     public BitmapSource Render(BitmapSource image, IEnumerable<Annotation> annotations)
     {
+        var layers = annotations as IReadOnlyList<Annotation> ?? annotations.ToArray();
+        if (layers.Count == 0)
+        {
+            if (image.IsFrozen) return image;
+            var copy = image.Clone(); copy.Freeze(); return copy;
+        }
+        return Rasterize(BuildDrawing(image, layers), image.PixelWidth, image.PixelHeight);
+    }
+
+    /// <summary>Keep ordinary annotations as vectors; rasterize only mosaic patches.</summary>
+    public DrawingGroup BuildDrawing(BitmapSource image, IEnumerable<Annotation> annotations)
+    {
         var group = new DrawingGroup();
         group.Children.Add(new ImageDrawing(image, new Rect(0, 0, image.PixelWidth, image.PixelHeight)));
         foreach (var annotation in annotations)
@@ -27,8 +39,9 @@ public sealed class AnnotationRenderer
             {
                 var rect = annotation.Bounds.RoundOut().Intersect(new(0, 0, image.PixelWidth, image.PixelHeight));
                 if (rect.IsEmpty) continue;
-                var prior = Rasterize(group, image.PixelWidth, image.PixelHeight);
-                group.Children.Add(new ImageDrawing(Pixelate(prior, rect, annotation.MosaicSize), Rect(rect)));
+                var prior = Rasterize(group, (int)rect.Width, (int)rect.Height, (int)rect.X, (int)rect.Y);
+                var local = new PixelRect(0, 0, rect.Width, rect.Height);
+                group.Children.Add(new ImageDrawing(Pixelate(prior, local, annotation.MosaicSize), Rect(rect)));
             }
             else
             {
@@ -37,10 +50,11 @@ public sealed class AnnotationRenderer
                 group.Children.Add(layer);
             }
         }
-        return Rasterize(group, image.PixelWidth, image.PixelHeight);
+        group.Freeze();
+        return group;
     }
 
-    private static BitmapSource Rasterize(Drawing drawing, int width, int height)
+    private static BitmapSource Rasterize(Drawing drawing, int width, int height, int originX = 0, int originY = 0)
     {
         if (width > 4096 || height > 4096)
         {
@@ -49,7 +63,7 @@ public sealed class AnnotationRenderer
             {
                 int w = Math.Min(2048, width - x), h = Math.Min(2048, height - y);
                 var tile = new DrawingVisual();
-                using (var dc = tile.RenderOpen()) { dc.PushTransform(new TranslateTransform(-x, -y)); dc.DrawDrawing(drawing); dc.Pop(); }
+                using (var dc = tile.RenderOpen()) { dc.PushTransform(new TranslateTransform(-x - originX, -y - originY)); dc.DrawDrawing(drawing); dc.Pop(); }
                 var targetTile = new RenderTargetBitmap(w, h, 96, 96, PixelFormats.Pbgra32); targetTile.Render(tile);
                 var buffer = new byte[w * h * 4]; targetTile.CopyPixels(buffer, w * 4, 0);
                 output.WritePixels(new Int32Rect(x, y, w, h), buffer, w * 4, 0);
@@ -57,7 +71,11 @@ public sealed class AnnotationRenderer
             output.Freeze(); return output;
         }
         var visual = new DrawingVisual();
-        using (var context = visual.RenderOpen()) context.DrawDrawing(drawing);
+        using (var context = visual.RenderOpen())
+        {
+            context.PushTransform(new TranslateTransform(-originX, -originY));
+            context.DrawDrawing(drawing); context.Pop();
+        }
         var target = new RenderTargetBitmap(width, height, 96, 96, PixelFormats.Pbgra32);
         target.Render(visual);
         target.Freeze();
