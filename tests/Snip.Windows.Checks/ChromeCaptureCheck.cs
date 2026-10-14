@@ -19,6 +19,7 @@ internal static class ChromeCaptureCheck
 {
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern int GetWindowText(IntPtr hwnd, StringBuilder title, int size);
     [DllImport("user32.dll")] private static extern IntPtr SendMessageTimeout(IntPtr hwnd, uint message, IntPtr wParam, IntPtr lParam, uint flags, uint timeout, out IntPtr result);
+    [DllImport("user32.dll")] private static extern IntPtr SetThreadDpiAwarenessContext(IntPtr context);
     private static string Title(IntPtr hwnd) { var title = new StringBuilder(256); GetWindowText(hwnd, title, title.Capacity); return title.ToString(); }
     public static int Run()
     {
@@ -183,9 +184,14 @@ internal static class ChromeCaptureCheck
                 var bar = app.Windows.OfType<ManualScrollCaptureWindow>().Single(); var viewport = bar.Viewport;
                 int Hit(double x, double y)
                 {
-                    using var physical = new PhysicalDesktopScope();
-                    if (SendMessageTimeout(selectedWindow.Handle, 0x0084, IntPtr.Zero, new(((int)y & 65535) << 16 | (int)x & 65535), 2, 500, out var result) == IntPtr.Zero) throw new InvalidOperationException("Browser native hit test failed.");
-                    return result.ToInt32();
+                    var previousDpi = SetThreadDpiAwarenessContext(new(-4));
+                    if (previousDpi == IntPtr.Zero) throw new InvalidOperationException("Cannot set native fixture DPI context.");
+                    try
+                    {
+                        if (SendMessageTimeout(selectedWindow.Handle, 0x0084, IntPtr.Zero, new(((int)y & 65535) << 16 | (int)x & 65535), 2, 500, out var result) == IntPtr.Zero) throw new InvalidOperationException("Browser native hit test failed.");
+                        return result.ToInt32();
+                    }
+                    finally { SetThreadDpiAwarenessContext(previousDpi); }
                 }
                 Console.WriteLine($"::notice title=Edge wheel hit test::old-point={Hit(viewport.X + 385, viewport.Bottom - 4)}; new-point={Hit(viewport.X + 385, viewport.Y + viewport.Height / 2)}; HTCLIENT=1; HTBOTTOM=15");
                 ((Border)bar.Content).Background = Brushes.Magenta;
