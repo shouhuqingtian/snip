@@ -1,0 +1,78 @@
+{
+  "runtime": "llama.cpp b11612",
+  "platform": "Linux x86_64",
+  "threads": 2,
+  "context": 1024,
+  "modelBytes": 951022560,
+  "cases": [
+    {
+      "target": "Chinese",
+      "source": "Please save the screenshot as a PNG file, then copy the recognized text to the clipboard.",
+      "output": "请将截图保存为PNG文件，然后将识别出的文本复制到剪贴板。 [end of text]",
+      "seconds": 2.52,
+      "peakRSSMiB": 1318.7,
+      "exitCode": 0
+    },
+    {
+      "target": "Chinese",
+      "source": "The invoice must be paid within 30 days. Early payment qualifies for a 2% discount.",
+      "output": "发票必须在30天内支付。提前付款可享受2%的折扣。 [end of text]",
+      "seconds": 2.27,
+      "peakRSSMiB": 1318.7,
+      "exitCode": 0
+    },
+    {
+      "target": "Chinese",
+      "source": "It is on the house.",
+      "output": "免费提供。 [end of text]",
+      "seconds": 1.41,
+      "peakRSSMiB": 1317.5,
+      "exitCode": 0
+    },
+    {
+      "target": "English",
+      "source": "请关闭当前窗口，但不要退出程序。",
+      "output": "Please close the current window, but do not exit the program. [end of text]",
+      "seconds": 1.97,
+      "peakRSSMiB": 1319.9,
+      "exitCode": 0
+    },
+    {
+      "target": "English",
+      "source": "发票须在30天内支付，提前付款可享受2%的折扣。",
+      "output": "The invoice must be paid within 30 days, and a 2% discount is available for early payment. [end of text]",
+      "seconds": 2.37,
+      "peakRSSMiB": 1320.5,
+      "exitCode": 0
+    },
+    {
+      "target": "Chinese",
+      "source": "Snip.App is the application name. Keep Snip.App unchanged.",
+      "output": "Snip.App是应用程序名称。保持Snip.App不变。 [end of text]",
+      "seconds": 2.17,
+      "peakRSSMiB": 1318.4,
+      "exitCode": 0
+    },
+    {
+      "target": "Chinese",
+      "source": "Do not save the screenshot unless the user confirms.",
+      "output": "除非用户确认，否则不要保存截图。 [end of text]",
+      "seconds": 1.76,
+      "peakRSSMiB": 1317.7,
+      "exitCode": 0
+    },
+    {
+      "target": "English",
+      "source": "不要覆盖已有文件；如果同名文件存在，先询问用户。",
+      "output": "Do not overwrite existing files; if a file with the same name exists, ask the user first. [end of text]",
+      "seconds": 2.42,
+      "peakRSSMiB": 1320.4,
+      "exitCode": 0
+    }
+  ],
+  "model": "Hy-MT2-1.8B Q3_K_M",
+  "repository": "unsloth/Hy-MT2-1.8B-GGUF",
+  "revision": "0378cc2780f462f0fd397d0cdd244d2f769de40e",
+  "sha256": "d843f052e1adb61197156f534099cf9fb58353af7cc30999a2f1f717819936b8",
+  "scope": "Public smoke examples, not a benchmark score or Windows whole-application measurement"
+}
