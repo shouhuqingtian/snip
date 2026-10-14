@@ -37,7 +37,13 @@ public sealed class OfflineOcrService : IOcrService
         int smallSide = Math.Min(source.PixelWidth, source.PixelHeight);
         if (smallSide >= 64 || (long)source.PixelWidth * source.PixelHeight > 250_000) return first;
         int scale = Math.Clamp((int)Math.Ceiling(64.0 / Math.Max(1, smallSide)), 2, 4), padding = 16;
-        var enlarged = new TransformedBitmap(source, new ScaleTransform(scale, scale)); enlarged.Freeze();
+        // BitmapFrame's decoder remains dispatcher-bound even when its frame is frozen.
+        // Detach only this small, empty crop before freezing a derived image on an async continuation.
+        int originalStride = checked(source.PixelWidth * 4);
+        var originalPixels = new byte[checked(originalStride * source.PixelHeight)];
+        source.CopyPixels(originalPixels, originalStride, 0);
+        var detached = BitmapSource.Create(source.PixelWidth, source.PixelHeight, 96, 96, PixelFormats.Bgra32, null, originalPixels, originalStride); detached.Freeze();
+        var enlarged = new TransformedBitmap(detached, new ScaleTransform(scale, scale)); enlarged.Freeze();
         int width = enlarged.PixelWidth + padding * 2, height = enlarged.PixelHeight + padding * 2;
         if ((long)width * height > 2_000_000) return first;
         token.ThrowIfCancellationRequested();
