@@ -40,7 +40,7 @@ public sealed class EditorToolbar : UserControl
         Divider();
         Add("sticker", "表情 / 图片贴纸", () => StickerRequested?.Invoke(this, EventArgs.Empty));
         Add("ocr", "离线文字识别", () => OcrRequested?.Invoke(this, EventArgs.Empty));
-        Add("translate", "离线中英互译", () => TranslateRequested?.Invoke(this, EventArgs.Empty));
+        Add("translate", "文字识别 / 中英翻译", () => TranslateRequested?.Invoke(this, EventArgs.Empty));
         var browserMenu = new ContextMenu();
         foreach (var (mode, title) in new[] {
             (BrowserCaptureMode.EntirePage, "捕捉整个网页（自动从顶部到页尾）"),

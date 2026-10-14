@@ -17,6 +17,8 @@ public sealed class TextResultViewModel : ObservableObject, IDisposable
     private readonly IOcrService ocr;
     private readonly ModelStore models;
     private readonly ITranslationService translator;
+    private readonly ITranslationService? onlineTranslator;
+    private bool useOnlineTranslation;
     private readonly ITextClipboardService clipboard;
     private CancellationTokenSource? copying;
     private string copyStatus = "";
@@ -31,10 +33,11 @@ public sealed class TextResultViewModel : ObservableObject, IDisposable
     private bool busy, downloading, disposed, initialized, userCancelled;
     private bool autoTranslate, showTranslation;
     private double progress;
-    public TextResultViewModel(BitmapSource image, IOcrService ocr, ModelStore models, ITranslationService translator, DiagnosticJournal? diagnostics = null, ITextClipboardService? clipboard = null)
+    public TextResultViewModel(BitmapSource image, IOcrService ocr, ModelStore models, ITranslationService translator, DiagnosticJournal? diagnostics = null, ITextClipboardService? clipboard = null, ITranslationService? onlineTranslator = null, Action? configureOnline = null, bool defaultOnline = false)
     {
         snapshot = image.IsFrozen ? image : image.Clone(); snapshot.Freeze();
         this.ocr = ocr; this.models = models; this.translator = translator;
+        this.onlineTranslator = onlineTranslator; useOnlineTranslation = defaultOnline && onlineTranslator is not null;
         this.diagnostics = diagnostics;
         this.clipboard = clipboard ?? new TextClipboardService();
         // No codec, WinRT or model calls in the constructor: first paint must not wait on native work.
@@ -58,6 +61,7 @@ public sealed class TextResultViewModel : ObservableObject, IDisposable
         }), Report, () => !Busy);
         CopySourceCommand = new(() => CopyAsync(Source, false), Report, () => !disposed && copying is null && Source.Length > 0);
         CopyTranslationCommand = new(() => CopyAsync(Translated, true), Report, () => !disposed && copying is null && Translated.Length > 0);
+        ConfigureOnlineCommand = new(configureOnline ?? (() => { }), () => configureOnline is not null && !Busy);
         CancelCommand = new(() => { userCancelled = true; if (operation is { } current) _ = current.CancelAsync(); }, () => Busy);
     }
     public Task InitializeAsync()
@@ -66,19 +70,28 @@ public sealed class TextResultViewModel : ObservableObject, IDisposable
         initialized = true;
         return Run("准备文字识别", TimeSpan.FromSeconds(45), Recognize);
     }
-    public Task TranslateAsync() { ShowTranslation = true; return Run("离线翻译", TimeSpan.FromSeconds(90), Translate); }
+    public Task TranslateAsync() { ShowTranslation = true; return Run(UseOnlineTranslation ? "在线翻译" : "离线翻译", TimeSpan.FromSeconds(90), Translate); }
+    public bool UseOnlineTranslation
+    {
+        get => useOnlineTranslation;
+        set { if (!Busy && Set(ref useOnlineTranslation,value)) { Notify(nameof(TranslationActionText)); Notify(nameof(TranslationNotice)); Notify(nameof(WindowTitle)); } }
+    }
+    public bool CanChangeTranslationMode => !Busy;
+    public string TranslationActionText => UseOnlineTranslation ? "在线翻译" : "离线翻译";
+    public string TranslationNotice => UseOnlineTranslation ? "原文将发送给所配置的大模型服务，按服务商规则计费。" : "离线处理，文字留在本机。";
+    public RelayCommand ConfigureOnlineCommand { get; }
     public IReadOnlyList<string> Languages { get => languages; private set => Set(ref languages, value); }
     public bool AutoTranslate { get => autoTranslate; init { autoTranslate = value; ShowTranslation = value; } }
     public BitmapSource PreviewImage => snapshot;
     public bool ShowTranslation { get => showTranslation; private set { if (Set(ref showTranslation, value)) Notify(nameof(WindowTitle)); } }
-    public string WindowTitle => ShowTranslation ? "自用截图 · 文字识别与离线翻译" : "自用截图 · 文字识别";
+    public string WindowTitle => ShowTranslation ? UseOnlineTranslation ? "自用截图 · 文字识别与在线翻译" : "自用截图 · 文字识别与离线翻译" : "自用截图 · 文字识别";
     public string? Language { get => language; set { if (value is not null) Set(ref language, value); } }
     public string Direction { get => direction; set { if (value is "en-zh" or "zh-en") Set(ref direction, value); } }
     public string Source { get => source; set { if (Set(ref source, value)) { TranslateCommand.Refresh(); CopySourceCommand.Refresh(); } } }
     public string Translated { get => translated; private set { if (Set(ref translated, value)) CopyTranslationCommand.Refresh(); } }
     public string Status { get => status; private set => Set(ref status, value); }
     public string CopyStatus { get => copyStatus; private set => Set(ref copyStatus, value); }
-    public bool Busy { get => busy; private set { Set(ref busy, value); Notify(nameof(Indeterminate)); OcrCommand.Refresh(); TranslateCommand.Refresh(); DownloadCommand.Refresh(); CancelCommand.Refresh(); } }
+    public bool Busy { get => busy; private set { Set(ref busy, value); Notify(nameof(Indeterminate)); Notify(nameof(CanChangeTranslationMode)); OcrCommand.Refresh(); TranslateCommand.Refresh(); DownloadCommand.Refresh(); CancelCommand.Refresh(); ConfigureOnlineCommand.Refresh(); } }
     public bool Indeterminate => Busy && !downloading;
     public double Progress { get => progress; private set => Set(ref progress, value); }
     public AsyncCommand OcrCommand { get; }
@@ -147,9 +160,11 @@ public sealed class TextResultViewModel : ObservableObject, IDisposable
     }
     private async Task Translate(CancellationToken token)
     {
-        SetStage("正在校验并加载翻译模型");
+        bool online = UseOnlineTranslation;
+        var service = online ? onlineTranslator ?? throw new InvalidOperationException("请先配置在线翻译服务。") : translator;
+        SetStage(online ? "正在连接在线翻译服务" : "正在校验并加载翻译模型");
         var input = Source; var selectedDirection = Direction;
-        diagnosticOperation?.Stage("translation-starting", new { Direction = selectedDirection, CharacterCount = input.Length });
+        diagnosticOperation?.Stage("translation-starting", new { Direction = selectedDirection, CharacterCount = input.Length, Online = online });
         string? loggedStage = null; int loggedSegments = -1, loggedTokens = -1;
         var updates = new Progress<TranslationProgress>(p =>
         {
@@ -161,8 +176,8 @@ public sealed class TextResultViewModel : ObservableObject, IDisposable
             }
             SetStage(p.TotalSegments == 0 ? p.Stage : $"{p.Stage}：已完成 {p.CompletedSegments}/{p.TotalSegments} 段");
         });
-        var result = await Task.Run(() => translator.TranslateAsync(input, selectedDirection, updates, token), token);
-        token.ThrowIfCancellationRequested(); Translated = result; Status = "离线翻译完成。";
+        var result = await Task.Run(() => service.TranslateAsync(input, selectedDirection, updates, token), token);
+        token.ThrowIfCancellationRequested(); Translated = result; Status = online ? "在线翻译完成。" : "离线翻译完成。";
     }
     private void SetStage(string value) { stage = value; ShowStage(); }
     private void ShowStage() { if (Busy) Status = $"{stage} · 已用 {elapsed.Elapsed.TotalSeconds:F0} 秒，可取消"; }
@@ -170,7 +185,7 @@ public sealed class TextResultViewModel : ObservableObject, IDisposable
     {
         if (Busy || disposed) return;
         using var current = new CancellationTokenSource(timeout); operation = current;
-        using var log = diagnostics?.Begin(name == "离线翻译" ? "translation" : name == "下载模型" ? "model-download" : "ocr",
+        using var log = diagnostics?.Begin(name is "离线翻译" or "在线翻译" ? "translation" : name == "下载模型" ? "model-download" : "ocr",
             new { snapshot.PixelWidth, snapshot.PixelHeight, TimeoutSeconds = timeout.TotalSeconds });
         diagnosticOperation = log;
         userCancelled = false; downloading = false; Progress = 0; Busy = true; elapsed.Restart(); SetStage(name); heartbeat.Start();

@@ -18,15 +18,19 @@ public sealed class FeatureHub
     private readonly IOcrService ocr;
     private readonly ModelStore models;
     private readonly ITranslationService translator;
+    private readonly IOnlineTranslationSettingsStore onlineSettings;
+    private readonly ITranslationService onlineTranslator;
     private readonly DiagnosticJournal? diagnostics;
     private readonly Func<IntPtr, IWindowsShareSession>? shareFactory;
     public FeatureHub(AnnotationRenderer renderer, IImageExportService export, IDesktopCaptureService capture, PinManager pins, DiagnosticJournal? diagnostics = null,
-        IOcrService? ocr = null, ITranslationService? translator = null, ModelStore? models = null, Func<IntPtr, IWindowsShareSession>? shareFactory = null)
+        IOcrService? ocr = null, ITranslationService? translator = null, ModelStore? models = null, Func<IntPtr, IWindowsShareSession>? shareFactory = null, IOnlineTranslationSettingsStore? onlineSettings = null, ITranslationService? onlineTranslator = null)
     {
         this.renderer = renderer; this.export = export; this.capture = capture; this.pins = pins; this.diagnostics = diagnostics;
         this.ocr = ocr ?? new OfflineOcrService();
         this.models = models ?? new(System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SelfSnip", "Models"));
         this.translator = translator ?? new OfflineTranslator(this.models); this.shareFactory = shareFactory;
+        this.onlineSettings = onlineSettings ?? new OnlineTranslationSettingsStore();
+        this.onlineTranslator = onlineTranslator ?? new OnlineTranslator(() => this.onlineSettings.ReadCredentials());
     }
     public TextResultWindow? ShowText(EditorViewModel vm, bool translate)
     {
@@ -37,7 +41,9 @@ public sealed class FeatureHub
         {
             var image = vm.Compose();
             operation?.Stage("image-composed", new { image.PixelWidth, image.PixelHeight });
-            text = new TextResultViewModel(image, ocr, models, translator, diagnostics) { AutoTranslate = translate };
+            text = new TextResultViewModel(image, ocr, models, translator, diagnostics, onlineTranslator: onlineTranslator,
+                configureOnline: () => ShowOnlineSettings(() => { if (text is not null) text.UseOnlineTranslation = onlineSettings.Read()?.DefaultOnline ?? false; }),
+                defaultOnline: DefaultOnline()) { AutoTranslate = translate };
             operation?.Stage("view-model-created");
             // A result must outlive the screenshot overlay. Do not give it the overlay as owner.
             window = new TextResultWindow(text) { WindowStartupLocation = WindowStartupLocation.CenterScreen };
@@ -51,6 +57,19 @@ public sealed class FeatureHub
             MessageBox.Show("无法打开识别结果窗口：" + error.Message + "\n软件仍在运行，可从托盘导出诊断包。", "自用截图", MessageBoxButton.OK, MessageBoxImage.Error);
             return null;
         }
+    }
+    private bool DefaultOnline()
+    {
+        try { return onlineSettings.Read()?.DefaultOnline ?? false; }
+        catch (InvalidOperationException error) { diagnostics?.Record("online-settings", "invalid-configuration", error: error); return false; }
+    }
+    public OnlineTranslationSettingsWindow ShowOnlineSettings(Action? saved = null)
+    {
+        var existing = Application.Current.Windows.OfType<OnlineTranslationSettingsWindow>().FirstOrDefault();
+        if (existing is not null) { existing.Show(); existing.Activate(); return existing; }
+        var vm = new OnlineTranslationSettingsViewModel(onlineSettings);
+        if (saved is not null) vm.Saved += (_, _) => saved();
+        var window = new OnlineTranslationSettingsWindow(vm); window.Show(); window.Activate(); return window;
     }
     public EditorWindow OpenEditor(EditorViewModel vm)
     {

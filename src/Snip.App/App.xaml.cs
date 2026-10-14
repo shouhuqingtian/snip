@@ -51,7 +51,7 @@ public partial class App : Application
             pins = new PinManager(export);
             var features = new FeatureHub(renderer, export, capture, pins, diagnostics);
             coordinator = new CaptureCoordinator(capture, renderer, export, features, diagnostics);
-            main = new MainWindow { DataContext = new MainViewModel(coordinator.CaptureAsync, ShowError, ExportDiagnosticsAsync) };
+            main = new MainWindow { DataContext = new MainViewModel(coordinator.CaptureAsync, ShowError, ExportDiagnosticsAsync, () => features.ShowOnlineSettings()) };
             MainWindow = main;
             hotkey = new HotkeyService(); tray = new TrayService();
             features.CaptureStatus = message => tray?.SetCaptureStatus(message);

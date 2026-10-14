@@ -85,7 +85,7 @@ internal static class TextWindowChecks
             var capture = new FakeCapture(image); var renderer = new AnnotationRenderer(); var export = new FakeExport();
             using var pins = new PinManager(export);
             var features = new FeatureHub(renderer, export, capture, pins, diagnostics, new FakeOcr(), new FakeTranslation(), new ModelStore("unused-models"));
-            foreach (var (action, tip) in new[] { (SelectionAction.Ocr, "离线文字识别"), (SelectionAction.Translate, "离线中英互译") })
+            foreach (var (action, tip) in new[] { (SelectionAction.Ocr, "离线文字识别"), (SelectionAction.Translate, "文字识别 / 中英翻译") })
             {
                 stage = "actual selection toolbar " + action;
                 using var selection = new SelectionSession(new(image, new(0, 0, 800, 600), capture.GetDisplays()), capture, renderer, export, []);

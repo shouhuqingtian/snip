@@ -7,4 +7,5 @@
   </PropertyGroup>
   <ItemGroup><ProjectReference Include="../Snip.Core/Snip.Core.csproj" /></ItemGroup>
   <ItemGroup><EmbeddedResource Include="Assets/sheep.ico" LogicalName="Snip.Infrastructure.sheep.ico" /></ItemGroup>
+  <ItemGroup><PackageReference Include="System.Security.Cryptography.ProtectedData" Version="8.0.0" /></ItemGroup>
 </Project>
