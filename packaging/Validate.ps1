@@ -47,6 +47,7 @@ try {
         Check 'clipboard-ui' @('run','--project','tests/Snip.Windows.Checks/Snip.Windows.Checks.csproj','-c','Release','--no-build','--','--clipboard-ui')
         Check 'ui-gallery' @('run','--project','tests/Snip.Windows.Checks/Snip.Windows.Checks.csproj','-c','Release','--no-build','--','--ui-gallery')
         Check 'translation' @('run','--project','tests/Snip.Translation.Checks/Snip.Translation.Checks.csproj','-c','Release','--no-build','--',$ModelPath,'--install')
+        Check 'translation-performance' @('run','--project','tests/Snip.Translation.Checks/Snip.Translation.Checks.csproj','-c','Release','--no-build','--',$ModelPath,'--performance')
         Check 'gpu-runtime' @('run','--project','tests/Snip.Translation.Checks/Snip.Translation.Checks.csproj','-c','Release','--no-build','--',$ModelPath,'--gpu-runtime')
         Check 'gpu-inference' @('run','--project','tests/Snip.Translation.Checks/Snip.Translation.Checks.csproj','-c','Release','--no-build','--',$ModelPath,'--gpu-inference') -AllowsMissingGpu
         Check 'chrome' @('run','--project','tests/Snip.Windows.Checks/Snip.Windows.Checks.csproj','-c','Release','--no-build','--','--chrome')

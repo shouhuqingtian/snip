@@ -31,7 +31,7 @@ public sealed class FeatureHub
         this.translator = translator ?? new OfflineTranslator(this.models); this.shareFactory = shareFactory;
         if (this.translator is OfflineTranslator native)
             native.InferenceCompleted += metrics => diagnostics?.Record("translation", "native-released", new
-            { Engine = ModelStore.Model.Name, metrics.ProcessId, metrics.PeakWorkingSetBytes, metrics.PeakCombinedWorkingSetBytes, metrics.ElapsedSeconds, metrics.ProcessExited, metrics.ExitCode, Backend = metrics.Backend.ToString(), metrics.OffloadedLayers });
+            { Engine = ModelStore.Model.Name, metrics.ProcessId, metrics.PeakWorkingSetBytes, metrics.PeakCombinedWorkingSetBytes, metrics.ElapsedSeconds, metrics.ProcessExited, metrics.ExitCode, Backend = metrics.Backend.ToString(), metrics.OffloadedLayers, metrics.ProcessorSeconds, metrics.Threads, metrics.BatchThreads, metrics.Repack });
         this.onlineSettings = onlineSettings ?? new OnlineTranslationSettingsStore();
         this.onlineTranslator = onlineTranslator ?? new OnlineTranslator(() => this.onlineSettings.ReadCredentials());
     }

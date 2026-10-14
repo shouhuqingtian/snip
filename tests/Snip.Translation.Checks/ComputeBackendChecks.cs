@@ -66,6 +66,12 @@ internal static class ComputeBackendChecks
             }
             catch (InvalidOperationException) { rejected = true; }
             Require(rejected && calls.SequenceEqual(new[] { TranslationBackend.Vulkan }), "Input error started a CPU retry.");
+            foreach (int cores in new[] { 1, 2, 4, 8, 16, 64 })
+            {
+                var profile = CpuInferenceProfile.ForProcessorCount(cores);
+                Require(profile.Threads >= 1 && profile.Threads <= Math.Min(4, Math.Max(1, cores / 2)) && profile.BatchThreads <= Math.Min(4, Math.Max(1, cores - 1)) &&
+                    !profile.Repack && profile.MicroBatchSize == 128 && profile.BatchSize >= profile.MicroBatchSize, "CPU profile oversubscribed cores or retained extra weight storage.");
+            }
             Console.WriteLine($"PASS {count} compute settings, device selection, cancellation and pinned-runtime checks; no network or physical GPU used.");
             return 0;
         }

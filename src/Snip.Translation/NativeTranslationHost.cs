@@ -26,14 +26,18 @@ internal sealed class NativeTranslationHost : IAsyncDisposable
     private int offloadedLayers;
     public int OffloadedLayers => Volatile.Read(ref offloadedLayers);
     public TranslationBackend Backend { get; }
+    public CpuInferenceProfile CpuProfile { get; }
+    private long processorTicks;
+    public double ProcessorSeconds => Interlocked.Read(ref processorTicks) / (double)TimeSpan.TicksPerSecond;
     public int ProcessId { get; }
     public long PeakWorkingSetBytes => Interlocked.Read(ref peak);
     public long PeakCombinedWorkingSetBytes => Interlocked.Read(ref combinedPeak);
     public bool Exited { get; private set; }
     public int? ExitCode { get; private set; }
-    public NativeTranslationHost(ModelStore models, TranslationBackend backend = TranslationBackend.Cpu, string? device = null)
+    public NativeTranslationHost(ModelStore models, TranslationBackend backend = TranslationBackend.Cpu, string? device = null, CpuInferenceProfile? cpuProfile = null)
     {
         Backend = backend;
+        CpuProfile = cpuProfile ?? (backend == TranslationBackend.Cpu ? CpuInferenceProfile.ForProcessorCount(Environment.ProcessorCount) : CpuInferenceProfile.Legacy);
         if (backend == TranslationBackend.Vulkan && (device is null || !Regex.IsMatch(device, @"^Vulkan\d+$"))) throw new ArgumentException("Invalid GPU device.");
         var listener = new TcpListener(IPAddress.Loopback, 0); listener.Start();
         int port = ((IPEndPoint)listener.LocalEndpoint).Port; listener.Stop();
@@ -47,7 +51,12 @@ internal sealed class NativeTranslationHost : IAsyncDisposable
         foreach (string value in backend == TranslationBackend.Vulkan
             ? new[] { "--device", device!, "-ngl", "all", "--fit", "off", "-b", "128", "-ub", "128", "--log-verbosity", "3" }
             : new[] { "--device", "none", "-ngl", "0", "--no-op-offload", "--log-disable" }) start.ArgumentList.Add(value);
-        foreach (string value in new[] { "-m", models.ModelPath, "-c", "2048", "-t", "2", "-tb", "2",
+        if (backend == TranslationBackend.Cpu)
+        {
+            foreach (string value in new[] { "-b", CpuProfile.BatchSize.ToString(System.Globalization.CultureInfo.InvariantCulture), "-ub", CpuProfile.MicroBatchSize.ToString(System.Globalization.CultureInfo.InvariantCulture) }) start.ArgumentList.Add(value);
+            start.ArgumentList.Add(CpuProfile.Repack ? "--repack" : "--no-repack");
+        }
+        foreach (string value in new[] { "-m", models.ModelPath, "-c", "2048", "-t", CpuProfile.Threads.ToString(System.Globalization.CultureInfo.InvariantCulture), "-tb", CpuProfile.BatchThreads.ToString(System.Globalization.CultureInfo.InvariantCulture),
             "--parallel", "1", "--threads-http", "1", "--cache-ram", "0", "--no-cache-prompt", "--host", "127.0.0.1", "--port", port.ToString(System.Globalization.CultureInfo.InvariantCulture),
             "--alias", "self-snip-offline", "--no-webui", "--no-slots", "--offline", "--no-warmup", "--jinja" }) start.ArgumentList.Add(value);
         try
@@ -55,6 +64,9 @@ internal sealed class NativeTranslationHost : IAsyncDisposable
             process = Process.Start(start) ?? throw new InvalidOperationException();
             ProcessId = process.Id;
             if (OperatingSystem.IsWindows()) job = AttachJob(process);
+            if (backend == TranslationBackend.Cpu && OperatingSystem.IsWindows())
+                try { process.PriorityClass = ProcessPriorityClass.BelowNormal; }
+                catch (Exception error) when (error is System.ComponentModel.Win32Exception or InvalidOperationException) { }
         }
         catch
         {
@@ -95,6 +107,7 @@ internal sealed class NativeTranslationHost : IAsyncDisposable
         {
             process.Refresh(); parent.Refresh();
             UpdateMaximum(ref peak, process.PeakWorkingSet64);
+            UpdateMaximum(ref processorTicks, process.TotalProcessorTime.Ticks);
             UpdateMaximum(ref combinedPeak, process.WorkingSet64 + parent.WorkingSet64);
         }
         catch (Exception error) when (error is InvalidOperationException or System.ComponentModel.Win32Exception) { }

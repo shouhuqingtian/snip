@@ -82,6 +82,8 @@ internal static class NativeOcrCheck
                     Console.WriteLine("PASS actual result window: native English OCR → real offline translation → both visible results; window stays open.");
                     if (metrics is null || !metrics.ProcessExited || metrics.PeakCombinedWorkingSetBytes <= 0 || metrics.PeakCombinedWorkingSetBytes > 2L * 1024 * 1024 * 1024)
                         throw new InvalidOperationException("4K result UI and native model cleanup/memory budget failed.");
+                    if (metrics.Backend == TranslationBackend.Cpu && (metrics.Repack || metrics.Threads > 4 || metrics.BatchThreads > 4))
+                        throw new InvalidOperationException("Real result UI did not use bounded CPU profile without extra repacked weights.");
                     Console.WriteLine($"PASS real 4K result with Hy-MT2: parent+worker peak sample {metrics.PeakCombinedWorkingSetBytes / 1048576.0:F1} MiB; native {metrics.PeakWorkingSetBytes / 1048576.0:F1} MiB; released after translation.");
                 }
                 finally { window?.Close(); SynchronizationContext.SetSynchronizationContext(previous); }
