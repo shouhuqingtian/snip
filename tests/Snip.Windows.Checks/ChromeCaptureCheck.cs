@@ -82,11 +82,13 @@ internal static class ChromeCaptureCheck
             Console.WriteLine($"PASS real Chrome entire page: {entire.PixelWidth}x{entire.PixelHeight}; ScrollPattern disabled.");
             stage = "current viewport from middle to bottom";
             Wheel(region, 12000); Task.Delay(650).GetAwaiter().GetResult();
+            var atTopPixels = Pixels(desktop.CaptureRegion(region));
             Wheel(region, -600); Task.Delay(650).GetAwaiter().GetResult();
+            if (atTopPixels.SequenceEqual(Pixels(desktop.CaptureRegion(region)))) throw new InvalidOperationException("Native test input did not move the fixture away from the top before current-page capture.");
             var suffix = Capture(region, BrowserCaptureMode.FromCurrentPage);
             export.SavePng(suffix, Path.Combine(output, "current-to-bottom.png"));
             if (suffix.PixelWidth != entire.PixelWidth || suffix.PixelHeight >= entire.PixelHeight - 100 || suffix.PixelHeight < 1000)
-                throw new InvalidOperationException("Current-page capture restarted at the top or lost the remaining document.");
+                throw new InvalidOperationException($"Current-page capture restarted at the top or lost the remaining document: whole={entire.PixelWidth}x{entire.PixelHeight}, suffix={suffix.PixelWidth}x{suffix.PixelHeight}.");
             Console.WriteLine($"PASS real Chrome from current viewport to bottom: {suffix.PixelWidth}x{suffix.PixelHeight}; excludes content above.");
             stage = "current viewport already at bottom";
             // Chrome can expose a ScrollPattern on demand even with renderer accessibility disabled.
@@ -269,7 +271,7 @@ internal static class ChromeCaptureCheck
     [StructLayout(LayoutKind.Sequential)] private struct KeyboardInput { public ushort Key, Scan; public uint Flags, Time; public UIntPtr Extra; }
     private static void Wheel(PixelRect region, int delta)
     {
-        SetPhysicalCursorPos((int)(region.X + region.Width / 2), (int)(region.Y + region.Height / 2));
+        Move(new(region.X + region.Width / 2, region.Y + region.Height / 2));
         Send([new() { Type = 0, Data = new() { Mouse = new() { Wheel = unchecked((uint)delta), Flags = 0x0800 } } }]);
     }
     private static void Click(Point point)
@@ -322,6 +324,11 @@ internal static class ChromeCaptureCheck
         var pixels = new byte[converted.PixelWidth * converted.PixelHeight * 4]; converted.CopyPixels(pixels, converted.PixelWidth * 4, 0);
         for (int i = 0; i < pixels.Length; i += 4) if (pixels[i] > 250 && pixels[i + 1] < 10 && pixels[i + 2] > 250) return true;
         return false;
+    }
+    private static byte[] Pixels(BitmapSource image)
+    {
+        var converted = new FormatConvertedBitmap(image, PixelFormats.Bgra32, null, 0);
+        var pixels = new byte[converted.PixelWidth * converted.PixelHeight * 4]; converted.CopyPixels(pixels, converted.PixelWidth * 4, 0); return pixels;
     }
 
 }
