@@ -4,6 +4,8 @@ public interface IHotkeyService : IDisposable
 {
     event EventHandler? Triggered;
     bool Register();
+    bool Register(HotkeyGesture gesture);
+    HotkeyGesture? Current { get; }
 }
 
 public interface ITrayService : IDisposable
@@ -15,6 +17,7 @@ public interface ITrayService : IDisposable
     event EventHandler? CaptureCancelRequested;
     event EventHandler? DiagnosticsRequested;
     void SetCaptureStatus(string? status);
+    void SetHotkey(HotkeyGesture gesture);
 }
 
 public sealed record ImagePayload(ReadOnlyMemory<byte> PngBytes, int Width, int Height);

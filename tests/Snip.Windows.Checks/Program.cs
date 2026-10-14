@@ -20,6 +20,7 @@ internal static class Program
         if (args.FirstOrDefault() == "--render-benchmark") return RenderPerformanceCheck.Benchmark(args[1]);
         if (args.Contains("--editor-performance")) return RenderPerformanceCheck.Run();
         if (args.Contains("--online-settings")) return OnlineSettingsChecks.Run();
+        if (args.Contains("--hotkey")) return HotkeyChecks.Run();
         if (args.Contains("--window-placement")) return WindowPlacementChecks.Run();
         if (args.Contains("--share-ui")) return WindowsShareChecks.Run(native: false);
         if (args.Contains("--share-native")) return WindowsShareChecks.Run(native: true);

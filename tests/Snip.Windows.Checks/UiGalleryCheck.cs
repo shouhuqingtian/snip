@@ -90,6 +90,8 @@ internal static class UiGalleryCheck
             Capture(new TextDialog("为画面添加一点说明。\n截图、标注，然后分享。", "#079B70", 24), "06-text-dialog");
             Capture(new StickerPicker(), "07-stickers");
             Capture(new OnlineTranslationSettingsWindow(new OnlineTranslationSettingsViewModel(new OnlineTranslationSettingsStore(Path.Combine(output,"unused-online-settings.json")))), "09-online-settings");
+            using var hotkey = new HotkeyService();
+            Capture(new HotkeySettingsWindow(new HotkeySettingsViewModel(hotkey, new HotkeySettingsStore(Path.Combine(output,"unused-hotkey.json")), HotkeyGesture.Default)), "14-hotkey-settings");
             Capture(new WindowsShareWindow(image, export, autoOpen: false), "08-windows-share");
             Capture(new PinManagerWindow([]), "10-pins-empty");
             var pin = new PinWindow(image, export); pin.Show();
@@ -99,7 +101,7 @@ internal static class UiGalleryCheck
             using var selection = new SelectionSession(new(image, new(0, 0, 1280, 800), capture.GetDisplays()), capture, renderer, export, []);
             selection.Show(); selection.ViewModel.SetSelection(new(90, 110, 1050, 460)); selection.BeginEditing();
             Capture(app.Windows.OfType<SelectionWindow>().Single(), "13-selection-toolbar");
-            Console.WriteLine("PASS 13 actual UI previews; no share target invoked or user screenshot used."); return 0;
+            Console.WriteLine("PASS 14 actual UI previews; no share target invoked or user screenshot used."); return 0;
         }
         catch (Exception error)
         {

@@ -22,6 +22,8 @@ public partial class App : Application
     private bool ownsMutex;
     private DiagnosticJournal? diagnostics;
     private IDesktopCaptureService? desktop;
+    private IHotkeySettingsStore? hotkeyStore;
+    private HotkeySettingsWindow? hotkeySettings;
 
     protected override void OnStartup(StartupEventArgs e)
     {
@@ -39,7 +41,13 @@ public partial class App : Application
         }
         activation = new EventWaitHandle(false, EventResetMode.AutoReset, @"Local\SelfSnip.Activate.v1");
         instance = new Mutex(true, @"Local\SelfSnip.Instance.v1", out ownsMutex);
-        if (!ownsMutex) { activation.Set(); Shutdown(); return; }
+        if (!ownsMutex)
+        {
+            activation.Set();
+            MessageBox.Show($"已有自用截图在运行，已打开它的主窗口。\n此次启动的文件版本为 {DesktopDiagnostics.Version.Split('+')[0]}。\n如果刚更新软件，请先在旧实例的托盘菜单选择‘退出’，再运行新版 Snip.exe。",
+                "自用截图 · 已有实例运行", MessageBoxButton.OK, MessageBoxImage.Information);
+            Shutdown(); return;
+        }
         try
         {
             // Explicit constructor injection keeps Windows concerns outside ViewModels.
@@ -51,24 +59,47 @@ public partial class App : Application
             pins = new PinManager(export);
             var features = new FeatureHub(renderer, export, capture, pins, diagnostics);
             coordinator = new CaptureCoordinator(capture, renderer, export, features, diagnostics);
-            main = new MainWindow { DataContext = new MainViewModel(coordinator.CaptureAsync, ShowError, ExportDiagnosticsAsync, () => features.ShowOnlineSettings()) };
+            main = new MainWindow { Title = "自用截图 " + DesktopDiagnostics.Version.Split('+')[0], DataContext = new MainViewModel(coordinator.CaptureAsync, ShowError, ExportDiagnosticsAsync, () => features.ShowOnlineSettings(), ShowHotkeySettings) };
             MainWindow = main;
             hotkey = new HotkeyService(); tray = new TrayService();
+            hotkeyStore = new HotkeySettingsStore();
             features.CaptureStatus = message => tray?.SetCaptureStatus(message);
             tray.CaptureCancelRequested += (_, _) => features.CancelBrowserCapture();
-            hotkey.Triggered += (_, _) => StartCapture(); tray.CaptureRequested += (_, _) => StartCapture();
+            hotkey.Triggered += (_, _) => { if (hotkeySettings?.IsActive != true) StartCapture(); }; tray.CaptureRequested += (_, _) => StartCapture();
             tray.OpenRequested += (_, _) => OpenMain(); tray.ExitRequested += (_, _) => ExitApplication();
             tray.PinsRequested += (_, _) => pins.ShowManager();
             tray.DiagnosticsRequested += async (_, _) => { try { await ExportDiagnosticsAsync(); } catch (Exception error) { ShowError(error); } };
             activationListener = ThreadPool.RegisterWaitForSingleObject(activation, (_, _) => Dispatcher.BeginInvoke(OpenMain), null, Timeout.Infinite, false);
-            bool registered = hotkey.Register(); diagnostics.Record("app", "hotkey-registration", new { Registered = registered });
+            HotkeyGesture configured = HotkeyGesture.Default;
+            bool readFailed = false;
+            try { configured = hotkeyStore.Read(); }
+            catch (Exception error) { diagnostics.Record("app", "hotkey-settings-read-failed", error: error); readFailed = true; }
+            UpdateHotkey(configured);
+            if (readFailed) ((MainViewModel)main.DataContext).Status = "快捷键配置读取失败，本次采用 Ctrl+Alt+A；可重新保存设置。";
+            bool registered = hotkey.Register(configured); diagnostics.Record("app", "hotkey-registration", new { Registered = registered });
             if (!registered)
             {
-                ((MainViewModel)main.DataContext).Status = "Ctrl+Alt+A 注册失败，可能已被占用；可通过托盘或主窗口截图。";
-                MessageBox.Show("快捷键 Ctrl+Alt+A 无法注册，可能已被其他软件占用。\n可使用托盘菜单或主窗口截图。", "自用截图", MessageBoxButton.OK, MessageBoxImage.Warning);
+                ((MainViewModel)main.DataContext).Status = configured.DisplayText + " 注册失败，可点‘修改’换一个组合，或通过托盘截图。";
+                MessageBox.Show($"快捷键 {configured.DisplayText} 无法注册，可能已被其他软件占用。\n可打开主窗口修改快捷键，或使用托盘菜单截图。", "自用截图", MessageBoxButton.OK, MessageBoxImage.Warning);
             }
         }
         catch (Exception ex) { ShowError(ex); Shutdown(1); }
+    }
+
+    private void UpdateHotkey(HotkeyGesture gesture)
+    {
+        tray?.SetHotkey(gesture);
+        if (main?.DataContext is MainViewModel vm) { vm.HotkeyText = gesture.DisplayText; vm.Status = "已常驻托盘，按 " + gesture.DisplayText + " 截图。"; }
+    }
+    private void ShowHotkeySettings()
+    {
+        if (hotkeySettings is not null) { hotkeySettings.Activate(); return; }
+        if (hotkey is null || hotkeyStore is null) return;
+        var vm = new HotkeySettingsViewModel(hotkey, hotkeyStore, hotkey.Current ?? HotkeyGesture.Default);
+        vm.Saved += (_, gesture) => UpdateHotkey(gesture);
+        hotkeySettings = new HotkeySettingsWindow(vm) { Owner = main?.IsVisible == true ? main : null };
+        hotkeySettings.Closed += (_, _) => hotkeySettings = null;
+        hotkeySettings.Show();
     }
 
     private async void StartCapture()

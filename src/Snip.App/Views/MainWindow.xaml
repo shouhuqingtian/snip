@@ -9,7 +9,7 @@
   <Border Grid.Row="1" Style="{StaticResource Card}" Padding="24" Margin="0,0,0,18">
    <StackPanel><TextBlock Text="随时截取，轻松表达" FontSize="19" FontWeight="SemiBold"/><TextBlock Text="选择屏幕区域，直接标注、复制或保存。" Style="{StaticResource Subtitle}" Margin="0,8,0,18"/>
     <Button x:Name="StartCaptureButton" Style="{StaticResource PrimaryButton}" Command="{Binding CaptureCommand}" Height="48" Margin="0" FontSize="15"><StackPanel Orientation="Horizontal"><local:UiIcon Width="21" Height="21" Margin="0,0,10,0"/><TextBlock Text="开始截图" VerticalAlignment="Center"/></StackPanel></Button>
-    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,16,0,0"><TextBlock Text="全局快捷键" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" Margin="0,0,10,0"/><Border Background="{StaticResource WindowBrush}" CornerRadius="6" Padding="10,5"><TextBlock Text="Ctrl + Alt + A" FontFamily="Segoe UI" FontWeight="SemiBold"/></Border></StackPanel>
+    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,16,0,0"><TextBlock Text="全局快捷键" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" Margin="0,0,10,0"/><Border Background="{StaticResource WindowBrush}" CornerRadius="6" Padding="10,5"><TextBlock Text="{Binding HotkeyText}" FontFamily="Segoe UI" FontWeight="SemiBold"/></Border><Button Content="修改" Command="{Binding HotkeySettingsCommand}" Style="{StaticResource QuietButton}" Margin="8,0,0,0"/></StackPanel>
    </StackPanel>
   </Border>
   <UniformGrid Grid.Row="2" Columns="2" Rows="2" Margin="-5,0,-5,12">

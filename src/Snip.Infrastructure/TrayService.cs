@@ -17,11 +17,13 @@ public sealed class TrayService : ITrayService
     public event EventHandler? CaptureCancelRequested;
     public event EventHandler? DiagnosticsRequested;
     private bool capturing;
+    private HotkeyGesture gesture = HotkeyGesture.Default;
+    private readonly ToolStripItem captureItem;
     public TrayService()
     {
         using var stream = typeof(TrayService).Assembly.GetManifestResourceStream("Snip.Infrastructure.sheep.ico") ?? throw new InvalidOperationException("羊图标资源缺失。");
         sheepIcon = new Icon(stream);
-        menu.Items.Add("开始截图  Ctrl+Alt+A", null, (_, _) => CaptureRequested?.Invoke(this, EventArgs.Empty));
+        captureItem = menu.Items.Add("开始截图  Ctrl+Alt+A", null, (_, _) => CaptureRequested?.Invoke(this, EventArgs.Empty));
         menu.Items.Add("打开主窗口", null, (_, _) => OpenRequested?.Invoke(this, EventArgs.Empty));
         menu.Items.Add("贴图管理", null, (_, _) => PinsRequested?.Invoke(this, EventArgs.Empty));
         menu.Items.Add("导出诊断包…", null, (_, _) => DiagnosticsRequested?.Invoke(this, EventArgs.Empty));
@@ -34,8 +36,13 @@ public sealed class TrayService : ITrayService
     public void SetCaptureStatus(string? status)
     {
         capturing = status is not null;
-        var text = status is null ? "自用截图 · Ctrl+Alt+A" : "自用截图 · " + status;
+        var text = status is null ? "自用截图 · " + gesture.DisplayText : "自用截图 · " + status;
         icon.Text = text.Length > 63 ? text[..63] : text;
+    }
+    public void SetHotkey(HotkeyGesture value)
+    {
+        gesture = value; captureItem.Text = "开始截图  " + value.DisplayText;
+        if (!capturing) SetCaptureStatus(null);
     }
     public void Dispose() { icon.Visible = false; icon.Dispose(); sheepIcon.Dispose(); menu.Dispose(); }
 }
