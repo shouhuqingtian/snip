@@ -117,14 +117,17 @@ internal static class ChromeCaptureCheck
                 var viewport = toolbar.Viewport;
                 var startPoint = new Point(viewport.X + 80, viewport.Y + 80);
                 var edgePoint = new Point(viewport.X + 400, viewport.Bottom - 10);
-                SetPhysicalCursorPos((int)startPoint.X, (int)startPoint.Y);
+                Move(startPoint);
                 Send([new() { Type = 0, Data = new() { Mouse = new() { Flags = 2 } } }]);
-                SetPhysicalCursorPos((int)edgePoint.X, (int)edgePoint.Y);
                 var vm = (ManualScrollCaptureViewModel)toolbar.DataContext;
+                TextWindowChecks.PumpUntil(() => vm.Drag!.Started, TimeSpan.FromSeconds(3));
+                Move(edgePoint);
+                TextWindowChecks.PumpUntil(() => vm.Drag!.AtLowerEdge, TimeSpan.FromSeconds(3));
+                Console.WriteLine("PASS native drag down and move reach lower edge before scrolling.");
                 TextWindowChecks.PumpUntil(() => task.IsCompleted || vm.Frames >= 3, TimeSpan.FromSeconds(12));
                 if (task.IsCompleted) { task.GetAwaiter().GetResult(); throw new InvalidOperationException("Drag capture stopped before release."); }
                 var releasePoint = new Point(edgePoint.X, viewport.Y + 200);
-                SetPhysicalCursorPos((int)releasePoint.X, (int)releasePoint.Y);
+                Move(releasePoint);
                 Send([new() { Type = 0, Data = new() { Mouse = new() { Flags = 4 } } }]);
                 TextWindowChecks.PumpUntil(() => task.IsCompleted, TimeSpan.FromSeconds(12)); task.GetAwaiter().GetResult();
                 if (app.Windows.OfType<ManualScrollCaptureWindow>().Any()) throw new InvalidOperationException("Drag controls were not closed after release.");
@@ -174,12 +177,13 @@ internal static class ChromeCaptureCheck
                 if (captureTask.IsCompleted) throw new InvalidOperationException("Selected fixture capture stopped before dragging.");
                 var bar = app.Windows.OfType<ManualScrollCaptureWindow>().Single(); var viewport = bar.Viewport;
                 ((Border)bar.Content).Background = Brushes.Magenta;
-                SetPhysicalCursorPos((int)viewport.X + 65, (int)viewport.Y + 65);
+                Move(new(viewport.X + 65, viewport.Y + 65));
                 Send([new() { Type = 0, Data = new() { Mouse = new() { Flags = 2 } } }]);
-                SetPhysicalCursorPos((int)viewport.X + 385, (int)viewport.Bottom + 8);
+                TextWindowChecks.PumpUntil(() => ((ManualScrollCaptureViewModel)bar.DataContext).Drag!.Started, TimeSpan.FromSeconds(3));
+                Move(new(viewport.X + 385, viewport.Bottom + 8));
                 TextWindowChecks.PumpUntil(() => captureTask.IsCompleted || ((ManualScrollCaptureViewModel)bar.DataContext).Frames >= 4, TimeSpan.FromSeconds(12));
                 if (captureTask.IsCompleted) throw new InvalidOperationException("Selected text fixture failed while dragging.");
-                SetPhysicalCursorPos((int)viewport.X + 385, (int)viewport.Y + 250);
+                Move(new(viewport.X + 385, viewport.Y + 250));
                 Send([new() { Type = 0, Data = new() { Mouse = new() { Flags = 4 } } }]);
                 TextWindowChecks.PumpUntil(() => captureTask.IsCompleted, TimeSpan.FromSeconds(12)); captureTask.GetAwaiter().GetResult();
                 var resultEditor = app.Windows.OfType<EditorWindow>().Single();
@@ -272,6 +276,15 @@ internal static class ChromeCaptureCheck
     {
         SetPhysicalCursorPos((int)point.X, (int)point.Y);
         Send([new() { Type = 0, Data = new() { Mouse = new() { Flags = 0x0002 } } }, new() { Type = 0, Data = new() { Mouse = new() { Flags = 0x0004 } } }]);
+    }
+    private static void Move(Point point)
+    {
+        var displays = new DesktopCaptureService().GetDisplays();
+        double left = displays.Min(d => d.Bounds.X), top = displays.Min(d => d.Bounds.Y);
+        double width = displays.Max(d => d.Bounds.Right) - left, height = displays.Max(d => d.Bounds.Bottom) - top;
+        Send([new() { Type = 0, Data = new() { Mouse = new() { X = Math.Clamp((int)Math.Ceiling((point.X - left) * 65536 / width), 0, 65535), Y = Math.Clamp((int)Math.Ceiling((point.Y - top) * 65536 / height), 0, 65535), Flags = 0xC001 } } }]);
+        // Pump the actual low-level hook, rather than assuming SetPhysicalCursorPos injects a move.
+        var paint = Task.Delay(40); TextWindowChecks.PumpUntil(() => paint.IsCompleted, TimeSpan.FromSeconds(2));
     }
     private static void Key(ushort key) => Send([new() { Type = 1, Data = new() { Keyboard = new() { Key = key } } }, new() { Type = 1, Data = new() { Keyboard = new() { Key = key, Flags = 2 } } }]);
     private static void Send(Input[] inputs)

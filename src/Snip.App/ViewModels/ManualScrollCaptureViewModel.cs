@@ -11,7 +11,8 @@ public sealed class ManualScrollCaptureViewModel : ObservableObject
     public ManualScrollCaptureViewModel(ManualCaptureControl control, Action cancel)
         : this(control.RequestFinish, cancel) { }
     public ManualScrollCaptureViewModel(DragCaptureControl control, Action cancel)
-        : this(control.RequestFinish, cancel) { }
+        : this(control.RequestFinish, cancel) { Drag = control; }
+    public DragCaptureControl? Drag { get; }
     private ManualScrollCaptureViewModel(Action finish, Action cancel)
     {
         CompleteCommand = new(finish, () => CanFinish);
