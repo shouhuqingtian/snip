@@ -57,7 +57,7 @@ public sealed class TextResultViewModel : ObservableObject, IDisposable
                 SetStage($"下载模型 {p.Direction}：{Progress:F1}%（共 {p.TotalBytes / 1024 / 1024} MB）");
             });
             await Task.Run(() => models.InstallAsync(updates, token), token);
-            token.ThrowIfCancellationRequested(); Status = "两个方向的模型已校验，可断网翻译。";
+            token.ThrowIfCancellationRequested(); Status = "Hy-MT2 中英互译模型和推理器已校验，可断网翻译。";
         }), Report, () => !Busy);
         CopySourceCommand = new(() => CopyAsync(Source, false), Report, () => !disposed && copying is null && Source.Length > 0);
         CopyTranslationCommand = new(() => CopyAsync(Translated, true), Report, () => !disposed && copying is null && Translated.Length > 0);
@@ -78,7 +78,7 @@ public sealed class TextResultViewModel : ObservableObject, IDisposable
     }
     public bool CanChangeTranslationMode => !Busy;
     public string TranslationActionText => UseOnlineTranslation ? "在线翻译" : "离线翻译";
-    public string TranslationNotice => UseOnlineTranslation ? "原文将发送给所配置的大模型服务，按服务商规则计费。" : "离线处理，文字留在本机。";
+    public string TranslationNotice => UseOnlineTranslation ? "原文将发送给所配置的大模型服务，按服务商规则计费。" : "Hy-MT2 专业中英翻译，文字留在本机。";
     public RelayCommand ConfigureOnlineCommand { get; }
     public IReadOnlyList<string> Languages { get => languages; private set => Set(ref languages, value); }
     public bool AutoTranslate { get => autoTranslate; init { autoTranslate = value; ShowTranslation = value; } }

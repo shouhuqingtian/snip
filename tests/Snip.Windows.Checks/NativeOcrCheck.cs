@@ -43,15 +43,24 @@ internal static class NativeOcrCheck
                 try
                 {
                     var models = new ModelStore(Path.GetFullPath(".model-cache/translation"));
-                    using var vm = new TextResultViewModel(image, service, models, new OfflineTranslator(models)) { AutoTranslate = true, Language = english };
+                    // Keep a real 4K screenshot resident while native OCR and the new model run.
+                    var largeBytes = Enumerable.Repeat((byte)255, 3840 * 2160 * 4).ToArray();
+                    var large = BitmapSource.Create(3840, 2160, 96, 96, PixelFormats.Bgra32, null, largeBytes, 3840 * 4); large.Freeze();
+                    var preview = new AnnotationRenderer().Render(large, [annotation]);
+                    var translator = new OfflineTranslator(models);
+                    OfflineInferenceMetrics? metrics = null; translator.InferenceCompleted += value => metrics = value;
+                    using var vm = new TextResultViewModel(preview, service, models, translator) { AutoTranslate = true, Language = english };
                     window = new TextResultWindow(vm); window.Show();
-                    TextWindowChecks.PumpUntil(() => !vm.Busy && (vm.Translated.Length > 0 || vm.Status.Contains("失败")), TimeSpan.FromSeconds(40));
+                    TextWindowChecks.PumpUntil(() => !vm.Busy && (vm.Translated.Length > 0 || vm.Status.Contains("失败")), TimeSpan.FromSeconds(60));
                     if (!window.IsVisible || !vm.Source.Contains("Hello", StringComparison.OrdinalIgnoreCase) || !vm.Translated.Contains("世界"))
                         throw new InvalidOperationException("Native OCR-to-translation UI pipeline failed: " + vm.Status);
                     if (window.FindName("RecognizedText") is not TextBox sourceBox || sourceBox.Text != vm.Source ||
                         window.FindName("TranslatedText") is not TextBox translatedBox || translatedBox.Text != vm.Translated || !translatedBox.IsVisible)
                         throw new InvalidOperationException("Native OCR/translation text was not visible in the result window.");
                     Console.WriteLine("PASS actual result window: native English OCR → real offline translation → both visible results; window stays open.");
+                    if (metrics is null || !metrics.ProcessExited || metrics.PeakCombinedWorkingSetBytes <= 0 || metrics.PeakCombinedWorkingSetBytes > 2L * 1024 * 1024 * 1024)
+                        throw new InvalidOperationException("4K result UI and native model cleanup/memory budget failed.");
+                    Console.WriteLine($"PASS real 4K result with Hy-MT2: parent+worker peak sample {metrics.PeakCombinedWorkingSetBytes / 1048576.0:F1} MiB; native {metrics.PeakWorkingSetBytes / 1048576.0:F1} MiB; released after translation.");
                 }
                 finally { window?.Close(); SynchronizationContext.SetSynchronizationContext(previous); }
             }

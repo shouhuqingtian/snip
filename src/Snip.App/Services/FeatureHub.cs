@@ -29,6 +29,9 @@ public sealed class FeatureHub
         this.ocr = ocr ?? new OfflineOcrService();
         this.models = models ?? new(System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SelfSnip", "Models"));
         this.translator = translator ?? new OfflineTranslator(this.models); this.shareFactory = shareFactory;
+        if (this.translator is OfflineTranslator native)
+            native.InferenceCompleted += metrics => diagnostics?.Record("translation", "native-released", new
+            { Engine = ModelStore.Model.Name, metrics.ProcessId, metrics.PeakWorkingSetBytes, metrics.PeakCombinedWorkingSetBytes, metrics.ElapsedSeconds, metrics.ProcessExited, metrics.ExitCode });
         this.onlineSettings = onlineSettings ?? new OnlineTranslationSettingsStore();
         this.onlineTranslator = onlineTranslator ?? new OnlineTranslator(() => this.onlineSettings.ReadCredentials());
     }

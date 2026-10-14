@@ -31,11 +31,14 @@ try {
         $info = [ordered]@{ Version = $buildVersion; Commit = $revision; SourceDirty = $dirty; Channel = $Channel; BuiltUtc = [DateTime]::UtcNow.ToString('o'); Platform = [System.Runtime.InteropServices.RuntimeInformation]::OSDescription }
         $info | ConvertTo-Json | Set-Content (Join-Path $portable 'build-info.json') -Encoding utf8
         Copy-Item (Join-Path $root 'docs/使用说明.md'), (Join-Path $root 'THIRD-PARTY-NOTICES.txt') $portable -Force
+        $licensesTarget = Join-Path $portable 'licenses'
+        New-Item -ItemType Directory -Path $licensesTarget -Force | Out-Null
+        Copy-Item (Join-Path $root 'docs/licenses/*') $licensesTarget -Force
         $validationTarget = Join-Path $portable 'validation'
         if (Test-Path $validationTarget) { Remove-Item $validationTarget -Recurse -Force }
         if (Test-Path (Join-Path $artifactRoot 'validation')) { Copy-Item (Join-Path $artifactRoot 'validation') $validationTarget -Recurse -Force }
         $zipName = if ($Channel -eq 'Preview') { 'self-snip-preview-win-x64.zip' } else { "自用截图-$version-win-x64.zip" }
-        $payload = @('Snip.exe','build-info.json','使用说明.md','THIRD-PARTY-NOTICES.txt') | ForEach-Object { Join-Path $portable $_ }
+        $payload = @('Snip.exe','build-info.json','使用说明.md','THIRD-PARTY-NOTICES.txt','licenses') | ForEach-Object { Join-Path $portable $_ }
         if (Test-Path (Join-Path $portable 'validation')) { $payload += Join-Path $portable 'validation' }
         Compress-Archive -Path $payload -DestinationPath (Join-Path $artifactRoot $zipName) -Force
         $previews = Join-Path $artifactRoot 'validation/ui-previews'

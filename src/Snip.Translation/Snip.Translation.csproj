@@ -2,8 +2,6 @@
   <PropertyGroup><TargetFramework>net8.0</TargetFramework></PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../Snip.Core/Snip.Core.csproj" />
-    <PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.20.1" />
-    <PackageReference Include="Microsoft.ML.Tokenizers" Version="2.0.0" />
     <EmbeddedResource Include="translation-models.json" />
   </ItemGroup>
 </Project>

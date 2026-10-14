@@ -51,7 +51,7 @@ jobs:
   windows:
     needs: core
     runs-on: windows-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
@@ -82,7 +82,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Verify UI, translation, browser and OCR before packaging
         shell: pwsh
-        timeout-minutes: 8
+        timeout-minutes: 18
         run: ./packaging/Validate.ps1 -Scope Desktop -NoBuild
       - name: Surface interrupted check output in GitHub annotations
         if: failure()
@@ -159,7 +159,8 @@ jobs:
           $title = if ($stable) { "自用截图 $version" } else { "自用截图 $version 测试便携版 · $($env:GITHUB_SHA.Substring(0,7))" }
           @("源码提交：$env:GITHUB_SHA", '', '便携版解压后运行 Snip.exe；反馈问题时从主窗口或托盘导出诊断包。', '',
             '已通过 Core、Windows 界面/渲染、真实离线翻译和本地 Chrome 网页回归。原生英语 OCR 是否执行见 ZIP 内 validation/validation-desktop.json；Unrun 表示缺少语言组件。', '',
-            '多屏混合 DPI、用户真实网页及微信适配仍需实机验收。附件包含便携版、完整源码和 SHA256 校验值；正式版本另含安装包。') |
+            '离线翻译使用唯一 Hy-MT2-1.8B Q3_K_M 模型，首次点击下载/修复模型获取约 951 MB 模型和约 20 MB CPU 推理器。旧 OPUS 模型不再使用。', '',
+            '多屏混合 DPI、用户真实网页和系统分享目标仍需实机验收。附件包含便携版、完整源码和 SHA256 校验值；正式版本另含安装包。') |
             Set-Content artifacts/release-notes.md -Encoding utf8
           $assets = @(Get-ChildItem artifacts -File -Filter '*.zip' | ForEach-Object FullName) + @((Join-Path $PWD 'artifacts/SHA256SUMS.txt'))
           if ($stable) { $assets += @(Get-ChildItem artifacts/installer -File -Filter '*.exe' | ForEach-Object FullName) }
