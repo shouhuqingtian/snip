@@ -1,0 +1,82 @@
+name: Evaluate lightweight offline OCR
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - tools/ocr-evaluation/**
+      - .github/workflows/ocr-evaluation.yml
+permissions:
+  contents: read
+jobs:
+  evaluate:
+    runs-on: windows-latest
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: tools/ocr-evaluation/requirements.txt
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.4xx'
+      - uses: actions/cache@v4
+        with:
+          path: .model-cache/ocr-evaluation
+          key: ocr-evaluation-${{ hashFiles('tools/ocr-evaluation/models.json') }}
+      - name: Install evaluation-only dependencies
+        run: python -m pip install -r tools/ocr-evaluation/requirements.txt
+      - name: Measure three offline candidates with two CPU threads
+        run: python tools/ocr-evaluation/evaluate.py
+      - name: Compare installed native Windows OCR on the same images
+        shell: pwsh
+        run: |
+          dotnet run --project tools/ocr-evaluation/NativeBenchmark.csproj -c Release -- artifacts/ocr-evaluation/fixtures.json artifacts/ocr-evaluation/native-windows.json
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Measure the actual .NET OCR library in separate processes
+        shell: pwsh
+        run: |
+          foreach ($candidate in 'PP-OCRv6-tiny','PP-OCRv6-small') {
+            dotnet run --project tools/ocr-evaluation/NativeBenchmark.csproj -c Release --no-build -- artifacts/ocr-evaluation/fixtures.json "artifacts/ocr-evaluation/dotnet-$candidate.json" .model-cache/ocr-evaluation $candidate
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+      - name: Surface measured results
+        if: always()
+        shell: python
+        run: |
+          import json
+          from pathlib import Path
+          path=Path('artifacts/ocr-evaluation/report.json')
+          if path.exists():
+              data=json.loads(path.read_text(encoding='utf-8'))
+              for report in data['reports']:
+                  summary={k: report[k] for k in ['candidate','load_ms','cold_to_first_result_ms','sampled_peak_rss_mib','model_bytes','summary']}
+                  for row in report['rows']:
+                      if row['name'] in ['4k-form','long-page']:
+                          summary[row['name']]={k:row[k] for k in ['exact','errors','characters','warm_median_ms']}
+                  print('::notice title=OCR evaluation::'+json.dumps(summary))
+          path=Path('artifacts/ocr-evaluation/native-windows.json')
+          if path.exists():
+              data=json.loads(path.read_text(encoding='utf-8-sig'))
+              rows=[r for r in data['Rows'] if r['Outcome']=='Measured']
+              summary={'languages':data['Languages'],'measured':len(rows),'exact':sum(r['Exact'] for r in rows),'unrun':len(data['Rows'])-len(rows),'peak_mib':data['PeakWorkingSetMiB']}
+              print('::notice title=Native Windows OCR comparison::'+json.dumps(summary))
+          for path in Path('artifacts/ocr-evaluation').glob('dotnet-*.json'):
+              data=json.loads(path.read_text(encoding='utf-8-sig'))
+              rows=data['Rows']
+              normal=[r for r in rows if r['Name'] not in ['4k-form','long-page']]
+              import statistics
+              summary={'engine':data['Engine'],'exact':sum(r['Exact'] for r in rows),'total':len(rows),'load_ms':data['LoadMs'],'normal_warm_median_ms':statistics.median(r['WarmMeanMs'] for r in normal),'peak_mib':data['PeakWorkingSetMiB'],'normal_working_set_mib':max(r['WorkingSetMiB'] for r in normal)}
+              print('::notice title=Windows .NET OCR evaluation::'+json.dumps(summary))
+          for path in Path('artifacts/ocr-evaluation').glob('*.log'):
+              value='\n'.join(path.read_text(encoding='utf-8',errors='replace').splitlines()[-8:])
+              if 'Traceback' in value or 'Error' in value:
+                  print('::warning title=Benchmark worker::'+value.replace('%','%25').replace('\r','%0D').replace('\n','%0A'))
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: OCR-evaluation-Windows
+          path: artifacts/ocr-evaluation/
+          retention-days: 14

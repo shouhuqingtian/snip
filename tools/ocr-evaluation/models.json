@@ -1,0 +1,49 @@
+{
+  "source": "RapidAI/RapidOCR@38ed48d802cfb9f91d24153258427beef2b3d50c",
+  "models": {
+    "PP-OCRv4-mobile": {
+      "det": {
+        "model_dir": "https://www.modelscope.cn/models/RapidAI/RapidOCR/resolve/v3.10.0/onnx/PP-OCRv4/det/ch_PP-OCRv4_det_mobile.onnx",
+        "SHA256": "d2a7720d45a54257208b1e13e36a8479894cb74155a5efe29462512d42f49da9",
+        "wheel_resource": "rapidocr_onnxruntime/models/ch_PP-OCRv4_det_infer.onnx"
+      },
+      "rec": {
+        "model_dir": "https://www.modelscope.cn/models/RapidAI/RapidOCR/resolve/v3.10.0/onnx/PP-OCRv4/rec/ch_PP-OCRv4_rec_mobile.onnx",
+        "SHA256": "48fc40f24f6d2a207a2b1091d3437eb3cc3eb6b676dc3ef9c37384005483683b",
+        "wheel_resource": "rapidocr_onnxruntime/models/ch_PP-OCRv4_rec_infer.onnx"
+      }
+    },
+    "PP-OCRv6-tiny": {
+      "det": {
+        "model_dir": "https://www.modelscope.cn/models/RapidAI/RapidOCR/resolve/v3.10.0/onnx/PP-OCRv6/det/PP-OCRv6_det_tiny.onnx",
+        "SHA256": "f42c0fbd294d95eac1a550e131b277dac97462c8025fa4b6c3cec1b7894bd3d5",
+        "mirror": "https://raw.githubusercontent.com/BobLd/RapidOcrNet/7b5c432e4262470b6d81bf1710c3bd52fc438566/RapidOcrNet/models/v6/PP-OCRv6_det_tiny.onnx"
+      },
+      "rec": {
+        "model_dir": "https://www.modelscope.cn/models/RapidAI/RapidOCR/resolve/v3.10.0/onnx/PP-OCRv6/rec/PP-OCRv6_rec_tiny.onnx",
+        "SHA256": "e16e242de5937ad92609223f19bc2aff3727ee40b095f996907c24749bad251b",
+        "mirror": "https://raw.githubusercontent.com/BobLd/RapidOcrNet/7b5c432e4262470b6d81bf1710c3bd52fc438566/RapidOcrNet/models/v6/PP-OCRv6_rec_tiny.onnx"
+      }
+    },
+    "PP-OCRv6-small": {
+      "det": {
+        "model_dir": "https://www.modelscope.cn/models/RapidAI/RapidOCR/resolve/v3.10.0/onnx/PP-OCRv6/det/PP-OCRv6_det_small.onnx",
+        "SHA256": "090f04abcd9d9a7498bc4ebf677e4cb9bdce1fe4197ddb7e529f1ef44e1ff94f",
+        "package_resource": "rapidocr/models/PP-OCRv6_det_small.onnx"
+      },
+      "rec": {
+        "model_dir": "https://www.modelscope.cn/models/RapidAI/RapidOCR/resolve/v3.10.0/onnx/PP-OCRv6/rec/PP-OCRv6_rec_small.onnx",
+        "SHA256": "6f327246b50388f3c176ae304bd95767ea6dc0c9ae92153ef8cbe210b3c14884",
+        "package_resource": "rapidocr/models/PP-OCRv6_rec_small.onnx"
+      }
+    }
+  },
+  "model_wheel": {
+    "url": "https://files.pythonhosted.org/packages/ba/12/1e5497183bdbe782dbb91bad1d0d2297dba4d2831b2652657f7517bfc6df/rapidocr_onnxruntime-1.4.4-py3-none-any.whl",
+    "digests": {
+      "blake2b_256": "ba121e5497183bdbe782dbb91bad1d0d2297dba4d2831b2652657f7517bfc6df",
+      "md5": "6dc6248816040564cdf182a6638e3e1a",
+      "sha256": "971d7d5f223a7a808662229df1ef69893809d8457d834e6373d3854bc1782cbf"
+    }
+  }
+}
