@@ -1,0 +1,33 @@
+name: Inspect saved validation logs
+on:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: Run containing the saved Windows validation artifact
+        required: true
+        type: string
+permissions:
+  contents: read
+  actions: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: Windows-validation
+          run-id: ${{ inputs.run_id }}
+          github-token: ${{ github.token }}
+          path: saved-validation
+      - name: Surface saved check progress
+        shell: python
+        run: |
+          from pathlib import Path
+          for path in sorted(Path('saved-validation').rglob('*.json')):
+              if path.name == 'validation-desktop.json':
+                  value=path.read_text(encoding='utf-8-sig')
+                  print('::notice title=Completed validation groups::'+value.replace('%','%25').replace('\r','%0D').replace('\n','%0A'))
+          for path in sorted(Path('saved-validation').rglob('*.log')):
+              value='\n'.join(path.read_text(encoding='utf-8-sig',errors='replace').splitlines()[-12:])
+              print('::notice title='+path.name+'::'+value[:5000].replace('%','%25').replace('\r','%0D').replace('\n','%0A'))
