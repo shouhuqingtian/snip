@@ -155,7 +155,7 @@ def worker(config, output):
 
     sampler = threading.Thread(target=sample, daemon=True)
     sampler.start()
-    ver, model_type = config["candidate"].rsplit("-", 1)
+    ver, model_type = config.get("model_candidate", config["candidate"]).rsplit("-", 1)
     start = time.perf_counter()
     engine = RapidOCR(params={
         "Det.model_path": config["paths"]["det"], "Rec.model_path": config["paths"]["rec"],
@@ -173,6 +173,12 @@ def worker(config, output):
     cpu_start = process.cpu_times()
     try:
         for fixture in config["fixtures"]:
+            if config.get("bounded"):
+                short, long = min(fixture["width"], fixture["height"]), max(fixture["width"], fixture["height"])
+                limit = max(32, min(736, short * 2, round(short * 1600 / long)))
+                engine.cfg.Det.limit_side_len = limit
+                if engine.text_det is not None:
+                    engine.text_det.limit_side_len = limit
             elapsed = []
             recognized = ""
             peak[0] = process.memory_info().rss
@@ -228,9 +234,11 @@ def main():
     samples = fixtures(args.output / "fixtures")
     (args.output / "fixtures.json").write_text(json.dumps(samples, ensure_ascii=False, indent=2), encoding="utf-8")
     reports = []
-    for candidate, models in paths.items():
+    profiles = [(candidate, candidate, models, False) for candidate, models in paths.items()]
+    profiles.append(("PP-OCRv6-small-bounded", "PP-OCRv6-small", paths["PP-OCRv6-small"], True))
+    for candidate, model_candidate, models, bounded in profiles:
         config = args.output / (candidate + "-request.json")
-        config.write_text(json.dumps({"candidate": candidate, "paths": models, "fixtures": samples}, ensure_ascii=False), encoding="utf-8")
+        config.write_text(json.dumps({"candidate": candidate, "model_candidate": model_candidate, "bounded": bounded, "paths": models, "fixtures": samples}, ensure_ascii=False), encoding="utf-8")
         target = args.output / (candidate + ".json")
         with (args.output / (candidate + ".log")).open("w", encoding="utf-8") as log:
             subprocess.run([sys.executable, str(Path(__file__).resolve()), "--worker", str(config), "--output", str(target)],

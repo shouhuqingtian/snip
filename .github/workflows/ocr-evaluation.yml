@@ -28,7 +28,7 @@ jobs:
           key: ocr-evaluation-${{ hashFiles('tools/ocr-evaluation/models.json') }}
       - name: Install evaluation-only dependencies
         run: python -m pip install -r tools/ocr-evaluation/requirements.txt
-      - name: Measure three offline candidates with two CPU threads
+      - name: Measure three offline candidates and bounded preprocessing with two CPU threads
         run: python tools/ocr-evaluation/evaluate.py
       - name: Compare installed native Windows OCR on the same images
         shell: pwsh
@@ -38,7 +38,7 @@ jobs:
       - name: Measure the actual .NET OCR library in separate processes
         shell: pwsh
         run: |
-          foreach ($candidate in 'PP-OCRv6-tiny','PP-OCRv6-small') {
+          foreach ($candidate in 'PP-OCRv6-tiny','PP-OCRv6-small','PP-OCRv6-small-bounded') {
             dotnet run --project tools/ocr-evaluation/NativeBenchmark.csproj -c Release --no-build -- artifacts/ocr-evaluation/fixtures.json "artifacts/ocr-evaluation/dotnet-$candidate.json" .model-cache/ocr-evaluation $candidate
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           }

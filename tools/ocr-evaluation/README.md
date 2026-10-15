@@ -17,7 +17,7 @@ Windows、.NET SDK 8.0.4xx：
 
 ```powershell
 dotnet run --project tools/ocr-evaluation/NativeBenchmark.csproj -c Release -- artifacts/ocr-evaluation/fixtures.json artifacts/ocr-evaluation/native-windows.json
-foreach ($candidate in 'PP-OCRv6-tiny','PP-OCRv6-small') {
+foreach ($candidate in 'PP-OCRv6-tiny','PP-OCRv6-small','PP-OCRv6-small-bounded') {
     dotnet run --project tools/ocr-evaluation/NativeBenchmark.csproj -c Release --no-build -- artifacts/ocr-evaluation/fixtures.json "artifacts/ocr-evaluation/dotnet-$candidate.json" .model-cache/ocr-evaluation $candidate
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 }
@@ -29,6 +29,7 @@ foreach ($candidate in 'PP-OCRv6-tiny','PP-OCRv6-small') {
 
 - PP-OCRv4 mobile、PP-OCRv6 tiny/small 检测与识别模型均从 RapidAI 官方模型清单固定 SHA256，使用前再次校验。下载站不可达时，使用校验相同的官方 PyPI 包内模型，或 RapidOcrNet 固定提交的镜像，不能更改校验值放行。
 - 仅下载模型用于安装准备；识别使用本地 ONNX，不调用网络服务。模型下载和字典提取不计入推理耗时。
+- 增加 small 的 bounded 参数对照：检测目标短边从固定 736 改为 `clamp(min(736, 原图短边×2, 原图短边×1600/原图长边), 32, 736)`，限制小图额外放大。模型、识别器、质量评分和测试图均不变，不能将参数档位称为另一个模型。
 - 各候选使用全新子进程，ONNX intra-op 2、inter-op 1；禁用 CPU arena。正常直立截图跳过方向分类推理，Python 仍可能初始化未使用的分类模型，因此同时测量实际 C# 库，不能混用两者内存数据。
 - 模型构造可能延迟加载，因此 `load_ms` 不能单独称作冷启动；`cold_to_first_result_ms` 为构造至第一张图结果的耗时，仍不包含解释器启动与模块导入。每图识别三遍，后两遍统计连续耗时。
 - Python RSS 每 20 ms 采样，可能漏掉极短峰值；C# 报告 Windows 进程 `PeakWorkingSet64`。包含运行时、解码器、检测与识别，**不是模型文件大小或仅模型增量**；不能用 Python 进程占用预测 Snip.exe 常驻内存。

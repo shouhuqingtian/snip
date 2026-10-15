@@ -59,15 +59,17 @@ internal static class Program
 
     private static async Task<int> Enhanced(Fixture[] fixtures, string output, string cache, string candidate, JsonSerializerOptions json)
     {
+        bool bounded = candidate.EndsWith("-bounded", StringComparison.Ordinal);
+        string modelCandidate = bounded ? candidate[..^8] : candidate;
         var rows = new List<object>();
         using var engine = new RapidOcr();
         using var sessionOptions = RapidOcr.GetDefaultSessionOptions(2);
         sessionOptions.InterOpNumThreads = 1;
         sessionOptions.EnableCpuMemArena = false;
-        var preset = candidate.EndsWith("tiny", StringComparison.Ordinal) ? RapidOcrModelSet.PPOCRv6Tiny : RapidOcrModelSet.PPOCRv6Small;
-        var model = preset with { DetModelPath = Path.GetFullPath(Path.Combine(cache, candidate + "-det.onnx")),
-            RecModelPath = Path.GetFullPath(Path.Combine(cache, candidate + "-rec.onnx")),
-            KeysPath = Path.GetFullPath(Path.Combine(cache, candidate + "-rec.txt")),
+        var preset = modelCandidate.EndsWith("tiny", StringComparison.Ordinal) ? RapidOcrModelSet.PPOCRv6Tiny : RapidOcrModelSet.PPOCRv6Small;
+        var model = preset with { DetModelPath = Path.GetFullPath(Path.Combine(cache, modelCandidate + "-det.onnx")),
+            RecModelPath = Path.GetFullPath(Path.Combine(cache, modelCandidate + "-rec.onnx")),
+            KeysPath = Path.GetFullPath(Path.Combine(cache, modelCandidate + "-rec.txt")),
             ClsModelPath = Path.Combine(AppContext.BaseDirectory, "models", "v5", "ch_PP-LCNet_x0_25_textline_ori_cls_mobile.onnx") };
         var clock = Stopwatch.StartNew();
         engine.InitModels(model, sessionOptions);
@@ -75,12 +77,18 @@ internal static class Program
         var settings = RapidOcrOptions.PPOCRv6 with { DoAngle = false };
         foreach (var fixture in fixtures)
         {
+            var inferenceSettings = settings;
+            if (bounded)
+            {
+                double shortSide = Math.Min(fixture.Width, fixture.Height), longSide = Math.Max(fixture.Width, fixture.Height);
+                inferenceSettings = settings with { LimitSideLen = Math.Clamp((int)Math.Round(Math.Min(Math.Min(736, shortSide * 2), shortSide * 1600 / longSide)), 32, 736) };
+            }
             var times = new List<double>(); string actual = "";
             for (int round = 0; round < 3; round++)
             {
                 using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(30));
                 clock.Restart();
-                var result = engine.Detect(fixture.Path, settings, deadline.Token);
+                var result = engine.Detect(fixture.Path, inferenceSettings, deadline.Token);
                 times.Add(clock.Elapsed.TotalMilliseconds);
                 actual = result.StrRes;
             }
