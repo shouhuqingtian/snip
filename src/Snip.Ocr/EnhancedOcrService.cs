@@ -19,6 +19,7 @@ public sealed class EnhancedOcrService : IOcrService, IOcrEnhancement
     private string description = "系统 OCR（免下载）；可在更多设置下载增强识别";
     public event Action<EnhancedOcrMetrics>? WorkerReleased;
     public event Action<int>? WorkerStarted;
+    public event Action<int>? WorkerInputSent;
     public EnhancedOcrService(IOcrService system, OcrModelStore models, Func<ProcessStartInfo> workerHost, DiagnosticJournal? diagnostics = null)
     { this.system = system; this.models = models; this.workerHost = workerHost; this.diagnostics = diagnostics; enabled = models.ReadEnabled(); }
     public bool Enabled { get => enabled; set { models.SaveEnabled(value); enabled = value; } }
@@ -86,6 +87,7 @@ public sealed class EnhancedOcrService : IOcrService, IOcrEnhancement
             ct.ThrowIfCancellationRequested();
             if (!process.Start()) throw new InvalidOperationException("无法启动增强识别。");
             started = true;
+            using var job = WorkerJob.Attach(process);
             WorkerStarted?.Invoke(process.Id);
             try { process.PriorityClass = ProcessPriorityClass.BelowNormal; } catch (System.ComponentModel.Win32Exception) { }
             // Content travels only through inherited pipes, never temporary image files or logs.
@@ -96,6 +98,7 @@ public sealed class EnhancedOcrService : IOcrService, IOcrEnhancement
             await process.StandardInput.BaseStream.WriteAsync(header, ct).ConfigureAwait(false);
             await process.StandardInput.BaseStream.WriteAsync(image.PngBytes, ct).ConfigureAwait(false);
             process.StandardInput.Close();
+            WorkerInputSent?.Invoke(process.Id);
             await process.WaitForExitAsync(ct).ConfigureAwait(false);
             byte[] json = await outputRead.ConfigureAwait(false); await errorDrain.ConfigureAwait(false);
             if (process.ExitCode != 0) throw new WorkerFailure(process.ExitCode);

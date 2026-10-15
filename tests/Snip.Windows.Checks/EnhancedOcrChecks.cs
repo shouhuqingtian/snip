@@ -114,6 +114,23 @@ internal static class EnhancedOcrChecks
                 }
                 Require(metrics.Count == before + 1 && metrics[^1].ProcessExited && !IsAlive(metrics[^1].ProcessId), "Cancellation left a worker alive.");
                 Console.WriteLine("PASS cancellation kills/reaps the actual native worker without falling back or blocking the dispatcher.");
+                stage = "parent process exit";
+                string lifetimeImage = Path.Combine(temporary, "public-lifetime-fixture.png");
+                var extended = Draw(string.Join("\n", Enumerable.Range(1, 220).Select(i => $"通知记录 {i:000} Status Ready")), 24, spacing: 50);
+                File.WriteAllBytes(lifetimeImage, Payload(extended).PngBytes.ToArray());
+                var launcherInfo = new ProcessStartInfo(Environment.ProcessPath!) { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true };
+                launcherInfo.ArgumentList.Add("--ocr-lifetime-launcher"); launcherInfo.ArgumentList.Add(executable);
+                launcherInfo.ArgumentList.Add(store.DirectoryPath); launcherInfo.ArgumentList.Add(lifetimeImage);
+                using (var launcher = Process.Start(launcherInfo) ?? throw new InvalidOperationException("Lifetime helper failed to start."))
+                {
+                    var pidLine = launcher.StandardOutput.ReadLineAsync();
+                    TextWindowChecks.PumpUntil(() => pidLine.IsCompleted, TimeSpan.FromSeconds(20));
+                    Require(int.TryParse(pidLine.GetAwaiter().GetResult(), out int child), "Lifetime helper did not report an input-ready child.");
+                    TextWindowChecks.PumpUntil(() => launcher.HasExited, TimeSpan.FromSeconds(5));
+                    Require(launcher.ExitCode == 0, "Lifetime helper failed.");
+                    TextWindowChecks.PumpUntil(() => !IsAlive(child), TimeSpan.FromSeconds(3));
+                }
+                Console.WriteLine("PASS Windows job kills the input-ready OCR worker when its parent exits without managed cleanup.");
                 stage = "corrupt model fallback";
                 var corrupt = new OcrModelStore(Path.Combine(temporary, "corrupt")); Directory.CreateDirectory(corrupt.DirectoryPath);
                 foreach (var file in OcrModelStore.Files) File.Copy(Path.Combine(store.DirectoryPath, file.Name), Path.Combine(corrupt.DirectoryPath, file.Name));
@@ -139,6 +156,24 @@ internal static class EnhancedOcrChecks
         }
         catch (Exception error) { Console.Error.WriteLine("FAIL enhanced OCR at " + stage + ": " + error); return 1; }
         finally { window?.Close(); if (Directory.Exists(temporary)) Directory.Delete(temporary, true); }
+    }
+    internal static int LifetimeLauncher(string[] args)
+    {
+        try
+        {
+            var store = new OcrModelStore(args[2]);
+            var service = new EnhancedOcrService(new SystemFallback(), store, () => new ProcessStartInfo(args[1]));
+            service.WorkerInputSent += pid =>
+            {
+                Console.WriteLine(pid); Console.Out.Flush();
+                _ = Task.Run(async () => { await Task.Delay(200); Environment.Exit(0); });
+            };
+            byte[] png = File.ReadAllBytes(args[3]);
+            using var memory = new MemoryStream(png); var bitmap = BitmapFrame.Create(memory, BitmapCreateOptions.None, BitmapCacheOption.OnLoad);
+            _ = service.RecognizeAsync(new(png, bitmap.PixelWidth, bitmap.PixelHeight), default).GetAwaiter().GetResult();
+            return 3; // The deliberately long public image must still be processing at parent exit.
+        }
+        catch { return 4; }
     }
     private static OcrResult Recognize(EnhancedOcrService service, ImagePayload payload)
     {
