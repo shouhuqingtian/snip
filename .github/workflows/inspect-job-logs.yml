@@ -1,0 +1,33 @@
+name: Inspect one saved Windows job failure
+on:
+  workflow_dispatch:
+    inputs:
+      job_id:
+        description: Completed Windows job ID containing a public fixture failure
+        required: true
+        type: string
+permissions:
+  contents: read
+  actions: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Read bounded failure context without rerunning desktop tests
+        shell: python
+        env:
+          GH_TOKEN: ${{ github.token }}
+          JOB_ID: ${{ inputs.job_id }}
+        run: |
+          import os, subprocess
+          job=os.environ['JOB_ID']
+          if not job.isdigit(): raise ValueError('Job ID must be numeric')
+          result=subprocess.run(['gh','api',f"repos/{os.environ['GITHUB_REPOSITORY']}/actions/jobs/{job}/logs"],capture_output=True,text=True)
+          if result.returncode: raise RuntimeError('Saved job log download failed')
+          lines=result.stdout.splitlines()
+          indices=[i for i,line in enumerate(lines) if 'FAIL enhanced OCR at ' in line or 'System.InvalidOperationException:' in line]
+          for i in indices[:4]:
+              value='\n'.join(lines[i:i+8])[:4500]
+              print('::notice title=Saved public-fixture failure::'+value.replace('%','%25').replace('\r','%0D').replace('\n','%0A'))
+          if not indices: raise RuntimeError('No expected public fixture failure marker in saved log')
