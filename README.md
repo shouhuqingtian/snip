@@ -4,7 +4,9 @@
 
 ## 下载
 
-当前开发版 **2.0.27 测试便携版**：[下载便携 ZIP](https://github.com/shouhuqingtian/snip/releases/download/preview-58ac698a5bc2/self-snip-preview-win-x64.zip) · [完整源码](https://github.com/shouhuqingtian/snip/releases/download/preview-58ac698a5bc2/self-snip-source.zip)。包含检查记录、版本信息和完整提交号。无需配置在线密钥或下载翻译模型即可使用 Windows 本地 OCR；缺翻译资源时默认保留文字识别结果，见 [修改与验证](docs/2.0.15默认OCR与翻译可用性.md)。
+当前开发版 **2.0.28 测试便携版**：[下载便携 ZIP](https://github.com/shouhuqingtian/snip/releases/download/preview-56f85bbd2d36/self-snip-preview-win-x64.zip) · [完整源码](https://github.com/shouhuqingtian/snip/releases/download/preview-56f85bbd2d36/self-snip-source.zip)。包含检查记录、版本信息和完整提交号。无需配置在线密钥或下载翻译模型即可使用 Windows 本地 OCR；缺翻译资源时默认保留文字识别结果，见 [修改与验证](docs/2.0.15默认OCR与翻译可用性.md)。
+
+2.0.28 增加 **系统 / 增强离线 / 在线视觉三种 OCR**，在文字工作台切换并保存识别默认值，新截图和重启沿用。在线 OCR 共用翻译的服务与加密密钥，可单独填写视觉模型；在线识别会发送截图，本地两种方式不上传，见 [修改文件、使用与验证](docs/2.0.28三种OCR与默认设置.md)。
 
 2.0.27 新增可选的 **PP-OCRv6 small 增强离线中英识别**。文字工作台 → 更多设置 → 下载 / 修复增强 OCR（约31 MiB），安装后自动重识别；可切回系统 OCR并保存选择。模型按需在独立进程识别，完成、取消或退出后释放，见 [修改文件、使用与实测](docs/2.0.27增强离线OCR.md)。
 
