@@ -84,7 +84,10 @@ internal static class EnhancedOcrChecks
                     var form = DrawForm(count);
                     var result = Recognize(service, Payload(form));
                     var formattedRows = result.LayoutText?.Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries) ?? [];
-                    Require(formattedRows.Length == count, "Source-layout form rows merged or split.");
+                    Console.WriteLine($"Source-layout geometry: fixtureRows={count}, formattedRows={formattedRows.Length}, regions={result.Regions.Count}");
+                    foreach (var region in result.Regions.Take(12))
+                        Console.WriteLine($"Source-layout box: x={region.Bounds.X:F1}, y={region.Bounds.Y:F1}, w={region.Bounds.Width:F1}, h={region.Bounds.Height:F1}");
+                    Require(formattedRows.Length == count, "Source-layout form rows merged or split; expected=" + count + ", actual=" + formattedRows.Length);
                     string[] labels = ["通知方式：", "处理状态：", "生效日期："], values = ["Email", "Ready", "Today"];
                     for (int i = 0; i < count; i++)
                         Require(Normalize(formattedRows[i]) == Normalize(labels[i % 3] + values[i % 3]), "Source-layout left label/right value order changed at row " + i);
@@ -233,10 +236,13 @@ internal static class EnhancedOcrChecks
             drawing.DrawRectangle(Brushes.White, null, new Rect(0, 0, width, height));
             for (int i = 0; i < count; i++)
             {
-                drawing.DrawText(new FormattedText(labels[i % 3], System.Globalization.CultureInfo.GetCultureInfo("zh-CN"), FlowDirection.LeftToRight,
-                    new Typeface("Microsoft YaHei UI"), 24, Brushes.Black, 1), new Point(24, 24 + i * 72));
-                drawing.DrawText(new FormattedText(values[i % 3], System.Globalization.CultureInfo.InvariantCulture, FlowDirection.LeftToRight,
-                    new Typeface("Segoe UI"), 30, Brushes.Black, 1), new Point(460, 18 + i * 72));
+                var label = new FormattedText(labels[i % 3], System.Globalization.CultureInfo.GetCultureInfo("zh-CN"), FlowDirection.LeftToRight,
+                    new Typeface("Microsoft YaHei UI"), 24, Brushes.Black, 1);
+                var value = new FormattedText(values[i % 3], System.Globalization.CultureInfo.InvariantCulture, FlowDirection.LeftToRight,
+                    new Typeface("Segoe UI"), 30, Brushes.Black, 1);
+                double baseline = 56 + i * 72;
+                drawing.DrawText(label, new Point(24, baseline - label.Baseline));
+                drawing.DrawText(value, new Point(460, baseline - value.Baseline));
             }
         }
         var image = new RenderTargetBitmap(width, height, 96, 96, PixelFormats.Pbgra32); image.Render(visual); image.Freeze(); return image;
