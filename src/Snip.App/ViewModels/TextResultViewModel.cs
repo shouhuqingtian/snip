@@ -139,7 +139,7 @@ public sealed class TextResultViewModel : ObservableObject, IDisposable
     public bool NeedsWindowsRuntime => Mode == TranslationMode.Offline && (ModelStore.NeedsWindowsRuntime || runtimeHelpRequested);
     public string TranslationActionText => Mode == TranslationMode.Basic ? "基础查词" : UseOnlineTranslation ? "在线翻译" : "离线翻译";
     public string TranslationResultTitle => (translatedMode ?? Mode) == TranslationMode.Basic ? "基础查词结果" : "翻译结果";
-    public string TranslationNotice => Mode == TranslationMode.Basic ? "内置离线词典，仅查词及简单短语，不进行整句翻译。" : UseOnlineTranslation ? "原文将发送给所配置的大模型服务，按服务商规则计费。" : "Hy-MT2 专业中英翻译，文字留在本机。";
+    public string TranslationNotice => Mode == TranslationMode.Basic ? "10 万词条离线词典；查词及短语，不作整句翻译。" : UseOnlineTranslation ? "原文将发送给所配置的大模型服务，按服务商规则计费。" : "Hy-MT2 专业中英翻译，文字留在本机。";
     public RelayCommand ConfigureOnlineCommand { get; }
     public IReadOnlyList<string> Languages { get => languages; private set => Set(ref languages, value); }
     public bool AutoTranslate { get => autoTranslate; init { autoTranslate = value; ShowTranslation = value; } }

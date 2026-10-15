@@ -1,5 +1,7 @@
 using Snip.Translation;
 
+if (args.Length == 1 && args[0] == "--dictionary") return await BasicDictionaryChecks.RunAsync();
+
 if (args.Length == 1 && args[0] == "--online")
 {
     int compute = await ComputeBackendChecks.RunAsync();

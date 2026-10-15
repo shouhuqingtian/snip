@@ -12,7 +12,8 @@ if source is None:
 if hashlib.sha256(source.read_bytes()).hexdigest()!=SHA256:raise SystemExit('Source checksum mismatch')
 required=set('screenshot settings clipboard copy paste offline online translate translation startup configuration hotkey language model server network computer hello world'.split())
 phrases={'good morning','good night','good evening','good afternoon','thank you','you are welcome','how are you','see you','see you later','excuse me','never mind','of course','by the way','in fact','as well as','a lot of','for example','at least','in order to','look for','turn on','turn off','log in','sign in','check in','take care','come on','well done','no problem','not at all','operating system','artificial intelligence','machine learning','source code','open source'}
-rows=[];extra=[]
+rows=[];extra=[];candidates={}
+additional=set('serialization asynchronous microarchitecture mitochondrion electroencephalogram amortization indemnification jurisprudence reimbursement procurement authentication middleware concurrency inventory supplier invoice depreciation liability jurisdiction photosynthesis'.split()) | {'force majeure','purchase order'}
 with source.open(encoding='utf-8-sig',newline='') as file:
     for row in csv.DictReader(file):
         word=row['word'].strip().lower();meaning=row['translation'].strip().replace('\\n','; ')
@@ -21,6 +22,13 @@ with source.open(encoding='utf-8-sig',newline='') as file:
         ranks=[int(row[k]) for k in ('bnc','frq') if row[k].isdigit() and int(row[k])>0]
         rank=min(ranks,default=10**9)
         if ' ' not in word:rows.append((rank,word,meaning))
+        tagged=bool(row['tag']) or row['oxford']=='1' or bool(row['collins'])
+        # Unranked entries with phonetics and base-word forms precede inflections/noisy proper names.
+        priority=0 if rank<10**9 else 1 if tagged else 2 if row['phonetic'] and '0:' not in row['exchange'] else 3
+        if rank==10**9 and any(label in meaning for label in ('[人名]','[地名]')):priority=4
+        tie=hashlib.sha256(word.encode('utf-8')).digest()[:8]
+        candidate=(priority,rank,tie,word,meaning)
+        if word not in candidates or candidate<candidates[word]:candidates[word]=candidate
         if word in required or word in phrases or (' ' in word and (row['oxford']=='1' or rank<=10000)):extra.append((rank,word,meaning))
 selected={word:meaning for rank,word,meaning in sorted(rows)[:12000]}
 selected.update({word:meaning for rank,word,meaning in extra})
@@ -28,6 +36,20 @@ selected.update({word:meaning for rank,word,meaning in extra})
 supplements={'hello':'你好; 喂','settings':'设置','clipboard':'剪贴板','screenshot':'屏幕截图','hotkey':'快捷键','startup':'启动; 开机启动','offline':'离线','online':'在线'}
 selected.update(supplements)
 selected={**supplements,**selected}
+# Keep the entire previous common-word subset, then broaden short phrases and vocabulary.
+common=set(selected)
+for word in sorted(additional):
+    if word in candidates:selected.setdefault(word,candidates[word][4])
+phrase_count=sum(' ' in word for word in selected)
+phrase_candidates=(value for word,value in candidates.items() if ' ' in word and len(word.split())<=5
+    and all(part in common for part in word.split()))
+for _,_,_,word,meaning in sorted(phrase_candidates):
+    if phrase_count>=5000:break
+    if word not in selected:selected[word]=meaning;phrase_count+=1
+for _,_,_,word,meaning in sorted(value for word,value in candidates.items() if ' ' not in word):
+    if len(selected)>=100000:break
+    selected.setdefault(word,meaning)
+if len(selected)!=100000:raise SystemExit('Expected exactly 100000 distinct entries')
 root=Path(__file__).resolve().parents[1]
 target=root/'src/Snip.Translation/Resources/basic-dictionary.json';target.parent.mkdir(exist_ok=True)
 data=json.dumps(list(selected.items()),ensure_ascii=False,separators=(',',':'))+'\n';target.write_bytes(data.encode('utf-8'))
