@@ -6,6 +6,11 @@ on:
         description: Run containing the saved Windows validation artifact
         required: true
         type: string
+      artifact_name:
+        description: Validation or OCR evaluation artifact to inspect
+        default: Windows-validation
+        required: true
+        type: string
 permissions:
   contents: read
   actions: read
@@ -16,7 +21,7 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: Windows-validation
+          name: ${{ inputs.artifact_name }}
           run-id: ${{ inputs.run_id }}
           github-token: ${{ github.token }}
           path: saved-validation
@@ -31,3 +36,17 @@ jobs:
           for path in sorted(Path('saved-validation').rglob('*.log')):
               value='\n'.join(path.read_text(encoding='utf-8-sig',errors='replace').splitlines()[-12:])
               print('::notice title='+path.name+'::'+value[:5000].replace('%','%25').replace('\r','%0D').replace('\n','%0A'))
+
+      - name: Surface generated OCR fixture details
+        shell: python
+        run: |
+          import json
+          from pathlib import Path
+          for name in ['native-windows.json','dotnet-PP-OCRv6-tiny.json','dotnet-PP-OCRv6-small.json','dotnet-PP-OCRv6-small-bounded.json']:
+              for path in Path('saved-validation').rglob(name):
+                  data=json.loads(path.read_text(encoding='utf-8-sig'))
+                  rows=[r for r in data['Rows'] if r['Outcome']=='Measured']
+                  failures=[{k:r[k] for k in ['Name','Expected','Actual','Errors']} for r in rows if not r['Exact']]
+                  value=json.dumps({'engine':data['Engine'],'load_ms':data.get('LoadMs'),'peak_mib':data['PeakWorkingSetMiB'],
+                      'exact':sum(r['Exact'] for r in rows),'measured':len(rows),'unrun':len(data['Rows'])-len(rows),'failures':failures},ensure_ascii=False)
+                  print('::notice title=OCR details '+name+'::'+value.replace('%','%25').replace(chr(13),'%0D').replace(chr(10),'%0A'))
