@@ -4,7 +4,9 @@
 
 ## 下载
 
-当前开发版 **2.0.24 测试便携版**：[下载便携 ZIP](https://github.com/shouhuqingtian/snip/releases/download/preview-554376de2ba5/self-snip-preview-win-x64.zip) · [完整源码](https://github.com/shouhuqingtian/snip/releases/download/preview-554376de2ba5/self-snip-source.zip)。包含检查记录、版本信息和完整提交号。无需配置在线密钥或下载翻译模型即可使用 Windows 本地 OCR；缺翻译资源时默认保留文字识别结果，见 [修改与验证](docs/2.0.15默认OCR与翻译可用性.md)。
+当前开发版 **2.0.25 测试便携版**：[下载便携 ZIP](https://github.com/shouhuqingtian/snip/releases/download/preview-dfb9f4b1b53e/self-snip-preview-win-x64.zip) · [完整源码](https://github.com/shouhuqingtian/snip/releases/download/preview-dfb9f4b1b53e/self-snip-source.zip)。包含检查记录、版本信息和完整提交号。无需配置在线密钥或下载翻译模型即可使用 Windows 本地 OCR；缺翻译资源时默认保留文字识别结果，见 [修改与验证](docs/2.0.15默认OCR与翻译可用性.md)。
+
+2.0.25 新增自适应长文结果、独立放大阅读与在线英文译文的喇叭朗读。音标、词性和拼音分到独立页签；Windows 系统英语语音按需启动，停止后释放。详见 [长文阅读与英文朗读](docs/2.0.25长文阅读与英文朗读.md)。
 
 2.0.24 优化画笔轨迹、贴纸解码、文字布局及长图临时缓冲，整屏采集移出界面线程，并补充诊断内存 / CPU 数据，见 [整体分析、修改文件与实测](docs/2.0.24内存与交互性能分析.md)。
 
@@ -108,5 +110,3 @@ dotnet run --project tests/Snip.Translation.Checks/Snip.Translation.Checks.cspro
 2.0.2 修复 OCR/翻译阻塞及 Chrome 自动滚动，并提供整个网页、可见网页和选定区域模式，见 [问题修复与验证](docs/2.0.1问题修复与验证.md)。
 
 2.0.2 改进白底图文长截图，并排除软件进度窗和置顶贴图，见 [长截图修复](docs/2.0.2长截图修复.md)。
-
-2.0.25 新增自适应长文结果、独立放大阅读与在线英文译文的喇叭朗读。音标、词性和拼音分到独立页签；Windows 系统英语语音按需启动，停止后释放。详见 [长文阅读与英文朗读](docs/2.0.25长文阅读与英文朗读.md)。
