@@ -39,8 +39,9 @@ public sealed class PinHotkeyService : IPinHotkeyService
     { foreach (int id in registered) NativeMethods.UnregisterHotKey(source.Handle, id); registered.Clear(); }
     private IntPtr Hook(IntPtr hwnd, int message, IntPtr wParam, IntPtr lParam, ref bool handled)
     {
+        if (message != 0x0312) return IntPtr.Zero;
         int id = wParam.ToInt32();
-        if (message == 0x0312 && registered.Contains(id)) { handled = true; Triggered?.Invoke(this, (PinHotkeyAction)(id - 0x5340)); }
+        if (registered.Contains(id)) { handled = true; Triggered?.Invoke(this, (PinHotkeyAction)(id - 0x5340)); }
         return IntPtr.Zero;
     }
     public void Dispose() { if (disposed) return; disposed = true; Clear(); source.RemoveHook(Hook); source.Dispose(); }

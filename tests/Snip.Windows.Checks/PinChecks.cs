@@ -1,4 +1,7 @@
 using System.IO;
+using System.Reflection;
+using System.Runtime.InteropServices;
+using System.Windows.Interop;
 using System.Windows;
 using System.Windows.Automation.Peers;
 using System.Windows.Automation.Provider;
@@ -70,6 +73,9 @@ internal static class PinChecks
 
             stage="native configurable shortcuts and rollback";
             using var keys=new PinHotkeyService();using var captureKey=new HotkeyService();using var occupied=new HotkeyService();
+            var source=(HwndSource)typeof(PinHotkeyService).GetField("source",BindingFlags.Instance|BindingFlags.NonPublic)!.GetValue(keys)!;
+            SendMessage(source.Handle,0x8007,new IntPtr(long.MaxValue),IntPtr.Zero);
+            Require(dispatcherError is null,"Unrelated native message was interpreted as a hotkey.");
             var shot=new HotkeyGesture(3,0x78);var taken=new HotkeyGesture(3,0x79);
             Require(captureKey.Register(shot) && occupied.Register(taken),"Could not reserve public hotkey fixtures.");
             var settings=new PinHotkeySettings(new(3,0x75),new(3,0x76),new(3,0x77));
@@ -115,6 +121,7 @@ internal static class PinChecks
             SynchronizationContext.SetSynchronizationContext(previous);if(Directory.Exists(folder))Directory.Delete(folder,true);
         }
     }
+    [DllImport("user32.dll")]private static extern IntPtr SendMessage(IntPtr hwnd,int message,IntPtr wParam,IntPtr lParam);
     private static void Pump(Func<bool> done)=>TextWindowChecks.PumpUntil(done,TimeSpan.FromSeconds(5));
     private static void Await(Task task){Pump(()=>task.IsCompleted);task.GetAwaiter().GetResult();}
     private static void Invoke(Button button,Func<bool> done)
