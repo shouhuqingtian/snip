@@ -3,5 +3,6 @@
   <ItemGroup>
     <ProjectReference Include="../Snip.Core/Snip.Core.csproj" />
     <EmbeddedResource Include="translation-models.json" />
+    <EmbeddedResource Include="Resources/basic-dictionary.json" />
   </ItemGroup>
 </Project>

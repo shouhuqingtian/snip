@@ -91,6 +91,7 @@ Section "主程序（必选）" SecMain
   SetOutPath "$INSTDIR\licenses"
   File "..\docs\licenses\Hy-MT2-Apache-2.0.txt"
   File "..\docs\licenses\llama.cpp-MIT.txt"
+  File "..\docs\licenses\ECDICT-MIT.txt"
   SetOutPath "$INSTDIR"
   WriteUninstaller "$INSTDIR\Uninstall.exe"
   CreateDirectory "$SMPROGRAMS\${APP_NAME}"
@@ -117,11 +118,15 @@ SectionEnd
 !insertmacro MUI_FUNCTION_DESCRIPTION_END
 
 Section "Uninstall"
+  ReadRegStr $R0 HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "SelfSnip"
+  StrCmp $R0 '$\"$INSTDIR\${APP_EXE}$\" --startup' 0 +2
+    DeleteRegValue HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "SelfSnip"
   Delete "$INSTDIR\${APP_EXE}"
   Delete "$INSTDIR\使用说明.md"
   Delete "$INSTDIR\THIRD-PARTY-NOTICES.txt"
   Delete "$INSTDIR\licenses\Hy-MT2-Apache-2.0.txt"
   Delete "$INSTDIR\licenses\llama.cpp-MIT.txt"
+  Delete "$INSTDIR\licenses\ECDICT-MIT.txt"
   RMDir "$INSTDIR\licenses"
   Delete "$INSTDIR\Uninstall.exe"
   RMDir "$INSTDIR"

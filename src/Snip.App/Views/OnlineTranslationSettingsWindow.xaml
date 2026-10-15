@@ -22,7 +22,7 @@
     <TextBlock Text="候选名称仅供参考，请以服务商控制台支持的模型为准；每组配置分别保存密钥。" Style="{StaticResource Subtitle}" FontSize="11" Margin="0,0,0,14"/>
     <TextBlock Text="API Key" Style="{StaticResource SectionTitle}"/><PasswordBox x:Name="ApiKeyBox" PasswordChanged="KeyChanged" Padding="10,8" Margin="0,6,0,4"/>
     <TextBlock Text="{Binding KeyHint}" Style="{StaticResource Subtitle}" FontSize="11" Margin="0,0,0,16"/>
-    <CheckBox Content="新截图默认使用在线翻译" IsChecked="{Binding DefaultOnline}"/>
+    <TextBlock Text="默认翻译方式请在“通用设置”或文字工作台中保存。这里仅保存当前在线服务配置，不改变已保存的翻译方式。" Style="{StaticResource Subtitle}" FontSize="12"/>
    </StackPanel></Border>
   </StackPanel></ScrollViewer>
  </DockPanel>

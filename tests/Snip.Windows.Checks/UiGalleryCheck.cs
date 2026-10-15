@@ -120,7 +120,10 @@ internal static class UiGalleryCheck
                 done.Command.Execute(done.CommandParameter);
                 Require(manualControl.FinishRequested, "Manual finish button did not end collection.");
             });
-            Console.WriteLine("PASS 15 actual UI previews and three browser menu actions; no share target invoked or user screenshot used."); return 0;
+            Capture(new ApplicationSettingsWindow(new ApplicationSettingsViewModel(new GalleryStartup(),new TranslationPreferencesStore(Path.Combine(output,"unused-preferences.json")),new(TranslationMode.Basic))), "16-application-settings");
+            var basic=new TextResultWindow(new TextResultViewModel(image,new GalleryOcr(),new ModelStore("unused-models"),new GalleryTranslation(),initialPreferences:new(TranslationMode.Basic)){AutoTranslate=true});
+            Capture(basic,"17-basic-dictionary",()=>TextWindowChecks.PumpUntil(()=>!((TextResultViewModel)basic.DataContext).Busy && ((TextResultViewModel)basic.DataContext).Translated.Length>0,TimeSpan.FromSeconds(5)));
+            Console.WriteLine("PASS 17 actual UI previews and three browser menu actions; no share target invoked or user screenshot used."); return 0;
         }
         catch (Exception error)
         {
@@ -150,6 +153,7 @@ internal static class UiGalleryCheck
         }
         var bitmap = new RenderTargetBitmap(1280, 800, 96, 96, PixelFormats.Pbgra32); bitmap.Render(visual); bitmap.Freeze(); return bitmap;
     }
+    private sealed class GalleryStartup : IAutoStartService {public bool IsEnabled=>false;public void SetEnabled(bool enabled){}}
     private sealed class GalleryOcr : IOcrService
     {
         public IReadOnlyList<string> Languages => ["en-US", "zh-CN"];

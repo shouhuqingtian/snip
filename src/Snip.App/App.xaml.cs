@@ -24,6 +24,9 @@ public partial class App : Application
     private IDesktopCaptureService? desktop;
     private IHotkeySettingsStore? hotkeyStore;
     private HotkeySettingsWindow? hotkeySettings;
+    private ApplicationSettingsWindow? applicationSettings;
+    private TranslationPreferencesStore? translationPreferences;
+    private FeatureHub? features;
 
     protected override void OnStartup(StartupEventArgs e)
     {
@@ -39,10 +42,12 @@ public partial class App : Application
             catch (Exception error) { diagnostics.Record("diagnostics", "export-failed", error: error); Shutdown(1); }
             return;
         }
+        bool startupLaunch = e.Args.Contains("--startup", StringComparer.Ordinal);
         activation = new EventWaitHandle(false, EventResetMode.AutoReset, @"Local\SelfSnip.Activate.v1");
         instance = new Mutex(true, @"Local\SelfSnip.Instance.v1", out ownsMutex);
         if (!ownsMutex)
         {
+            if (startupLaunch) { Shutdown(); return; }
             activation.Set();
             MessageBox.Show($"已有自用截图在运行，已打开它的主窗口。\n此次启动的文件版本为 {DesktopDiagnostics.Version.Split('+')[0]}。\n如果刚更新软件，请先在旧实例的托盘菜单选择‘退出’，再运行新版 Snip.exe。",
                 "自用截图 · 已有实例运行", MessageBoxButton.OK, MessageBoxImage.Information);
@@ -57,9 +62,10 @@ public partial class App : Application
             var renderer = new AnnotationRenderer();
             var export = new DiagnosticImageExport(new ImageExportService(), diagnostics);
             pins = new PinManager(export);
-            var features = new FeatureHub(renderer, export, capture, pins, diagnostics);
+            translationPreferences = new TranslationPreferencesStore();
+            features = new FeatureHub(renderer, export, capture, pins, diagnostics, translationPreferences:translationPreferences);
             coordinator = new CaptureCoordinator(capture, renderer, export, features, diagnostics);
-            main = new MainWindow { Title = "自用截图 " + DesktopDiagnostics.Version.Split('+')[0], DataContext = new MainViewModel(coordinator.CaptureAsync, ShowError, ExportDiagnosticsAsync, () => features.ShowOnlineSettings(), ShowHotkeySettings) };
+            main = new MainWindow { Title = "自用截图 " + DesktopDiagnostics.Version.Split('+')[0], DataContext = new MainViewModel(coordinator.CaptureAsync, ShowError, ExportDiagnosticsAsync, () => features.ShowOnlineSettings(), ShowHotkeySettings, ShowApplicationSettings) };
             MainWindow = main;
             hotkey = new HotkeyService(); tray = new TrayService();
             hotkeyStore = new HotkeySettingsStore();
@@ -80,7 +86,7 @@ public partial class App : Application
             if (!registered)
             {
                 ((MainViewModel)main.DataContext).Status = configured.DisplayText + " 注册失败，可点‘修改’换一个组合，或通过托盘截图。";
-                MessageBox.Show($"快捷键 {configured.DisplayText} 无法注册，可能已被其他软件占用。\n可打开主窗口修改快捷键，或使用托盘菜单截图。", "自用截图", MessageBoxButton.OK, MessageBoxImage.Warning);
+                if (!startupLaunch) MessageBox.Show($"快捷键 {configured.DisplayText} 无法注册，可能已被其他软件占用。\n可打开主窗口修改快捷键，或使用托盘菜单截图。", "自用截图", MessageBoxButton.OK, MessageBoxImage.Warning);
             }
         }
         catch (Exception ex) { ShowError(ex); Shutdown(1); }
@@ -100,6 +106,16 @@ public partial class App : Application
         hotkeySettings = new HotkeySettingsWindow(vm) { Owner = main?.IsVisible == true ? main : null };
         hotkeySettings.Closed += (_, _) => hotkeySettings = null;
         hotkeySettings.Show();
+    }
+
+    private void ShowApplicationSettings()
+    {
+        if (applicationSettings is not null) { applicationSettings.Activate(); return; }
+        if (translationPreferences is null || features is null) return;
+        var vm = new ApplicationSettingsViewModel(new AutoStartService(), translationPreferences, features.DefaultTranslationPreferences());
+        applicationSettings = new ApplicationSettingsWindow(vm) { Owner = main?.IsVisible == true ? main : null };
+        applicationSettings.Closed += (_, _) => applicationSettings = null;
+        applicationSettings.Show();
     }
 
     private async void StartCapture()

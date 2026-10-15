@@ -1,5 +1,5 @@
 <Window x:Class="Snip.App.Views.TextResultWindow" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
- xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:translation="clr-namespace:Snip.Translation;assembly=Snip.Translation" Title="{Binding WindowTitle}" Width="1140" Height="860" MinWidth="850" MinHeight="700" WindowStartupLocation="CenterScreen">
+ xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:translation="clr-namespace:Snip.Translation;assembly=Snip.Translation" xmlns:core="clr-namespace:Snip.Core;assembly=Snip.Core" Title="{Binding WindowTitle}" Width="1140" Height="860" MinWidth="850" MinHeight="700" WindowStartupLocation="CenterScreen">
  <Window.Resources><BooleanToVisibilityConverter x:Key="BoolVisibility"/></Window.Resources>
  <DockPanel Margin="16">
   <DockPanel DockPanel.Dock="Top" Margin="8,0,8,8">
@@ -15,7 +15,10 @@
     <Button Content="重新识别" Command="{Binding OcrCommand}"/>
     <Border Width="1" Height="22" Background="{StaticResource StrokeBrush}" Margin="12,0"/>
     <ComboBox SelectedValue="{Binding Direction, Mode=TwoWay}" SelectedValuePath="Tag" Width="138"><ComboBoxItem Content="英文 → 中文" Tag="en-zh"/><ComboBoxItem Content="中文 → 英文" Tag="zh-en"/></ComboBox>
-    <CheckBox Content="在线大模型" IsEnabled="{Binding CanChangeTranslationMode}" IsChecked="{Binding UseOnlineTranslation}" VerticalAlignment="Center" Margin="10,0" ToolTip="选择后将原文发送给配置的服务"/>
+    <ComboBox x:Name="TranslationModeBox" SelectedValue="{Binding Mode,Mode=TwoWay}" SelectedValuePath="Tag" IsEnabled="{Binding CanChangeTranslationMode}" Width="170">
+     <ComboBoxItem Content="在线大模型" Tag="{x:Static core:TranslationMode.Online}"/><ComboBoxItem Content="离线模型" Tag="{x:Static core:TranslationMode.Offline}"/><ComboBoxItem Content="基础词典（离线）" Tag="{x:Static core:TranslationMode.Basic}"/>
+    </ComboBox>
+    <Button x:Name="SaveTranslationSettingsButton" Content="保存为默认" Style="{StaticResource QuietButton}" Command="{Binding SaveTranslationSettingsCommand}"/>
     <Button Content="{Binding TranslationActionText}" Style="{StaticResource PrimaryButton}" Command="{Binding TranslateCommand}"/>
     <Button Content="在线设置" Style="{StaticResource QuietButton}" Command="{Binding ConfigureOnlineCommand}"/>
     <Button Content="下载 / 修复模型" Style="{StaticResource QuietButton}" Command="{Binding DownloadCommand}"/>
@@ -48,7 +51,7 @@
      <TextBox x:Name="RecognizedText" MinHeight="70" Text="{Binding Source, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" VerticalContentAlignment="Top" FontSize="14" Padding="12" Background="#FAFCFB"/>
     </DockPanel></Border>
     <Border Grid.Row="1" Style="{StaticResource Card}" Padding="16" Margin="0,14,0,0" Visibility="{Binding ShowTranslation, Converter={StaticResource BoolVisibility}}"><DockPanel>
-     <DockPanel DockPanel.Dock="Top" Margin="0,0,0,10"><Button x:Name="CopyTranslationButton" Content="复制译文" Command="{Binding CopyTranslationCommand}" DockPanel.Dock="Right" Margin="0"/><StackPanel><TextBlock Text="翻译结果" Style="{StaticResource SectionTitle}"/><TextBlock Text="{Binding TranslationNotice}" Style="{StaticResource Subtitle}" FontSize="12" Margin="0,4,0,0"/></StackPanel></DockPanel>
+     <DockPanel DockPanel.Dock="Top" Margin="0,0,0,10"><Button x:Name="CopyTranslationButton" Content="复制译文" Command="{Binding CopyTranslationCommand}" DockPanel.Dock="Right" Margin="0"/><StackPanel><TextBlock Text="{Binding TranslationResultTitle}" Style="{StaticResource SectionTitle}"/><TextBlock Text="{Binding TranslationNotice}" Style="{StaticResource Subtitle}" FontSize="12" Margin="0,4,0,0"/></StackPanel></DockPanel>
      <TextBox x:Name="TranslatedText" MinHeight="70" Text="{Binding Translated, Mode=OneWay}" IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" VerticalContentAlignment="Top" FontSize="14" Padding="12" Background="#FAFCFB"/>
     </DockPanel></Border>
    </Grid>

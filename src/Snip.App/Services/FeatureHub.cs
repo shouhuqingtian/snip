@@ -20,10 +20,11 @@ public sealed class FeatureHub
     private readonly ITranslationService translator;
     private readonly IOnlineTranslationSettingsStore onlineSettings;
     private readonly ITranslationService onlineTranslator;
+    private readonly ITranslationPreferencesStore translationPreferences;
     private readonly DiagnosticJournal? diagnostics;
     private readonly Func<IntPtr, IWindowsShareSession>? shareFactory;
     public FeatureHub(AnnotationRenderer renderer, IImageExportService export, IDesktopCaptureService capture, PinManager pins, DiagnosticJournal? diagnostics = null,
-        IOcrService? ocr = null, ITranslationService? translator = null, ModelStore? models = null, Func<IntPtr, IWindowsShareSession>? shareFactory = null, IOnlineTranslationSettingsStore? onlineSettings = null, ITranslationService? onlineTranslator = null)
+        IOcrService? ocr = null, ITranslationService? translator = null, ModelStore? models = null, Func<IntPtr, IWindowsShareSession>? shareFactory = null, IOnlineTranslationSettingsStore? onlineSettings = null, ITranslationService? onlineTranslator = null, ITranslationPreferencesStore? translationPreferences = null)
     {
         this.renderer = renderer; this.export = export; this.capture = capture; this.pins = pins; this.diagnostics = diagnostics;
         this.ocr = ocr ?? new OfflineOcrService();
@@ -32,6 +33,7 @@ public sealed class FeatureHub
         if (this.translator is OfflineTranslator native)
             native.InferenceCompleted += metrics => diagnostics?.Record("translation", "native-released", new
             { Engine = ModelStore.Model.Name, metrics.ProcessId, metrics.PeakWorkingSetBytes, metrics.PeakCombinedWorkingSetBytes, metrics.ElapsedSeconds, metrics.ProcessExited, metrics.ExitCode, Backend = metrics.Backend.ToString(), metrics.OffloadedLayers, metrics.ProcessorSeconds, metrics.Threads, metrics.BatchThreads, metrics.Repack });
+        this.translationPreferences = translationPreferences ?? new TranslationPreferencesStore();
         this.onlineSettings = onlineSettings ?? new OnlineTranslationSettingsStore();
         this.onlineTranslator = onlineTranslator ?? new OnlineTranslator(() => this.onlineSettings.ReadCredentials());
     }
@@ -45,8 +47,8 @@ public sealed class FeatureHub
             var image = vm.Compose();
             operation?.Stage("image-composed", new { image.PixelWidth, image.PixelHeight });
             text = new TextResultViewModel(image, ocr, models, translator, diagnostics, onlineTranslator: onlineTranslator,
-                configureOnline: () => ShowOnlineSettings(() => { if (text is not null) text.UseOnlineTranslation = text.UseOnlineTranslation || DefaultOnline(); }),
-                defaultOnline: DefaultOnline()) { AutoTranslate = translate };
+                configureOnline: () => ShowOnlineSettings(),
+                defaultOnline: DefaultOnline(), preferences: translationPreferences, initialPreferences: ReadSavedTranslationPreferences()) { AutoTranslate = translate };
             operation?.Stage("view-model-created");
             // A result must outlive the screenshot overlay. Do not give it the overlay as owner.
             window = new TextResultWindow(text) { WindowStartupLocation = WindowStartupLocation.CenterScreen };
@@ -61,6 +63,17 @@ public sealed class FeatureHub
             return null;
         }
     }
+    private TranslationPreferences? ReadSavedTranslationPreferences()
+    {
+        try { return translationPreferences.Read(); }
+        catch(InvalidOperationException error)
+        {
+            diagnostics?.Record("translation-preferences", "invalid-configuration", error:error);
+            // A broken saved preference must not silently re-enable an online service.
+            return new(TranslationMode.Offline);
+        }
+    }
+    public TranslationPreferences DefaultTranslationPreferences() => ReadSavedTranslationPreferences() ?? new(DefaultOnline() ? TranslationMode.Online : TranslationMode.Offline);
     private bool DefaultOnline()
     {
         try { return onlineSettings.Read() is { DefaultOnline:true,HasApiKey:true }; }

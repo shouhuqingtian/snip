@@ -3,7 +3,9 @@ using Snip.Translation;
 if (args.Length == 1 && args[0] == "--online")
 {
     int compute = await ComputeBackendChecks.RunAsync();
-    return compute == 0 ? await OnlineTranslationChecks.RunAsync() : compute;
+    if(compute!=0)return compute;
+    int basic=await BasicDictionaryChecks.RunAsync();
+    return basic==0 ? await OnlineTranslationChecks.RunAsync() : basic;
 }
 if (args.Length == 2 && args[1] == "--performance") return await TranslationPerformanceChecks.RunAsync(args[0]);
 if (args.Length == 2 && args[1] is "--gpu-runtime" or "--gpu-inference") return await GpuRuntimeChecks.RunAsync(args[0], args[1] == "--gpu-inference");

@@ -19,6 +19,7 @@ internal static class Program
         if (args.FirstOrDefault() == "--clipboard-lock") return ClipboardWindowChecks.HoldClipboard(args[1], args[2]);
         if (args.FirstOrDefault() == "--render-benchmark") return RenderPerformanceCheck.Benchmark(args[1]);
         if (args.Contains("--editor-performance")) return RenderPerformanceCheck.Run();
+        if (args.Contains("--application-settings")) return ApplicationSettingsChecks.Run();
         if (args.Contains("--online-settings")) return OnlineSettingsChecks.Run();
         if (args.Contains("--hotkey")) return HotkeyChecks.Run();
         if (args.Contains("--window-placement")) return WindowPlacementChecks.Run();

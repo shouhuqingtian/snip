@@ -1,4 +1,4 @@
-自用截图 2.0.16 第三方组件与模型说明
+自用截图 2.0.21 第三方组件与模型说明
 
 唯一离线中英翻译模型：Tencent Hy-MT2-1.8B，Apache License 2.0。
 原始模型：https://huggingface.co/tencent/Hy-MT2-1.8B
@@ -26,3 +26,13 @@ MIT 完整许可随便携包提供在 licenses/llama.cpp-MIT.txt，源码位于 
 2.0.16 的 Vulkan GPU 支持使用同版本 llama.cpp 官方 Windows x64 Vulkan 发行包。
 GPU 运行库与 CPU 运行库分目录安装，两者复用同一模型文件。
 Vulkan 设备能力由系统显卡驱动提供；本软件不安装或分发显卡驱动。
+
+
+2.0.21 内置基础离线词典：ECDICT 常用词子集及本项目维护的少量界面词汇。
+来源：https://github.com/skywind3000/ECDICT
+固定提交：bc015ed2e24a7abef49fc6dbbb7fe32c1dadaf8b
+上游 ecdict.csv SHA256：1a6947e04785db63613a92e14903cdae7954f7e84860b10e68e5c7cbb3f9c3cf
+随附上游 MIT 许可：licenses/ECDICT-MIT.txt（源码 docs/licenses/ECDICT-MIT.txt）。
+子集生成脚本：packaging/BuildBasicDictionary.py；12151 词条，835467 字节。
+子集 SHA256：cfd3e299d98d5d1bc185d51f56d29b2412b252f434f4ba1fce4fb50b96286551
+词典提供查词和部分短语释义，不是整句翻译模型；运行时无需下载或访问任何服务。
