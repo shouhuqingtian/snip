@@ -1,0 +1,21 @@
+<Window x:Class="Snip.App.Views.PinManagerWindow" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:local="clr-namespace:Snip.App.Views" Title="自用截图 · 贴图管理" Width="900" Height="660" MinWidth="760" MinHeight="510" Topmost="True" WindowStartupLocation="CenterScreen">
+ <Window.Resources><BooleanToVisibilityConverter x:Key="BoolVisibility"/></Window.Resources>
+ <Grid Margin="24"><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+  <StackPanel Margin="0,0,0,14"><TextBlock Text="桌面贴图" Style="{StaticResource PageTitle}"/><TextBlock Text="点击缩略图定位；切换时其他贴图保持显示。" Style="{StaticResource Subtitle}" Margin="0,6,0,8"/><TextBlock x:Name="PinSummary" Text="{Binding Summary}" Foreground="{StaticResource AccentBrush}"/></StackPanel>
+  <WrapPanel Grid.Row="1" Margin="0,0,0,14"><Button x:Name="RestorePinButton" Content="恢复上一张" Command="{Binding RestoreCommand}" Style="{StaticResource PrimaryButton}"/><Button x:Name="PreviousPinButton" Content="上一张" Command="{Binding PreviousCommand}"/><Button x:Name="NextPinButton" Content="下一张" Command="{Binding NextCommand}"/><Button x:Name="PinShortcutButton" Content="快捷键设置" Command="{Binding SettingsCommand}"/><Button x:Name="ClearPinHistoryButton" Content="清空关闭记录" Command="{Binding ClearHistoryCommand}" Style="{StaticResource QuietButton}"/></WrapPanel>
+  <Grid Grid.Row="2">
+   <ListBox x:Name="PinList" ItemsSource="{Binding Entries}" BorderThickness="0" Background="Transparent" ScrollViewer.HorizontalScrollBarVisibility="Disabled" HorizontalContentAlignment="Stretch" VirtualizingPanel.IsVirtualizing="True">
+    <ListBox.ItemContainerStyle><Style TargetType="ListBoxItem"><Setter Property="HorizontalContentAlignment" Value="Stretch"/><Setter Property="Padding" Value="0"/><Setter Property="Margin" Value="0,0,0,10"/></Style></ListBox.ItemContainerStyle>
+    <ListBox.ItemTemplate><DataTemplate><Border Padding="12" CornerRadius="12" BorderThickness="1" Background="White"><Border.Style><Style TargetType="Border"><Setter Property="BorderBrush" Value="{StaticResource StrokeBrush}"/><Style.Triggers><DataTrigger Binding="{Binding IsCurrent}" Value="True"><Setter Property="BorderBrush" Value="{StaticResource AccentBrush}"/></DataTrigger></Style.Triggers></Style></Border.Style>
+     <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="116"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+      <Button Command="{Binding ShowCommand}" Padding="3" Margin="0,0,12,0" ToolTip="定位或恢复此贴图"><Image Source="{Binding Image}" Width="96" Height="72" Stretch="Uniform"/></Button>
+      <StackPanel Grid.Column="1"><TextBlock Text="{Binding Title}" FontWeight="SemiBold" FontSize="14"/><TextBlock Text="{Binding StateText}" Foreground="{StaticResource MutedBrush}" Margin="0,4,0,5"/>
+       <WrapPanel><Button Content="{Binding ShowText}" Command="{Binding ShowCommand}" Padding="10,4"/><Button Content="恢复鼠标交互" Command="{Binding RecoverInteractionCommand}" Padding="10,4"/><Button Content="关闭" Command="{Binding CloseCommand}" Padding="10,4"/><Button Content="移除记录" Command="{Binding ForgetCommand}" Style="{StaticResource QuietButton}" Padding="10,4"/></WrapPanel>
+      </StackPanel>
+     </Grid></Border></DataTemplate></ListBox.ItemTemplate>
+   </ListBox>
+   <StackPanel x:Name="EmptyPins" VerticalAlignment="Center" HorizontalAlignment="Center" Visibility="{Binding IsEmpty,Converter={StaticResource BoolVisibility}}"><local:UiIcon Kind="pin" Width="40" Height="40" Foreground="{StaticResource MutedBrush}" HorizontalAlignment="Center" Margin="0,0,0,16"/><TextBlock Text="还没有桌面贴图" FontSize="16" FontWeight="SemiBold" HorizontalAlignment="Center"/><TextBlock Text="截图后点击图钉，新增贴图会立即出现在这里。" Style="{StaticResource Subtitle}" Margin="0,8,0,0"/></StackPanel>
+  </Grid>
+  <StackPanel Grid.Row="3" Margin="0,12,0,0"><TextBlock Text="{Binding Status}" TextWrapping="Wrap" Foreground="{StaticResource AccentBrush}"/><TextBlock Text="本次运行内保留最近关闭的贴图（最多 10 张 / 64 MB）；退出软件清空，不额外保存图片文件。" Style="{StaticResource Subtitle}" FontSize="11" Margin="0,6,0,0"/></StackPanel>
+ </Grid>
+</Window>

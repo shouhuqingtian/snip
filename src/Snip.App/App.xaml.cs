@@ -18,6 +18,9 @@ public partial class App : Application
     private ITrayService? tray;
     private CaptureCoordinator? coordinator;
     private PinManager? pins;
+    private PinHotkeyService? pinHotkeys;
+    private PinHotkeySettingsStore? pinHotkeyStore;
+    private PinHotkeySettingsWindow? pinHotkeySettings;
     private MainWindow? main;
     private bool ownsMutex;
     private DiagnosticJournal? diagnostics;
@@ -61,7 +64,7 @@ public partial class App : Application
             _ = Task.Run(() => diagnostics.Record("app", "environment", DesktopDiagnostics.EnvironmentInfo(capture)));
             var renderer = new AnnotationRenderer();
             var export = new DiagnosticImageExport(new ImageExportService(), diagnostics);
-            pins = new PinManager(export);
+            pins = new PinManager(export, ShowPinHotkeySettings);
             translationPreferences = new TranslationPreferencesStore();
             features = new FeatureHub(renderer, export, capture, pins, diagnostics, translationPreferences:translationPreferences);
             coordinator = new CaptureCoordinator(capture, renderer, export, features, diagnostics);
@@ -71,9 +74,24 @@ public partial class App : Application
             hotkeyStore = new HotkeySettingsStore();
             features.CaptureStatus = message => tray?.SetCaptureStatus(message);
             tray.CaptureCancelRequested += (_, _) => features.CancelBrowserCapture();
-            hotkey.Triggered += (_, _) => { if (hotkeySettings?.IsActive != true) StartCapture(); }; tray.CaptureRequested += (_, _) => StartCapture();
+            hotkey.Triggered += (_, _) => { if (hotkeySettings?.IsActive != true && pinHotkeySettings?.IsActive != true) StartCapture(); }; tray.CaptureRequested += (_, _) => StartCapture();
             tray.OpenRequested += (_, _) => OpenMain(); tray.ExitRequested += (_, _) => ExitApplication();
             tray.PinsRequested += (_, _) => pins.ShowManager();
+            pinHotkeys = new PinHotkeyService(); pinHotkeyStore = new PinHotkeySettingsStore();
+            pinHotkeys.Triggered += (_, action) =>
+            {
+                if (pinHotkeySettings?.IsActive == true || hotkeySettings?.IsActive == true) return;
+                try { if (action == PinHotkeyAction.Restore) pins.RestoreLast(); else pins.Cycle(action == PinHotkeyAction.Previous ? -1 : 1); }
+                catch (Exception error) { ShowError(error); }
+            };
+            try
+            {
+                bool available = pinHotkeys.Apply(pinHotkeyStore.Read());
+                diagnostics.Record("pin-hotkeys", "startup-registration", new { Registered = available });
+                if (!available) pins.ViewModel.Status = "贴图快捷键已被占用，请点击快捷键设置修改；贴图管理按钮仍可使用。";
+            }
+            catch (Exception error) { diagnostics.Record("pin-hotkeys", "startup-registration-failed", error: error); pins.ViewModel.Status = "贴图快捷键配置读取或注册失败，可点击快捷键设置重新保存。"; }
+
             tray.DiagnosticsRequested += async (_, _) => { try { await ExportDiagnosticsAsync(); } catch (Exception error) { ShowError(error); } };
             activationListener = ThreadPool.RegisterWaitForSingleObject(activation, (_, _) => Dispatcher.BeginInvoke(OpenMain), null, Timeout.Infinite, false);
             HotkeyGesture configured = HotkeyGesture.Default;
@@ -106,6 +124,19 @@ public partial class App : Application
         hotkeySettings = new HotkeySettingsWindow(vm) { Owner = main?.IsVisible == true ? main : null };
         hotkeySettings.Closed += (_, _) => hotkeySettings = null;
         hotkeySettings.Show();
+    }
+
+    private void ShowPinHotkeySettings()
+    {
+        if (pinHotkeySettings is not null) { pinHotkeySettings.Activate(); return; }
+        if (pinHotkeys is null || pinHotkeyStore is null) return;
+        PinHotkeySettings configured;
+        try { configured = pinHotkeyStore.Read(); }
+        catch (Exception error) { diagnostics?.Record("pin-hotkeys", "settings-read-failed", error: error); configured = pinHotkeys.Current; }
+        var vm = new PinHotkeySettingsViewModel(pinHotkeys, pinHotkeyStore, configured);
+        pinHotkeySettings = new PinHotkeySettingsWindow(vm) { Owner = Windows.OfType<PinManagerWindow>().FirstOrDefault(window => window.IsVisible) };
+        pinHotkeySettings.Closed += (_, _) => pinHotkeySettings = null;
+        pinHotkeySettings.Show();
     }
 
     private void ShowApplicationSettings()
@@ -173,7 +204,7 @@ public partial class App : Application
     protected override void OnExit(ExitEventArgs e)
     {
         diagnostics?.Record("app", "exiting", new { e.ApplicationExitCode });
-        activationListener?.Unregister(null); coordinator?.Dispose(); pins?.Dispose(); hotkey?.Dispose(); tray?.Dispose();
+        activationListener?.Unregister(null); coordinator?.Dispose(); pins?.Dispose(); pinHotkeys?.Dispose(); hotkey?.Dispose(); tray?.Dispose();
         if (ownsMutex) instance?.ReleaseMutex(); instance?.Dispose(); activation?.Dispose();
         diagnostics?.Dispose();
         base.OnExit(e);

@@ -2,6 +2,7 @@
 param(
     [ValidateSet('Core','Desktop','All')][string]$Scope = 'All',
     [switch]$NoBuild,
+    [switch]$FailFast,
     [string]$ModelPath = '.model-cache/translation'
 )
 $ErrorActionPreference = 'Stop'
@@ -29,6 +30,7 @@ try {
             $detail = $detail.Substring(0, [Math]::Min(6000, $detail.Length)).Replace('%','%25').Replace("`r",'%0D').Replace("`n",'%0A')
             Write-Output "::error title=Validation $Name failed::$detail"
         }
+        if ($outcome -eq 'Failed' -and $FailFast) { throw "检查 $Name 失败，已提前停止；修复后仍需全部检查通过才可发布。" }
     }
     if ($Scope -in 'Core','All') {
         Check 'core' @('test','tests/Snip.Core.Tests/Snip.Core.Tests.csproj','-c','Release','--no-build','--logger','trx','--results-directory',$output)
@@ -43,6 +45,7 @@ try {
         Check 'dictionary' @('run','--project','tests/Snip.Translation.Checks/Snip.Translation.Checks.csproj','-c','Release','--no-build','--','--dictionary')
         Check 'application-settings' @('run','--project','tests/Snip.Windows.Checks/Snip.Windows.Checks.csproj','-c','Release','--no-build','--','--application-settings')
         Check 'online-settings' @('run','--project','tests/Snip.Windows.Checks/Snip.Windows.Checks.csproj','-c','Release','--no-build','--','--online-settings')
+        Check 'pins' @('run','--project','tests/Snip.Windows.Checks/Snip.Windows.Checks.csproj','-c','Release','--no-build','--','--pins')
         Check 'hotkey' @('run','--project','tests/Snip.Windows.Checks/Snip.Windows.Checks.csproj','-c','Release','--no-build','--','--hotkey')
         Check 'window-placement' @('run','--project','tests/Snip.Windows.Checks/Snip.Windows.Checks.csproj','-c','Release','--no-build','--','--window-placement')
         Check 'speech-native' @('run','--project','tests/Snip.Windows.Checks/Snip.Windows.Checks.csproj','-c','Release','--no-build','--','--speech-native') -AllowsMissingSpeech

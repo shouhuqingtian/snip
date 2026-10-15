@@ -100,10 +100,15 @@ internal static class UiGalleryCheck
             using var hotkey = new HotkeyService();
             Capture(new HotkeySettingsWindow(new HotkeySettingsViewModel(hotkey, new HotkeySettingsStore(Path.Combine(output,"unused-hotkey.json")), HotkeyGesture.Default)), "14-hotkey-settings");
             Capture(new WindowsShareWindow(image, export, autoOpen: false), "08-windows-share");
-            Capture(new PinManagerWindow([]), "10-pins-empty");
-            var pin = new PinWindow(image, export); pin.Show();
-            Capture(new PinManagerWindow([pin]), "11-pins-manager");
+            using var galleryPins=new Snip.App.Services.PinManager(export,()=>{});
+            Capture(new PinManagerWindow(galleryPins.ViewModel), "10-pins-empty");
+            galleryPins.Add(image);
+            var pin=app.Windows.OfType<PinWindow>().Single();
+            Capture(new PinManagerWindow(galleryPins.ViewModel), "11-pins-manager");
             Capture(pin, "12-pin");
+            Capture(new PinManagerWindow(galleryPins.ViewModel),"24-closed-pin-history");
+            using var pinHotkeys=new PinHotkeyService();
+            Capture(new PinHotkeySettingsWindow(new PinHotkeySettingsViewModel(pinHotkeys,new PinHotkeySettingsStore(Path.Combine(output,"unused-pin-hotkeys.json")),new())),"25-pin-hotkeys");
             var capture = new FakeCapture(image);
             using var selection = new SelectionSession(new(image, new(0, 0, 1280, 800), capture.GetDisplays()), capture, renderer, export, []);
             selection.Show(); selection.ViewModel.SetSelection(new(90, 110, 1050, 460)); selection.BeginEditing();
@@ -144,7 +149,7 @@ internal static class UiGalleryCheck
             var expandedVm=new TextResultViewModel(image,new GalleryOcr(true),new ModelStore("unused-models"),new GalleryTranslation(),onlineTranslator:new GalleryLong(),initialPreferences:new(TranslationMode.Online)){AutoTranslate=true};
             var expanded=new TextResultWindow(expandedVm);expanded.Width=expanded.MinWidth;expanded.Height=expanded.MinHeight;
             Capture(expanded,"23-compact-expanded-source",()=>{TextWindowChecks.PumpUntil(()=>!expandedVm.Busy && expandedVm.Translated.Length>0,TimeSpan.FromSeconds(5));expandedVm.SourceExpanded=true;});
-            Console.WriteLine("PASS 23 actual UI previews including automatic translation with IPA/POS/pinyin at normal and compact sizes; three browser menu actions; no share target invoked or user screenshot used."); return 0;
+            Console.WriteLine("PASS 25 actual UI previews including automatic translation with IPA/POS/pinyin at normal and compact sizes; three browser menu actions; no share target invoked or user screenshot used."); return 0;
         }
         catch (Exception error)
         {

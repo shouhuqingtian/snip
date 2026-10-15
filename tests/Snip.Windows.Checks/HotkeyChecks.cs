@@ -76,7 +76,7 @@ internal static class HotkeyChecks
             SynchronizationContext.SetSynchronizationContext(previous); Directory.Delete(directory, true);
         }
     }
-    private static void Press(params ushort[] keys)
+    internal static void Press(params ushort[] keys)
     {
         var inputs = keys.Select(key => new Input { Type = 1, Data = new InputUnion { Keyboard = new() { Key = key } } })
             .Concat(keys.Reverse().Select(key => new Input { Type = 1, Data = new InputUnion { Keyboard = new() { Key = key, Flags = 2 } } })).ToArray();

@@ -33,6 +33,7 @@ internal static class Program
         if (args.Contains("--ocr")) return NativeOcrCheck.Run();
         if (args.Contains("--ocr-ui")) return NativeOcrCheck.Run(withResultUi: true);
         if (args.Contains("--speech-native")) return NativeSpeechCheck.Run();
+        if (args.Contains("--pins")) return PinChecks.Run();
         if (args.Contains("--text-ui")) return TextWindowChecks.Run();
         int passed = 0, failed = 0;
         var renderer = new AnnotationRenderer();

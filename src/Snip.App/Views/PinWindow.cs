@@ -6,6 +6,7 @@ using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using Snip.App.Services;
+using Snip.App.ViewModels;
 using Snip.Infrastructure;
 
 namespace Snip.App.Views;
@@ -16,6 +17,8 @@ public sealed class PinWindow : Window
     private bool clickThrough;
     private double scale = 1;
     private readonly Image image;
+    public bool IsClickThrough => clickThrough;
+    public event EventHandler? InteractionChanged;
     public string Description => $"贴图 {bitmap.PixelWidth}×{bitmap.PixelHeight}";
     [DllImport("user32.dll", EntryPoint = "GetWindowLongPtrW")] private static extern IntPtr GetStyle(IntPtr hwnd, int index);
     [DllImport("user32.dll", EntryPoint = "SetWindowLongPtrW")] private static extern IntPtr SetStyle(IntPtr hwnd, int index, IntPtr style);
@@ -39,11 +42,18 @@ public sealed class PinWindow : Window
         MouseWheel += (_, e) => { scale = Math.Clamp(scale * (e.Delta > 0 ? 1.1 : 1 / 1.1), .05, 4); Width = Math.Max(60, bitmap.PixelWidth * scale + 4); Height = Math.Max(50, bitmap.PixelHeight * scale + 4); e.Handled = true; };
         KeyDown += (_, e) => { if (e.Key == Key.Escape) Close(); };
     }
+    public PinPresentation CapturePresentation() => new(PinWindowPlacement.Bounds(this), image.Opacity);
+    public void RestorePresentation(PinPresentation? presentation)
+    {
+        if(presentation is not null)image.Opacity=presentation.ImageOpacity;
+        PinWindowPlacement.Fit(this,presentation?.Bounds,nearCursor:presentation is null);
+        UpdateLayout();scale=Math.Clamp((ActualWidth-4)/bitmap.PixelWidth,.05,4);
+    }
     public void SetClickThrough(bool enabled)
     {
         var hwnd = new WindowInteropHelper(this).Handle; if (hwnd == IntPtr.Zero) return;
         long style = GetStyle(hwnd, -20).ToInt64();
-        SetStyle(hwnd, -20, new IntPtr(enabled ? style | 0x20 | 0x80000 : style & ~0x20)); clickThrough = enabled;
+        SetStyle(hwnd, -20, new IntPtr(enabled ? style | 0x20 | 0x80000 : style & ~0x20)); clickThrough = enabled; InteractionChanged?.Invoke(this,EventArgs.Empty);
         if (!enabled) { Show(); Activate(); }
     }
 }
