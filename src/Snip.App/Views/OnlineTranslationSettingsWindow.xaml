@@ -3,15 +3,22 @@
  <DockPanel Margin="24">
   <DockPanel DockPanel.Dock="Top" Margin="0,0,0,16"><Button Content="关闭 Esc" Click="CloseClick" DockPanel.Dock="Right"/><TextBlock Text="在线大模型翻译" Style="{StaticResource PageTitle}" VerticalAlignment="Center"/></DockPanel>
   <StackPanel DockPanel.Dock="Bottom" Margin="0,16,0,0"><TextBlock Text="{Binding Status}" TextWrapping="Wrap" Style="{StaticResource Subtitle}" FontSize="12"/>
-   <WrapPanel HorizontalAlignment="Right" Margin="0,10,0,0"><Button Content="清除当前密钥" Command="{Binding ClearKeyCommand}"/><Button Content="测试连接" Command="{Binding TestCommand}"/><Button Content="保存设置" Command="{Binding SaveCommand}" Style="{StaticResource PrimaryButton}"/></WrapPanel>
+   <WrapPanel HorizontalAlignment="Right" Margin="0,10,0,0"><Button Content="清除当前密钥" Command="{Binding ClearKeyCommand}"/><Button Content="测试连接" Command="{Binding TestCommand}"/><Button Content="保存并使用此服务" Command="{Binding SaveCommand}" Style="{StaticResource PrimaryButton}"/></WrapPanel>
   </StackPanel>
   <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"><StackPanel>
    <TextBlock Text="在线模式将识别后的文字发送给所选服务，费用由服务商收取；截图仍留在本机。测试连接会发送固定短句，也可能计费。" Style="{StaticResource Subtitle}" Margin="0,0,0,16"/>
    <Border Style="{StaticResource Card}" Padding="18"><StackPanel IsEnabled="{Binding CanEdit}">
-    <TextBlock Text="服务商" Style="{StaticResource SectionTitle}"/><ComboBox x:Name="ProviderChoice" ItemsSource="{Binding Providers}" SelectedItem="{Binding Provider}" Margin="0,6,0,14"/>
+    <TextBlock Text="服务 / 已保存配置" Style="{StaticResource SectionTitle}"/><ComboBox x:Name="ProviderChoice" ItemsSource="{Binding Providers}" SelectedItem="{Binding Provider}" Margin="0,6,0,8"/>
+    <TextBlock Text="服务不可用时，选择另一组配置并保存，再返回原文重试。切换会放弃尚未保存的修改。" Style="{StaticResource Subtitle}" FontSize="11" Margin="0,0,0,12"/>
+    <Grid Margin="0,0,0,8"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+     <TextBox x:Name="CustomNameBox" Text="{Binding CustomProfileName,UpdateSourceTrigger=PropertyChanged}" ToolTip="自定义配置名称，例如公司网关或备用账号" VerticalContentAlignment="Center"/>
+     <Button Grid.Column="1" Content="新增自定义" Command="{Binding AddProfileCommand}"/>
+    </Grid>
+    <Button Content="删除当前自定义配置" Command="{Binding DeleteProfileCommand}" HorizontalAlignment="Left" Margin="0,0,0,14"/>
     <TextBlock Text="API 地址" Style="{StaticResource SectionTitle}"/><TextBox x:Name="EndpointBox" Text="{Binding Endpoint,UpdateSourceTrigger=PropertyChanged}" Margin="0,6,0,4"/>
-    <TextBlock Text="填写服务商的 API 基础地址，也可填写完整 chat/completions 地址。通义千问地址须与密钥地域匹配。" Style="{StaticResource Subtitle}" FontSize="11" Margin="0,0,0,14"/>
-    <TextBlock Text="模型名称" Style="{StaticResource SectionTitle}"/><TextBox x:Name="ModelBox" Text="{Binding Model,UpdateSourceTrigger=PropertyChanged}" Margin="0,6,0,14"/>
+    <TextBlock Text="须兼容 OpenAI Chat Completions；可填基础地址或完整 chat/completions 地址。通义千问地址须与密钥地域匹配。" Style="{StaticResource Subtitle}" FontSize="11" Margin="0,0,0,14"/>
+    <TextBlock Text="模型名称（可直接输入）" Style="{StaticResource SectionTitle}"/><ComboBox x:Name="ModelBox" IsEditable="True" IsTextSearchEnabled="False" ItemsSource="{Binding SuggestedModels}" Text="{Binding Model,UpdateSourceTrigger=PropertyChanged}" Margin="0,6,0,4"/>
+    <TextBlock Text="候选名称仅供参考，请以服务商控制台支持的模型为准；每组配置分别保存密钥。" Style="{StaticResource Subtitle}" FontSize="11" Margin="0,0,0,14"/>
     <TextBlock Text="API Key" Style="{StaticResource SectionTitle}"/><PasswordBox x:Name="ApiKeyBox" PasswordChanged="KeyChanged" Padding="10,8" Margin="0,6,0,4"/>
     <TextBlock Text="{Binding KeyHint}" Style="{StaticResource Subtitle}" FontSize="11" Margin="0,0,0,16"/>
     <CheckBox Content="新截图默认使用在线翻译" IsChecked="{Binding DefaultOnline}"/>

@@ -6,18 +6,6 @@ using Snip.Core;
 
 namespace Snip.Translation;
 
-public static class OnlineTranslationProviders
-{
-    public const string DeepSeek = "DeepSeek", Qwen = "通义千问";
-    public static string[] Names { get; } = [DeepSeek,Qwen];
-    public static OnlineTranslationSettings Defaults(string provider) => provider switch
-    {
-        DeepSeek => new(provider,"https://api.deepseek.com/v1","deepseek-chat"),
-        Qwen => new(provider,"https://dashscope.aliyuncs.com/compatible-mode/v1","qwen-plus"),
-        _ => throw new ArgumentException("暂不支持该服务。")
-    };
-}
-
 /// <summary>Text-only chat completions; no screenshots, redirects, provider error bodies or credentials in diagnostics.</summary>
 public sealed class OnlineTranslator(Func<OnlineTranslationCredentials> credentials, HttpClient? client = null) : ITranslationService
 {
@@ -93,8 +81,8 @@ public sealed class OnlineTranslator(Func<OnlineTranslationCredentials> credenti
             }
         }
         catch(OperationCanceledException) when(!token.IsCancellationRequested)
-        {throw new TimeoutException("在线服务超过 60 秒未返回，请稍后重试。");}
-        catch(HttpRequestException){throw new InvalidOperationException("无法连接在线翻译服务，请检查网络、API 地址和服务状态。");}
+        {throw new TimeoutException("在线服务超过 60 秒未返回；可在“在线设置”切换服务后重试。");}
+        catch(HttpRequestException){throw new InvalidOperationException("无法连接在线翻译服务，请检查网络和配置，或在“在线设置”切换服务后重试。");}
     }
     public static Uri ResolveEndpoint(string address)
     {
@@ -110,6 +98,6 @@ public sealed class OnlineTranslator(Func<OnlineTranslationCredentials> credenti
         HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden => "服务拒绝认证，请检查密钥、账号权限及通义千问地域是否匹配。",
         HttpStatusCode.TooManyRequests => "服务限流或额度不足，请检查账户余额、配额并稍后重试。",
         HttpStatusCode.BadRequest or HttpStatusCode.NotFound => "服务请求不匹配，请检查 API 地址、模型名称及地域。",
-        _ => "在线服务暂不可用（HTTP "+(int)status+"），请稍后重试。"
+        _ => "在线服务暂不可用（HTTP "+(int)status+"）；可在“在线设置”切换服务后重试。"
     });
 }

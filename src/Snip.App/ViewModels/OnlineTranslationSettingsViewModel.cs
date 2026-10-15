@@ -1,3 +1,4 @@
+using System.Collections.ObjectModel;
 using Snip.App.Mvvm;
 using Snip.Core;
 using Snip.Translation;
@@ -10,6 +11,7 @@ public sealed class OnlineTranslationSettingsViewModel : ObservableObject, IDisp
     private readonly Func<OnlineTranslationCredentials,ITranslationService> factory;
     private CancellationTokenSource? cancellation;
     private string provider=OnlineTranslationProviders.DeepSeek,endpoint="",model="",apiKey="",status="密钥仅加密保存在当前 Windows 用户下。";
+    private string customProfileName="";
     private bool defaultOnline,hasSavedKey,busy,disposed;
     public OnlineTranslationSettingsViewModel(IOnlineTranslationSettingsStore store,Func<OnlineTranslationCredentials,ITranslationService>? factory=null)
     {
@@ -17,12 +19,27 @@ public sealed class OnlineTranslationSettingsViewModel : ObservableObject, IDisp
         SaveCommand=new(Save,()=>!busy && !disposed);
         TestCommand=new(TestAsync,error=>Status=error.Message,()=>!busy && !disposed);
         ClearKeyCommand=new(ClearKey,()=>!busy && !disposed && hasSavedKey);
-        try { var active=store.Read();provider=active?.Provider ?? provider;LoadProfile(); }
+        AddProfileCommand=new(AddProfile,()=>!busy && !disposed);
+        DeleteProfileCommand=new(DeleteProfile,()=>!busy && !disposed && IsCustomProfile);
+        try { RefreshProfiles();var active=store.Read();provider=active?.Provider ?? provider;LoadProfile(); }
         catch(InvalidOperationException error){Status=error.Message;LoadDefaults();}
     }
     public event EventHandler? Saved;
-    public string[] Providers=>OnlineTranslationProviders.Names;
-    public string Provider { get=>provider;set{if(value is not null && Set(ref provider,value)){apiKey="";LoadProfile();}} }
+    public ObservableCollection<string> Providers { get; } = new(OnlineTranslationProviders.Names);
+    public string[] SuggestedModels => OnlineTranslationProviders.Models(provider);
+    public string CustomProfileName { get=>customProfileName;set=>Set(ref customProfileName,value); }
+    public bool IsCustomProfile => !OnlineTranslationProviders.Names.Contains(provider);
+    public string Provider
+    {
+        get=>provider;
+        set
+        {
+            if (busy || disposed || value is null || !Providers.Contains(value) || value==provider) return;
+            provider=value;apiKey="";
+            Notify(nameof(Provider));Notify(nameof(SuggestedModels));
+            LoadProfile();Notify(nameof(IsCustomProfile));DeleteProfileCommand.Refresh();
+        }
+    }
     public string Endpoint{get=>endpoint;set=>Set(ref endpoint,value);}
     public string Model{get=>model;set=>Set(ref model,value);}
     public bool DefaultOnline{get=>defaultOnline;set=>Set(ref defaultOnline,value);}
@@ -33,6 +50,35 @@ public sealed class OnlineTranslationSettingsViewModel : ObservableObject, IDisp
     public RelayCommand SaveCommand{get;}
     public AsyncCommand TestCommand{get;}
     public RelayCommand ClearKeyCommand{get;}
+    public RelayCommand AddProfileCommand{get;}
+    public RelayCommand DeleteProfileCommand{get;}
+    private void RefreshProfiles()
+    {
+        foreach(var profile in store.ReadProfiles())
+            if(!Providers.Contains(profile.Provider))Providers.Add(profile.Provider);
+    }
+    private void AddProfile()
+    {
+        string name=customProfileName.Trim();
+        if(name.Length is 0 or > 48 || name.Any(char.IsControl)){Status="请填写 1–48 个字符的配置名称，不能包含控制字符。";return;}
+        string identity=OnlineTranslationProviders.CustomPrefix+name;
+        if(Providers.Contains(identity)){Status="这个配置名称已存在，请选择该配置或换一个名称。";return;}
+        if(Providers.Count>=32){Status="最多保留 32 组配置，请先删除不再使用的自定义配置。";return;}
+        Providers.Add(identity);Provider=identity;CustomProfileName="";
+        Status="请填写兼容 OpenAI Chat Completions 的地址、模型和密钥，然后保存；不会自动调用。";
+    }
+    private void DeleteProfile()
+    {
+        try
+        {
+            string removed=provider;store.DeleteProfile(removed);apiKey="";
+            Provider=store.Read()?.Provider ?? OnlineTranslationProviders.DeepSeek;
+            // The active saved entry may be the deleted unsaved draft only in malformed external configuration.
+            if(provider==removed)Provider=OnlineTranslationProviders.DeepSeek;
+            Providers.Remove(removed);Status="已删除当前自定义配置，其余服务配置保留。";Saved?.Invoke(this,EventArgs.Empty);
+        }
+        catch(Exception error){Status=error.Message;}
+    }
     public void SetApiKey(string value)=>apiKey=value;
     private void LoadDefaults()
     {
@@ -50,7 +96,7 @@ public sealed class OnlineTranslationSettingsViewModel : ObservableObject, IDisp
         try
         {
             _=OnlineTranslator.ResolveEndpoint(endpoint);store.Save(Draft(),string.IsNullOrWhiteSpace(apiKey)?null:apiKey);
-            apiKey="";HasSavedKey=store.Read(provider)?.HasApiKey ?? false;Status="已保存。在线模式只发送识别文字，按服务商规则计费。";
+            apiKey="";HasSavedKey=store.Read(provider)?.HasApiKey ?? false;Status="已保存并选用此服务。返回文字工作台点“在线翻译”即可重试；不会自动切换或发送给其他服务。";
             Saved?.Invoke(this,EventArgs.Empty);
         }
         catch(Exception error){Status=error.Message;}
@@ -62,7 +108,7 @@ public sealed class OnlineTranslationSettingsViewModel : ObservableObject, IDisp
     }
     private async Task TestAsync()
     {
-        busy=true;Notify(nameof(CanEdit));SaveCommand.Refresh();ClearKeyCommand.Refresh();
+        busy=true;Notify(nameof(CanEdit));SaveCommand.Refresh();ClearKeyCommand.Refresh();AddProfileCommand.Refresh();DeleteProfileCommand.Refresh();
         using var current=new CancellationTokenSource(TimeSpan.FromSeconds(65));cancellation=current;
         try
         {
@@ -81,7 +127,7 @@ public sealed class OnlineTranslationSettingsViewModel : ObservableObject, IDisp
         }
         catch(OperationCanceledException){if(!disposed)Status="测试已取消或超时。";}
         catch(Exception error){if(!disposed)Status=error.Message;}
-        finally{cancellation=null;busy=false;if(!disposed){Notify(nameof(CanEdit));SaveCommand.Refresh();ClearKeyCommand.Refresh();}}
+        finally{cancellation=null;busy=false;if(!disposed){Notify(nameof(CanEdit));SaveCommand.Refresh();ClearKeyCommand.Refresh();AddProfileCommand.Refresh();DeleteProfileCommand.Refresh();}}
     }
     public void Dispose(){disposed=true;apiKey="";cancellation?.Cancel();}
 }

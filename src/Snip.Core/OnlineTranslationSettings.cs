@@ -15,5 +15,7 @@ public interface IOnlineTranslationSettingsStore
     OnlineTranslationSettings? Read(string? provider = null);
     OnlineTranslationCredentials ReadCredentials(string? provider = null);
     void Save(OnlineTranslationSettings settings, string? replacementApiKey, bool removeKey = false);
+    IReadOnlyList<OnlineTranslationSettings> ReadProfiles();
+    void DeleteProfile(string provider);
     void Delete();
 }

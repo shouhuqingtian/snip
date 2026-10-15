@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -23,9 +25,9 @@ public sealed class OnlineTranslationSettingsStore : IOnlineTranslationSettingsS
         if (!File.Exists(path)) return null;
         try
         {
-            if (new FileInfo(path).Length > 32 * 1024) throw new InvalidDataException();
+            if (new FileInfo(path).Length > 512 * 1024) throw new InvalidDataException();
             var stored = JsonSerializer.Deserialize<StoredSettings>(File.ReadAllText(path)) ?? throw new InvalidDataException();
-            if (stored.Version != 1 || stored.Profiles is null || stored.Profiles.Length > 8 ||
+            if (stored.Version != 1 || stored.Profiles is null || stored.Profiles.Length > 32 ||
                 Array.Exists(stored.Profiles, profile => profile is null || profile.Provider is null || profile.Endpoint is null || profile.Model is null || profile.ProtectedKey is null)) throw new InvalidDataException();
             return stored;
         }
@@ -38,6 +40,23 @@ public sealed class OnlineTranslationSettingsStore : IOnlineTranslationSettingsS
     {
         var stored = Load(); var profile = Find(stored, provider);
         return profile is null ? null : new(profile.Provider, profile.Endpoint, profile.Model, stored!.DefaultOnline, profile.ProtectedKey.Length > 0);
+    }
+    public IReadOnlyList<OnlineTranslationSettings> ReadProfiles()
+    {
+        var stored = Load();
+        return stored?.Profiles.Select(profile => new OnlineTranslationSettings(profile.Provider, profile.Endpoint,
+            profile.Model, stored.DefaultOnline, profile.ProtectedKey.Length > 0)).ToArray() ?? [];
+    }
+    public void DeleteProfile(string provider)
+    {
+        var stored = Load();
+        if (stored is null) return;
+        var remaining = stored.Profiles.Where(profile => profile.Provider != provider).ToArray();
+        if (remaining.Length == stored.Profiles.Length) return;
+        if (remaining.Length == 0) { Delete(); return; }
+        string active = stored.ActiveProvider == provider ? remaining[0].Provider : stored.ActiveProvider;
+        bool online = stored.DefaultOnline && remaining.Any(profile => profile.Provider == active && profile.ProtectedKey.Length > 0);
+        Write(stored with { ActiveProvider = active, DefaultOnline = online, Profiles = remaining });
     }
     public OnlineTranslationCredentials ReadCredentials(string? provider = null)
     {
@@ -55,13 +74,15 @@ public sealed class OnlineTranslationSettingsStore : IOnlineTranslationSettingsS
     }
     public void Save(OnlineTranslationSettings settings, string? replacementApiKey, bool removeKey = false)
     {
-        if (string.IsNullOrWhiteSpace(settings.Provider) || string.IsNullOrWhiteSpace(settings.Model) || settings.Model.Length > 256)
+        if (string.IsNullOrWhiteSpace(settings.Provider) || settings.Provider.Length > 64 || settings.Provider.Any(char.IsControl) || string.IsNullOrWhiteSpace(settings.Model) || settings.Model.Length > 256)
             throw new ArgumentException("请填写服务名称和模型名称。");
-        if (!Uri.TryCreate(settings.Endpoint.Trim(),UriKind.Absolute,out var address) ||
+        if (settings.Endpoint.Length > 2048 || !Uri.TryCreate(settings.Endpoint.Trim(),UriKind.Absolute,out var address) ||
             (address.Scheme != Uri.UriSchemeHttps && !(address.IsLoopback && address.Scheme == Uri.UriSchemeHttp)) ||
             !string.IsNullOrEmpty(address.UserInfo) || !string.IsNullOrEmpty(address.Query) || !string.IsNullOrEmpty(address.Fragment))
             throw new ArgumentException("API 地址须使用 HTTPS，本机服务可使用 HTTP；不要在地址中填写账号、密钥、查询参数或片段。");
         var previousSettings = Load(); var previous = Find(previousSettings, settings.Provider.Trim());
+        if (previous is null && previousSettings?.Profiles.Length >= 32)
+            throw new InvalidOperationException("最多保存 32 组在线配置，请先删除不再使用的自定义配置。");
         string encrypted = "";
         if (!removeKey)
         {
@@ -81,6 +102,10 @@ public sealed class OnlineTranslationSettingsStore : IOnlineTranslationSettingsS
         var profiles = new System.Collections.Generic.List<Profile>(previousSettings?.Profiles ?? Array.Empty<Profile>());
         profiles.RemoveAll(value => value.Provider == profile.Provider); profiles.Add(profile);
         var stored = new StoredSettings(1,profile.Provider,settings.DefaultOnline,profiles.ToArray());
+        Write(stored);
+    }
+    private void Write(StoredSettings stored)
+    {
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
         string temporary = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
         try

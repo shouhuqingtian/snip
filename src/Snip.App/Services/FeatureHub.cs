@@ -45,7 +45,7 @@ public sealed class FeatureHub
             var image = vm.Compose();
             operation?.Stage("image-composed", new { image.PixelWidth, image.PixelHeight });
             text = new TextResultViewModel(image, ocr, models, translator, diagnostics, onlineTranslator: onlineTranslator,
-                configureOnline: () => ShowOnlineSettings(() => { if (text is not null) text.UseOnlineTranslation = DefaultOnline(); }),
+                configureOnline: () => ShowOnlineSettings(() => { if (text is not null) text.UseOnlineTranslation = text.UseOnlineTranslation || DefaultOnline(); }),
                 defaultOnline: DefaultOnline()) { AutoTranslate = translate };
             operation?.Stage("view-model-created");
             // A result must outlive the screenshot overlay. Do not give it the overlay as owner.

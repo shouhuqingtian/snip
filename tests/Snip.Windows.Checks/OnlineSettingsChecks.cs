@@ -53,6 +53,14 @@ internal static class OnlineSettingsChecks
             Require(store.Read() is { HasApiKey:false },"Explicit key removal failed.");
             store.Delete();Require(store.Read() is null,"Settings delete failed.");
             Console.WriteLine("PASS explicit key removal and configuration deletion work.");
+            store.Save(new("DeepSeek","https://api.deepseek.com/v1","deepseek-chat",true),secret);
+            string oldBlob=JsonNode.Parse(File.ReadAllText(path))!["Profiles"]![0]!["ProtectedKey"]!.GetValue<string>();
+            store.Save(new("自定义：迁移检查","https://custom.example.com/v1","custom-model",true),"PUBLIC-MIGRATION-KEY");
+            var migrated=JsonNode.Parse(File.ReadAllText(path))!;
+            Require(migrated["Version"]!.GetValue<int>()==1 && migrated["Profiles"]![0]!["ProtectedKey"]!.GetValue<string>()==oldBlob && store.ReadCredentials("DeepSeek").ApiKey==secret,"Version-one credentials were rewritten or lost.");
+            Require(store.ReadProfiles().Count==2,"Profile metadata enumeration failed.");
+            store.Delete();
+            Console.WriteLine("PASS existing version-one profile encryption remains unchanged when adding custom profiles.");
             CheckWindows(path);
             return 0;
         }
@@ -74,7 +82,51 @@ internal static class OnlineSettingsChecks
         settings.Provider=OnlineTranslationProviders.DeepSeek;
         Require(settings.HasSavedKey && ((PasswordBox)window.FindName("ApiKeyBox")).Password.Length==0,"Saved provider key should remain encrypted and not be repopulated.");
         Require(store.ReadCredentials(OnlineTranslationProviders.Qwen).ApiKey=="PUBLIC-KEY-QWEN" && store.ReadCredentials(OnlineTranslationProviders.DeepSeek).ApiKey=="PUBLIC-KEY-DEEPSEEK","Provider profiles did not persist independently.");
+        Require(settings.Providers.Count>=6,"Provider presets are missing.");
+        settings.CustomProfileName="备用账号";settings.AddProfileCommand.Execute(null);
+        string custom=settings.Provider;
+        Require(custom=="自定义：备用账号" && settings.Endpoint=="" && settings.Model=="" && !settings.HasSavedKey,"Custom profile reused provider configuration.");
+        settings.Endpoint="https://custom.example.com/v1";
+        ((ComboBox)window.FindName("ModelBox")).Text="private-compatible-model";
+        window.UpdateLayout();
+        Require(settings.Model=="private-compatible-model","Editable model control did not update binding.");
+        ((PasswordBox)window.FindName("ApiKeyBox")).Password="PUBLIC-CUSTOM-KEY";settings.SaveCommand.Execute(null);
+        Require(store.Read() is { Provider:"自定义：备用账号", Model:"private-compatible-model" },"Custom profile was not activated.");
+        Require(store.ReadCredentials(custom).ApiKey=="PUBLIC-CUSTOM-KEY","Custom key not stored independently.");
+        settings.Provider=OnlineTranslationProviders.Qwen;
+        Require(settings.Model=="qwen-plus" && settings.HasSavedKey,"Previous provider not restored after custom profile.");
+        settings.SaveCommand.Execute(null);
+        Require(store.Read()!.Provider==OnlineTranslationProviders.Qwen,"Saving selected backup did not switch active provider.");
+        settings.CustomProfileName="备用账号";int count=settings.Providers.Count;settings.AddProfileCommand.Execute(null);
+        Require(settings.Providers.Count==count && settings.Status.Contains("已存在"),"Duplicate custom name overwrote credentials.");
+        settings.Provider=custom;
+        settings.CustomProfileName="另一个网关";settings.AddProfileCommand.Execute(null);
+        settings.Endpoint="https://second.example.com/v1";settings.Model="another-model";
+        Require(!settings.HasSavedKey && ((PasswordBox)window.FindName("ApiKeyBox")).Password.Length==0,"New profile exposed another key.");
+        ((PasswordBox)window.FindName("ApiKeyBox")).Password="PUBLIC-SECOND-KEY";settings.SaveCommand.Execute(null);
+        string second=settings.Provider;
+        var restarted=new OnlineTranslationSettingsViewModel(new OnlineTranslationSettingsStore(path));
+        Require(restarted.Provider==second && restarted.Providers.Contains(custom) && restarted.Model=="another-model","Restart lost custom profiles or active selection.");
+        restarted.Dispose();
+        settings.DeleteProfileCommand.Execute(null);
+        Require(store.Read(second) is null && store.ReadCredentials(custom).ApiKey=="PUBLIC-CUSTOM-KEY" && store.ReadCredentials(OnlineTranslationProviders.DeepSeek).ApiKey=="PUBLIC-KEY-DEEPSEEK","Deleting a profile changed other credentials.");
+        window.Width=540;window.Height=420;window.UpdateLayout();
+        Require(window.IsVisible && ((ComboBox)window.FindName("ModelBox")).IsEditable,"Minimum-size settings or editable model is unavailable.");
+        Console.WriteLine("PASS actual custom profile creation, editable model, independent keys, switching, restart, duplicate rejection and deletion.");
         window.Close();Console.WriteLine("PASS actual settings XAML saves independent provider keys, clears password display and restores profiles.");
+
+        var pending=new PendingOnline();
+        using(var testing=new OnlineTranslationSettingsViewModel(store,_=>pending))
+        {
+            var busyWindow=new OnlineTranslationSettingsWindow(testing);busyWindow.Show();
+            string selected=testing.Provider;testing.TestCommand.Execute(null);
+            Require(!testing.CanEdit && !testing.AddProfileCommand.CanExecute(null) && !testing.SaveCommand.CanExecute(null),"Connection test allowed configuration mutations.");
+            testing.Provider=selected==OnlineTranslationProviders.Qwen ? OnlineTranslationProviders.DeepSeek : OnlineTranslationProviders.Qwen;
+            Require(testing.Provider==selected,"Provider changed during an in-flight connection test.");
+            busyWindow.Close();
+            TextWindowChecks.PumpUntil(()=>pending.Cancelled,TimeSpan.FromSeconds(3));
+        }
+        Console.WriteLine("PASS in-flight connection test locks profile selection and closing cancels the request.");
 
         var image=BitmapSource.Create(100,80,96,96,PixelFormats.Bgra32,null,Enumerable.Repeat((byte)255,100*80*4).ToArray(),400);image.Freeze();
         var online=new FakeOnline();var offline=new OfflineTrap();
@@ -86,6 +138,15 @@ internal static class OnlineSettingsChecks
         online.Fail=true;vm.TranslateCommand.Execute(null);TextWindowChecks.PumpUntil(()=>!vm.Busy && vm.Status.Contains("失败"),TimeSpan.FromSeconds(4));
         Require(vm.Source=="Hello world" && vm.Translated=="在线译文" && result.IsVisible,"Online failure discarded prior text or window.");
         result.Close();Console.WriteLine("PASS online OCR-to-result bypasses model download, displays notice and retains original/result on service failure.");
+    }
+    private sealed class PendingOnline : ITranslationService
+    {
+        public bool Cancelled;
+        public async Task<string> TranslateAsync(string text,string direction,CancellationToken token)
+        {
+            try { await Task.Delay(Timeout.Infinite,token);return ""; }
+            catch(OperationCanceledException){Cancelled=true;throw;}
+        }
     }
     private sealed class OfflineTrap : ITranslationService
     {

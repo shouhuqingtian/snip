@@ -60,6 +60,26 @@ internal static class OnlineTranslationChecks
                     using var client=new HttpClient(handler);var service=new OnlineTranslator(()=>new(configured,"PUBLIC-TEST-KEY"),client);
                     Require(await service.TranslateAsync("PUBLIC text\n第二行","en-zh",CancellationToken.None)=="译文\n第二行","Translation content parsing failed.");
                 });
+            await Check("custom model and endpoint are sent without provider-specific options",async()=>
+            {
+                var configured=new OnlineTranslationSettings("自定义：备用账号","https://custom.example.com/gateway/chat/completions","my-translation-model");
+                using var client=new HttpClient(new Handler(async(request,token)=>
+                {
+                    Require(request.RequestUri!.AbsolutePath=="/gateway/chat/completions","Custom endpoint changed.");
+                    using var body=JsonDocument.Parse(await request.Content!.ReadAsStringAsync(token));
+                    Require(body.RootElement.GetProperty("model").GetString()=="my-translation-model" && !body.RootElement.TryGetProperty("enable_thinking",out _),"Custom model or capability options changed.");
+                    return Response(HttpStatusCode.OK,"{\"choices\":[{\"message\":{\"content\":\"自定义译文\"}}]}");
+                }));
+                Require(await new OnlineTranslator(()=>new(configured,"PUBLIC-CUSTOM-KEY"),client).TranslateAsync("Public fixture","en-zh",CancellationToken.None)=="自定义译文","Custom translation failed.");
+            });
+            await Check("service failure does not automatically send text to another provider",async()=>
+            {
+                int calls=0;
+                using var client=new HttpClient(new Handler((_,_)=>{calls++;return Task.FromResult(Response(HttpStatusCode.ServiceUnavailable,"PRIVATE"));}));
+                var service=new OnlineTranslator(()=>new(OnlineTranslationProviders.Defaults(OnlineTranslationProviders.DeepSeek),"PUBLIC-KEY"),client);
+                try { await service.TranslateAsync("Public fixture","en-zh",CancellationToken.None);throw new Exception("Service failure accepted."); }
+                catch(InvalidOperationException error){Require(calls==1 && error.Message.Contains("切换服务"),"Unexpected failover or missing recovery guidance.");}
+            });
             await Check("complete endpoints are not duplicated",()=>
             {
                 Require(OnlineTranslator.ResolveEndpoint("https://api.example.com/v1/chat/completions").AbsolutePath=="/v1/chat/completions","Path duplicated.");
