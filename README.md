@@ -4,7 +4,9 @@
 
 ## 下载
 
-当前开发版 **2.0.19 测试便携版**：[下载便携 ZIP](https://github.com/shouhuqingtian/snip/releases/download/preview-439fcb620789/self-snip-preview-win-x64.zip) · [完整源码](https://github.com/shouhuqingtian/snip/releases/download/preview-439fcb620789/self-snip-source.zip)。包含检查记录、版本信息和完整提交号。无需配置在线密钥或下载翻译模型即可使用 Windows 本地 OCR；缺翻译资源时默认保留文字识别结果，见 [修改与验证](docs/2.0.15默认OCR与翻译可用性.md)。
+当前开发版 **2.0.20 测试便携版**：[下载便携 ZIP](https://github.com/shouhuqingtian/snip/releases/download/preview-cf8eddfc8a1d/self-snip-preview-win-x64.zip) · [完整源码](https://github.com/shouhuqingtian/snip/releases/download/preview-cf8eddfc8a1d/self-snip-source.zip)。包含检查记录、版本信息和完整提交号。无需配置在线密钥或下载翻译模型即可使用 Windows 本地 OCR；缺翻译资源时默认保留文字识别结果，见 [修改与验证](docs/2.0.15默认OCR与翻译可用性.md)。
+
+2.0.20 在线翻译增加 OpenAI、智谱 GLM、Moonshot / Kimi、硅基流动，与 DeepSeek、通义千问共六家预设；模型名可直接输入，支持多组自定义兼容接口、独立加密密钥和保存切换。服务故障时保留原文，选择备用配置后重试，见 [修改文件、使用与验证](docs/2.0.20多服务与自定义在线翻译.md)。
 
 2.0.19 网页截图保留三个入口：整个网页、从当前位置向下、捕捉选定区域。第三项进入模式后按住左键重新拖选，碰到网页下沿自动滚动，松开完成，Esc 取消；真实 Windows Chrome 的拖选、越过下沿、末尾像素、取消及选中文字 / 固定侧栏页面检查通过，见 [修改文件、使用与验证](docs/2.0.19网页拖选与边缘自动滚动.md)。
 
