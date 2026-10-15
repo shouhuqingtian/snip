@@ -30,5 +30,5 @@ selected.update(supplements)
 selected={**supplements,**selected}
 root=Path(__file__).resolve().parents[1]
 target=root/'src/Snip.Translation/Resources/basic-dictionary.json';target.parent.mkdir(exist_ok=True)
-data=json.dumps(list(selected.items()),ensure_ascii=False,separators=(',',':'))+'\n';target.write_text(data,encoding='utf-8')
+data=json.dumps(list(selected.items()),ensure_ascii=False,separators=(',',':'))+'\n';target.write_bytes(data.encode('utf-8'))
 print(len(selected),'entries;',target.stat().st_size,'bytes;',hashlib.sha256(target.read_bytes()).hexdigest())
