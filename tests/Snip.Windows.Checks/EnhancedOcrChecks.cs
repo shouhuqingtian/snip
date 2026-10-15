@@ -88,6 +88,8 @@ internal static class EnhancedOcrChecks
                     foreach (var region in result.Regions.Take(12))
                         Console.WriteLine($"Source-layout box: x={region.Bounds.X:F1}, y={region.Bounds.Y:F1}, w={region.Bounds.Width:F1}, h={region.Bounds.Height:F1}");
                     Require(formattedRows.Length == count, "Source-layout form rows merged or split; expected=" + count + ", actual=" + formattedRows.Length);
+                    var rowPositions = result.LayoutText!.Split(Environment.NewLine).Select((text, index) => (text, index)).Where(row => row.text.Length > 0).Select(row => row.index).ToArray();
+                    Require(rowPositions.Skip(1).Zip(rowPositions, (next, prior) => next - prior).Distinct().Count() == 1, "Equal source row pitch became unequal text spacing.");
                     string[] labels = ["通知方式：", "处理状态：", "生效日期："], values = ["Email", "Ready", "Today"];
                     for (int i = 0; i < count; i++)
                         Require(Normalize(formattedRows[i]) == Normalize(labels[i % 3] + values[i % 3]), "Source-layout left label/right value order changed at row " + i);

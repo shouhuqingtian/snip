@@ -32,14 +32,15 @@ public static class OcrTextLayout
         double left = regions.Min(r => r.Bounds.X);
         double lineHeight = Median(regions.Select(r => r.Bounds.Height));
         double cellWidth = Math.Clamp(Median(regions.Where(r => Cells(r.Text) > 0).Select(r => r.Bounds.Width / Cells(r.Text))), lineHeight * 0.25, lineHeight * 0.75);
-        double? previousBottom = null;
+        double? previousCenter = null;
         foreach (var row in rows.OrderBy(r => r.Regions.Min(region => region.Bounds.Y)).ThenBy(r => r.Anchor.X))
         {
-            double top = row.Regions.Min(r => r.Bounds.Y);
-            if (previousBottom is { } bottom)
+            double center = Median(row.Regions.Select(r => Center(r.Bounds)));
+            if (previousCenter is { } prior)
             {
                 text.AppendLine();
-                int blanks = Math.Clamp((int)Math.Floor((top - bottom) / lineHeight), 0, 3);
+                // Glyph descenders change box bottoms without changing the source row pitch.
+                int blanks = Math.Clamp((int)Math.Round((center - prior) / lineHeight) - 1, 0, 3);
                 for (int i = 0; i < blanks; i++) text.AppendLine();
             }
             int column = 0;
@@ -60,7 +61,7 @@ public static class OcrTextLayout
                 column += Cells(region.Text);
                 ordered.Add(region); previous = region;
             }
-            previousBottom = row.Regions.Max(r => r.Bounds.Bottom);
+            previousCenter = center;
         }
         return new(ordered, text.ToString());
     }

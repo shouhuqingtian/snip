@@ -22,7 +22,7 @@ public sealed class OcrTextLayoutTests
         Assert.Equal("Email", blocks.OrderBy(r => r.Bounds.Y).First().Text);
         var result = OcrTextLayout.Arrange(blocks);
         Assert.Equal(new[] { label, value, nextLabel, nextValue }, result.Regions);
-        Assert.Equal("通知方式：" + new string(' ', 11) + "Email" + Environment.NewLine + "处理状态：" + new string(' ', 11) + "Ready", result.LayoutText);
+        Assert.Equal("通知方式：" + new string(' ', 11) + "Email" + Environment.NewLine + Environment.NewLine + "处理状态：" + new string(' ', 11) + "Ready", result.LayoutText);
     }
     [Fact]
     public void AdjacentRowsDoNotMergeBecauseTheirBoxesOverlapSlightly()
@@ -63,7 +63,7 @@ public sealed class OcrTextLayoutTests
         var blocks = Enumerable.Range(1, 80).SelectMany(i => new[] { Block("Key" + i, 10, i * 36), Block("Value" + i, 300, i * 36 - 3) }).Reverse().ToArray();
         var result = OcrTextLayout.Arrange(blocks);
         Assert.Equal(160, result.Regions.Count);
-        var lines = result.LayoutText!.Split(Environment.NewLine);
+        var lines = result.LayoutText!.Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries);
         Assert.Equal(80, lines.Length);
         for (int i = 1; i <= 80; i++)
         {
@@ -76,7 +76,19 @@ public sealed class OcrTextLayoutTests
     public void IndentationAndParagraphWhitespaceFollowTheSourceCoordinates()
     {
         var result = OcrTextLayout.Arrange([Block("first", 10, 10, 50), Block("second", 40, 40, 60), Block("third", 10, 120, 50)]);
-        Assert.Equal("first" + Environment.NewLine + "   second" + string.Concat(Enumerable.Repeat(Environment.NewLine, 4)) + "third", result.LayoutText);
+        Assert.Equal("first" + Environment.NewLine + Environment.NewLine + "   second" + string.Concat(Enumerable.Repeat(Environment.NewLine, 4)) + "third", result.LayoutText);
+    }
+    [Fact]
+    public void EqualSourceRowPitchKeepsEqualSpacingDespiteDifferentGlyphDescenders()
+    {
+        // Geometry from the public Windows fixture: bottom-based gaps were 34 and 28,
+        // causing a blank after the first row but none after the second.
+        var result = OcrTextLayout.Arrange([
+            new("标签甲", new(18, 30, 114, 34), null), new("Email", new(456, 27, 78, 34), null),
+            new("标签乙", new(19, 103, 112, 31), null), new("Ready", new(453, 98, 93, 42), null),
+            new("标签丙", new(19, 174, 113, 34), null), new("Today", new(453, 168, 91, 45), null)]);
+        var indices = result.LayoutText!.Split(Environment.NewLine).Select((line, index) => (line, index)).Where(row => row.line.Length > 0).Select(row => row.index).ToArray();
+        Assert.Equal(new[] { 0, 2, 4 }, indices);
     }
     [Fact]
     public void EmptyResultDoesNotInventText()
