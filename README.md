@@ -4,7 +4,9 @@
 
 ## 下载
 
-当前开发版 **2.0.26 测试便携版**：[下载便携 ZIP](https://github.com/shouhuqingtian/snip/releases/download/preview-6638a5216cb0/self-snip-preview-win-x64.zip) · [完整源码](https://github.com/shouhuqingtian/snip/releases/download/preview-6638a5216cb0/self-snip-source.zip)。包含检查记录、版本信息和完整提交号。无需配置在线密钥或下载翻译模型即可使用 Windows 本地 OCR；缺翻译资源时默认保留文字识别结果，见 [修改与验证](docs/2.0.15默认OCR与翻译可用性.md)。
+当前开发版 **2.0.27 测试便携版**：[下载便携 ZIP](https://github.com/shouhuqingtian/snip/releases/download/preview-58ac698a5bc2/self-snip-preview-win-x64.zip) · [完整源码](https://github.com/shouhuqingtian/snip/releases/download/preview-58ac698a5bc2/self-snip-source.zip)。包含检查记录、版本信息和完整提交号。无需配置在线密钥或下载翻译模型即可使用 Windows 本地 OCR；缺翻译资源时默认保留文字识别结果，见 [修改与验证](docs/2.0.15默认OCR与翻译可用性.md)。
+
+2.0.27 新增可选的 **PP-OCRv6 small 增强离线中英识别**。文字工作台 → 更多设置 → 下载 / 修复增强 OCR（约31 MiB），安装后自动重识别；可切回系统 OCR并保存选择。模型按需在独立进程识别，完成、取消或退出后释放，见 [修改文件、使用与实测](docs/2.0.27增强离线OCR.md)。
 
 2.0.26 修复贴图管理列表不实时刷新，增加本次运行内恢复关闭贴图、上一张 / 下一张定位及三个可自定义全局快捷键。已关闭图片缓存有上限，退出清空，见 [修改文件与验证](docs/2.0.26贴图同步恢复与快捷键.md)。
 
