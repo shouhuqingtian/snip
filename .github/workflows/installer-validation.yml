@@ -63,9 +63,14 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          # GitHub sanitizes the original Chinese asset name. Use a stable ASCII download name.
+          Rename-Item 'artifacts/自用截图-2.0.34-win-x64.zip' 'self-snip-2.0.34-win-x64.zip'
           $assets = @(Get-ChildItem artifacts -File -Filter '*.zip' | ForEach-Object FullName) + @((Join-Path $PWD 'artifacts/SHA256SUMS.txt')) + @(Get-ChildItem artifacts/installer -File -Filter '*.exe' | ForEach-Object FullName)
+          $assets | Where-Object { [IO.Path]::GetFileName($_) -ne 'SHA256SUMS.txt' } | ForEach-Object { '{0}  {1}' -f (Get-FileHash $_ -Algorithm SHA256).Hash.ToLower(), [IO.Path]::GetFileName($_) } | Set-Content artifacts/SHA256SUMS.txt -Encoding utf8
           'Validated application commit: acf73474bef8113a8172d5bc2e84b1dc732b5325. Installer reuses the tested portable EXE. Current independent installer validation checks normalized Windows paths. Full release notes will be added after asset verification.' | Set-Content artifacts/release-notes.md -Encoding utf8
-          gh release create v2.0.34 @assets --repo $env:GITHUB_REPOSITORY --verify-tag --title '自用截图 2.0.34' --notes-file artifacts/release-notes.md
+          gh release view v2.0.34 --repo $env:GITHUB_REPOSITORY *> $null
+          if ($LASTEXITCODE -eq 0) { gh release upload v2.0.34 @assets --repo $env:GITHUB_REPOSITORY --clobber }
+          else { gh release create v2.0.34 @assets --repo $env:GITHUB_REPOSITORY --verify-tag --title '自用截图 2.0.34' --notes-file artifacts/release-notes.md }
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - uses: actions/upload-artifact@v4
         if: always()
