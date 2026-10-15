@@ -78,6 +78,40 @@ internal static class EnhancedOcrChecks
                 Require(Normalize(string.Concat(longResult.Regions.Select(r => r.Text))) == Normalize(string.Concat(lines)), "Long-page tiles lost, duplicated or reordered text at overlaps.");
                 Require(longResult.Regions.Count == lines.Length, "Long-page line count mismatch.");
                 Console.WriteLine("PASS actual vertical tile overlaps: 34 numbered mixed-language rows, no missing/duplicate lines.");
+                stage = "source-layout form rows";
+                foreach (int count in new[] { 3, 30 })
+                {
+                    var form = DrawForm(count);
+                    var result = Recognize(service, Payload(form));
+                    var formattedRows = result.LayoutText?.Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries) ?? [];
+                    Require(formattedRows.Length == count, "Source-layout form rows merged or split.");
+                    string[] labels = ["通知方式：", "处理状态：", "生效日期："], values = ["Email", "Ready", "Today"];
+                    for (int i = 0; i < count; i++)
+                        Require(Normalize(formattedRows[i]) == Normalize(labels[i % 3] + values[i % 3]), "Source-layout left label/right value order changed at row " + i);
+                    string expected = string.Concat(Enumerable.Range(0, count).Select(i => labels[i % 3] + values[i % 3]));
+                    string oldOrder = string.Concat(result.Regions.OrderBy(r => r.Bounds.Y).ThenBy(r => r.Bounds.X).Select(r => r.Text));
+                    Require(Normalize(oldOrder) != Normalize(expected), "Public fixture did not reproduce the previous exact-Y ordering defect.");
+                    Require(system.Calls == 0 && metrics[^1].ProcessExited, "Source-layout sample used fallback or left worker alive.");
+                }
+                Console.WriteLine("PASS real source-layout forms: previous exact-Y order reproduced; same-row cells preserved left-to-right across 30 tiled rows.");
+                stage = "source-layout result and copying";
+                var layoutImage = DrawForm(3);
+                var copied = new LayoutClipboard();
+                using (var layoutVm = new TextResultViewModel(layoutImage, service, new ModelStore(Path.Combine(temporary, "layout-models")), new TextWindowChecks.FakeTranslation(), clipboard: copied))
+                {
+                    window = new TextResultWindow(layoutVm); window.Show();
+                    TextWindowChecks.PumpUntil(() => !layoutVm.Busy && layoutVm.Source.Length > 0, TimeSpan.FromSeconds(20));
+                    var sourceBox = (TextBox)window.FindName("RecognizedText"); window.UpdateLayout();
+                    Require(layoutVm.HasSourceLayout && sourceBox.Text == layoutVm.Source && sourceBox.TextWrapping == TextWrapping.NoWrap && sourceBox.HorizontalScrollBarVisibility == ScrollBarVisibility.Auto && sourceBox.FontFamily.Source.Contains("Consolas"), "Original-layout XAML changed rows or lacks horizontal navigation.");
+                    layoutVm.CopySourceCommand.Execute(null);
+                    TextWindowChecks.PumpUntil(() => copied.Value is not null && layoutVm.CopyStatus.Contains("已复制"), TimeSpan.FromSeconds(3));
+                    Require(copied.Value == layoutVm.Source && copied.Value.Contains("  "), "Copy discarded source-layout whitespace.");
+                    string layoutPreview = Path.GetFullPath("artifacts/validation/ui-previews/28-ocr-source-layout.png"); Directory.CreateDirectory(Path.GetDirectoryName(layoutPreview)!);
+                    var layoutVisual = new RenderTargetBitmap((int)window.ActualWidth, (int)window.ActualHeight, 96, 96, PixelFormats.Pbgra32); layoutVisual.Render(window);
+                    var layoutPng = new PngBitmapEncoder(); layoutPng.Frames.Add(BitmapFrame.Create(layoutVisual)); using (var file = File.Create(layoutPreview)) layoutPng.Save(file);
+                    window.Close(); window = null;
+                }
+                Console.WriteLine("PASS actual source-layout WPF: fixed-width view, no automatic wrapping, horizontal scrolling and unchanged whitespace on copy.");
                 stage = "real result window and settings";
                 using var vm = new TextResultViewModel(white, service, new ModelStore(Path.Combine(temporary, "translation")), new TextWindowChecks.FakeTranslation(), journal);
                 int ticks = 0; var heartbeat = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(10) };
@@ -188,6 +222,30 @@ internal static class EnhancedOcrChecks
     {
         var encoder = new PngBitmapEncoder(); encoder.Frames.Add(BitmapFrame.Create(image)); using var memory = new MemoryStream(); encoder.Save(memory);
         return new(memory.ToArray(), image.PixelWidth, image.PixelHeight);
+    }
+    private static BitmapSource DrawForm(int count)
+    {
+        string[] labels = ["通知方式：", "处理状态：", "生效日期："], values = ["Email", "Ready", "Today"];
+        int width = 840, height = count * 72 + 40;
+        var visual = new DrawingVisual();
+        using (var drawing = visual.RenderOpen())
+        {
+            drawing.DrawRectangle(Brushes.White, null, new Rect(0, 0, width, height));
+            for (int i = 0; i < count; i++)
+            {
+                drawing.DrawText(new FormattedText(labels[i % 3], System.Globalization.CultureInfo.GetCultureInfo("zh-CN"), FlowDirection.LeftToRight,
+                    new Typeface("Microsoft YaHei UI"), 24, Brushes.Black, 1), new Point(24, 24 + i * 72));
+                drawing.DrawText(new FormattedText(values[i % 3], System.Globalization.CultureInfo.InvariantCulture, FlowDirection.LeftToRight,
+                    new Typeface("Segoe UI"), 30, Brushes.Black, 1), new Point(460, 18 + i * 72));
+            }
+        }
+        var image = new RenderTargetBitmap(width, height, 96, 96, PixelFormats.Pbgra32); image.Render(visual); image.Freeze(); return image;
+    }
+    private sealed class LayoutClipboard : ITextClipboardService
+    {
+        public string? Value;
+        public Task CopyAsync(string text, CancellationToken token, IProgress<int>? retries = null)
+        { token.ThrowIfCancellationRequested(); Value = text; return Task.CompletedTask; }
     }
     private static BitmapSource Draw(string text, double size, bool bold = false, double spacing = 0, bool required = false)
     {

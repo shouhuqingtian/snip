@@ -77,7 +77,7 @@ public static class OcrWorker
             }
             if (y + height >= image.Height) break;
         }
-        return new(regions.OrderBy(r => r.Bounds.Y).ThenBy(r => r.Bounds.X).ToArray());
+        return OcrTextLayout.Arrange(regions);
     }
     [DllImport("kernel32.dll")] private static extern uint SetErrorMode(uint mode);
 }

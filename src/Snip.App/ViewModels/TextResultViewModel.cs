@@ -44,6 +44,7 @@ public sealed class TextResultViewModel : ObservableObject, IDisposable
     private IReadOnlyList<string> languages = [];
     private bool busy, downloading, disposed, initialized, userCancelled;
     private bool autoTranslate, showTranslation;
+    private bool hasSourceLayout;
     private double progress;
     private TranslationComputeMode computeMode;
     private string computeStatus = "本地计算：尚未运行";
@@ -242,6 +243,7 @@ public sealed class TextResultViewModel : ObservableObject, IDisposable
     public bool HasLanguageNotes => LanguageNotes.Length > 0;
     public string Source { get => source; set { if (Set(ref source, value)) { TranslateCommand.Refresh(); CopySourceCommand.Refresh(); Notify(nameof(DirectionHint)); Notify(nameof(SourceSummary)); } } }
     public bool HasTranslation => Translated.Length > 0;
+    public bool HasSourceLayout { get => hasSourceLayout; private set => Set(ref hasSourceLayout, value); }
     public string Translated { get => translated; private set { if (Set(ref translated, value)) { CopyTranslationCommand.Refresh(); Notify(nameof(HasTranslation)); } } }
     public string Status { get => status; private set => Set(ref status, value); }
     public string CopyStatus { get => copyStatus; private set => Set(ref copyStatus, value); }
@@ -301,7 +303,8 @@ public sealed class TextResultViewModel : ObservableObject, IDisposable
             diagnosticOperation?.Stage("ocr-recognized", new { Language = candidate, RegionCount = result.Regions.Count });
             if (result.Regions.Any(region => !string.IsNullOrWhiteSpace(region.Text))) { recognizedLanguage = candidate; break; }
         }
-        Source = string.Join(Environment.NewLine, result!.Regions.Select(r => r.Text));
+        HasSourceLayout = result!.LayoutText is not null;
+        Source = result.LayoutText ?? string.Join(Environment.NewLine, result.Regions.Select(r => r.Text));
         if (string.IsNullOrWhiteSpace(Source))
             Status = RecognitionMode != OcrMode.System ? "没有识别到文字，请核对截图清晰度，或切换识别方式后重试。" : !installed.Any(value => value.StartsWith("en", StringComparison.OrdinalIgnoreCase))
                 ? "没有识别到文字。英文截图需要 Windows 英语 OCR 组件；请在 Windows 语言设置中添加英语及文字识别组件后重试。"
