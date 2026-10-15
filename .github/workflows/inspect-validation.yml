@@ -40,13 +40,15 @@ jobs:
       - name: Surface generated OCR fixture details
         shell: python
         run: |
-          import json
+          import json, statistics
           from pathlib import Path
           for name in ['native-windows.json','dotnet-PP-OCRv6-tiny.json','dotnet-PP-OCRv6-small.json','dotnet-PP-OCRv6-small-bounded.json']:
               for path in Path('saved-validation').rglob(name):
                   data=json.loads(path.read_text(encoding='utf-8-sig'))
                   rows=[r for r in data['Rows'] if r['Outcome']=='Measured']
                   failures=[{k:r[k] for k in ['Name','Expected','Actual','Errors']} for r in rows if not r['Exact']]
-                  value=json.dumps({'engine':data['Engine'],'load_ms':data.get('LoadMs'),'peak_mib':data['PeakWorkingSetMiB'],
+                  value=json.dumps({'engine':data['Engine'],'load_ms':data.get('LoadMs'),'peak_mib':data['PeakWorkingSetMiB'],'cold_to_first_ms':data.get('LoadMs',0)+(rows[0]['FirstMs'] if rows else 0),
+                      'normal_warm_median_ms':statistics.median(r['WarmMeanMs'] for r in rows if r['Name'] not in ['4k-form','long-page']) if rows else None,
+                      'normal_working_set_mib':max((r.get('WorkingSetMiB',0) for r in rows if r['Name'] not in ['4k-form','long-page']),default=0),
                       'exact':sum(r['Exact'] for r in rows),'measured':len(rows),'unrun':len(data['Rows'])-len(rows),'failures':failures},ensure_ascii=False)
                   print('::notice title=OCR details '+name+'::'+value.replace('%','%25').replace(chr(13),'%0D').replace(chr(10),'%0A'))
