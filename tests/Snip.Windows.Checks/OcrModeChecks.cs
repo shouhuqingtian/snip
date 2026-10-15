@@ -41,7 +41,9 @@ internal static class OcrModeChecks
             Require(selector.IsVisible && selector.Items.Count == 3 && selector.IsEnabled, "Three-way OCR selector missing.");
             selector.SelectedValue = OcrMode.Online;
             window.UpdateLayout();
-            Require(vm.RecognitionMode == OcrMode.Online && online.Calls == 0 && vm.OcrModeNotice.Contains("发送当前截图"), "Changing mode sent data or omitted disclosure.");
+            Require(vm.RecognitionMode == OcrMode.Online, "Actual selector did not switch the OCR mode.");
+            Require(online.Calls == 0, "Changing mode sent screenshot without re-recognizing.");
+            Require(vm.OcrModeNotice.Contains("当前截图") && vm.OcrModeNotice.Contains("发送"), "Online screenshot disclosure missing.");
             Require(preferences.Read() == OcrMode.System, "Unsaved selection overwrote default.");
             ((Button)window.FindName("SaveOcrSettingsButton")).Command.Execute(null);
             Require(preferences.Read() == OcrMode.Online && vm.Status.Contains("已保存默认识别方式"), "Actual save-default button failed.");
