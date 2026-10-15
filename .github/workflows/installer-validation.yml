@@ -1,0 +1,50 @@
+name: Diagnose the tested Windows installer
+on:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: Run containing the tested portable artifact
+        required: true
+        type: string
+permissions:
+  contents: read
+  actions: read
+jobs:
+  installer:
+    runs-on: windows-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: v2.0.34
+      - uses: actions/download-artifact@v4
+        with:
+          name: Tested-portable
+          run-id: ${{ inputs.run_id }}
+          github-token: ${{ github.token }}
+          path: artifacts
+      - name: Rebuild only the installer around the validated EXE
+        shell: pwsh
+        run: |
+          choco install nsis --no-progress --yes
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $version = ([xml](Get-Content Directory.Build.props -Raw)).Project.PropertyGroup.Version
+          Expand-Archive "artifacts/自用截图-$version-win-x64.zip" artifacts/portable/win-x64
+          ./packaging/Publish.ps1 -ReusePortable -Installer -Channel Stable
+      - name: Surface complete install regression errors
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory artifacts/validation -Force | Out-Null
+          try {
+            ./packaging/CheckInstaller.ps1 -Installer "$PWD/artifacts/installer/SelfSnip-2.0.34-Setup-x64.exe" *> artifacts/validation/installer-check.log
+          } catch {
+            $_ | Out-String | Add-Content artifacts/validation/installer-check.log
+            $detail = (Get-Content artifacts/validation/installer-check.log -Tail 30 | Out-String).Replace('%','%25').Replace("`r",'%0D').Replace("`n",'%0A')
+            Write-Output "::error title=Actual installer regression::$detail"
+            throw
+          }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Installer-debug
+          path: artifacts/validation/
