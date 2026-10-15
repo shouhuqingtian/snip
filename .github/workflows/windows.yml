@@ -72,8 +72,11 @@ jobs:
         shell: pwsh
         timeout-minutes: 2
         run: |
-          dotnet run --project tests/Snip.Windows.Checks/Snip.Windows.Checks.csproj -c Release --no-build -- --clipboard-ui
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          foreach ($round in 1..2) {
+            Write-Output "Clipboard process round $round"
+            dotnet run --project tests/Snip.Windows.Checks/Snip.Windows.Checks.csproj -c Release --no-build -- --clipboard-ui
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
       - name: Verify compact translation window placement separately
         shell: pwsh
         timeout-minutes: 2

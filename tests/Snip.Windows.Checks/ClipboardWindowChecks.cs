@@ -107,13 +107,19 @@ internal static class ClipboardWindowChecks
 
             Stage("persistent external lock and later retry");
             window = Show(); vm = (TextResultViewModel)window.DataContext;
+            Stage("persistent lock: writing sentinel");
             Clipboard.SetText(Sentinel);
+            Stage("persistent lock: acquiring external holder");
             using (var holder = new ClipboardLock())
             {
-                var clock = Stopwatch.StartNew(); Click(window, "CopySourceButton"); WaitCopy(vm);
+                var clock = Stopwatch.StartNew(); Stage("persistent lock: invoking real copy button"); Click(window, "CopySourceButton");
+                Stage("persistent lock: awaiting bounded retry result"); WaitCopy(vm);
+                Stage("persistent lock: verifying failure feedback");
                 Require(clock.Elapsed < TimeSpan.FromSeconds(5) && vm.CopyStatus.Contains("复制未完成") && vm.Source == "Hello world" && window.IsVisible && vm.CopySourceCommand.CanExecute(null), "Persistent lock lost results, claimed success or exceeded the retry bound.");
             }
+            Stage("persistent lock: reading preserved sentinel after release");
             Require(Clipboard.GetText() == Sentinel, "Failed copy cleared unrelated clipboard contents.");
+            Stage("persistent lock: retrying after release");
             Click(window, "CopySourceButton"); WaitCopy(vm);
             Require(Clipboard.GetText() == "Hello world" && vm.CopyStatus.Contains("已复制"), "Retry after failure did not succeed.");
             window.Close(); Console.WriteLine("PASS persistent lock gives bounded failure, retains results and existing clipboard, and allows a later retry.");
