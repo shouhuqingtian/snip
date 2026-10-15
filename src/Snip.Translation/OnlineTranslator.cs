@@ -9,8 +9,7 @@ namespace Snip.Translation;
 /// <summary>Text-only chat completions; no screenshots, redirects, provider error bodies or credentials in diagnostics.</summary>
 public sealed class OnlineTranslator(Func<OnlineTranslationCredentials> credentials, HttpClient? client = null) : IAnnotatedTranslationService
 {
-    private static readonly HttpClient Shared = new(new HttpClientHandler { AllowAutoRedirect=false,UseCookies=false }) { Timeout=Timeout.InfiniteTimeSpan };
-    private readonly HttpClient http = client ?? Shared;
+    private readonly HttpClient http = client ?? OnlineResponse.Client;
     public Task<bool> IsAvailableAsync(CancellationToken token)
     {
         token.ThrowIfCancellationRequested();
@@ -64,18 +63,8 @@ public sealed class OnlineTranslator(Func<OnlineTranslationCredentials> credenti
             progress?.Report(new("正在调用在线翻译服务"));
             using var response=await http.SendAsync(request,HttpCompletionOption.ResponseHeadersRead,timeout.Token).ConfigureAwait(false);
             if(!response.IsSuccessStatusCode)throw StatusError(response.StatusCode);
-            if(response.Content.Headers.ContentLength>1_048_576)throw new InvalidOperationException("服务返回内容过大，请缩短原文。");
-            await using var input=await response.Content.ReadAsStreamAsync(timeout.Token).ConfigureAwait(false);
-            using var output=new MemoryStream();var buffer=new byte[8192];
-            for(int count;(count=await input.ReadAsync(buffer,timeout.Token).ConfigureAwait(false))>0;)
-            {
-                if(output.Length+count>1_048_576)throw new InvalidOperationException("服务返回内容过大，请缩短原文。");
-                output.Write(buffer,0,count);
-            }
-            timeout.Token.ThrowIfCancellationRequested();
-            JsonDocument document;
-            try { document = JsonDocument.Parse(output.ToArray()); }
-            catch(JsonException) { throw new InvalidOperationException("服务响应格式不符合聊天补全接口，请检查 API 地址和模型。"); }
+            var document = await OnlineResponse.ReadAsync(response, timeout.Token,
+                () => new InvalidOperationException("服务响应格式无效或内容过大，请检查 API 地址和模型，或缩短原文。")).ConfigureAwait(false);
             using(document)
             {
                 var root=document.RootElement;
@@ -83,6 +72,11 @@ public sealed class OnlineTranslator(Func<OnlineTranslationCredentials> credenti
                    choices[0].ValueKind!=JsonValueKind.Object || !choices[0].TryGetProperty("message",out var message) || message.ValueKind!=JsonValueKind.Object ||
                    !message.TryGetProperty("content",out var content) || content.ValueKind!=JsonValueKind.String)
                     throw new InvalidOperationException("服务响应格式不符合聊天补全接口，请检查 API 地址和模型。");
+                if (choices[0].TryGetProperty("finish_reason", out var finish) && finish.ValueKind == JsonValueKind.String &&
+                    !string.IsNullOrEmpty(finish.GetString()) && finish.GetString() != "stop")
+                    throw new InvalidOperationException("服务未完整返回译文，请缩短原文或更换模型。已有译文保留。");
+                if (message.TryGetProperty("refusal", out var refusal) && refusal.ValueKind == JsonValueKind.String && !string.IsNullOrWhiteSpace(refusal.GetString()))
+                    throw new InvalidOperationException("服务拒绝了这次翻译请求，请更换服务或翻译方式。已有译文保留。");
                 var translated=content.GetString();
                 if(string.IsNullOrWhiteSpace(translated))throw new InvalidOperationException("服务返回了空译文，请检查模型或稍后重试。");
                 progress?.Report(new("在线翻译完成"));return translated.Trim();
@@ -91,6 +85,7 @@ public sealed class OnlineTranslator(Func<OnlineTranslationCredentials> credenti
         catch(OperationCanceledException) when(!token.IsCancellationRequested)
         {throw new TimeoutException("在线服务超过 60 秒未返回；可在“在线设置”切换服务后重试。");}
         catch(HttpRequestException){throw new InvalidOperationException("无法连接在线翻译服务，请检查网络和配置，或在“在线设置”切换服务后重试。");}
+        catch(IOException){throw new InvalidOperationException("在线翻译响应读取失败，请重试或切换服务。已有译文保留。");}
     }
     public static Uri ResolveEndpoint(string address)
     {

@@ -32,15 +32,15 @@ public sealed record Annotation(
 /// <summary>History stores immutable annotation lists; uncommitted pointer gestures never enter history.</summary>
 public sealed class EditHistory
 {
-    private readonly List<IReadOnlyList<Annotation>> states = [Array.AsReadOnly(Array.Empty<Annotation>())];
+    private sealed record State(long Revision, IReadOnlyList<Annotation> Annotations);
+    private readonly List<State> states = [new(0, Array.AsReadOnly(Array.Empty<Annotation>()))];
     private int position;
-    private IReadOnlyList<Annotation>? exported;
-    public IReadOnlyList<Annotation> Current => states[position];
+    private long nextRevision, exportedRevision;
+    public IReadOnlyList<Annotation> Current => states[position].Annotations;
     public bool CanUndo => position > 0;
     public bool CanRedo => position < states.Count - 1;
-    public bool IsDirty => exported is null || !ReferenceEquals(exported, states[position]);
-
-    public EditHistory() => exported = states[0];
+    // Remember identity without rooting a saved snapshot after its undo/redo branch is discarded.
+    public bool IsDirty => exportedRevision != states[position].Revision;
     public void Commit(IEnumerable<Annotation> annotations)
     {
         // Reuse our already-frozen annotations; copy only new/replaced data.
@@ -51,11 +51,11 @@ public sealed class EditHistory
             StickerPng = a.StickerPng.IsEmpty || Current.Any(old => old.StickerPng.Equals(a.StickerPng)) ? a.StickerPng : a.StickerPng.ToArray()
         }).ToArray();
         states.RemoveRange(position + 1, states.Count - position - 1);
-        states.Add(Array.AsReadOnly(next));
+        states.Add(new(++nextRevision, Array.AsReadOnly(next)));
         position++;
         if (states.Count > 101) { states.RemoveAt(0); position--; }
     }
     public void Undo() { if (CanUndo) position--; }
     public void Redo() { if (CanRedo) position++; }
-    public void MarkExported() => exported = states[position];
+    public void MarkExported() => exportedRevision = states[position].Revision;
 }

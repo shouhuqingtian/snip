@@ -101,6 +101,57 @@ internal static class OnlineTranslationChecks
                     try{await service.TranslateAsync("PUBLIC input","en-zh",CancellationToken.None);throw new Exception("Malformed response accepted.");}
                     catch(InvalidOperationException error){Require(!error.Message.Contains("PUBLIC input"),"Malformed response leaked original.");}
                 });
+            foreach (string finish in new[] { "length", "content_filter", "tool_calls" })
+                await Check("incomplete translation is rejected: " + finish, async () =>
+                {
+                    using var client = new HttpClient(new Handler((_, _) => Task.FromResult(Response(HttpStatusCode.OK,
+                        JsonSerializer.Serialize(new { choices = new[] { new { finish_reason = finish, message = new { content = "PRIVATE partial translation" } } } })))));
+                    var service = new OnlineTranslator(() => new(OnlineTranslationProviders.Defaults(OnlineTranslationProviders.DeepSeek), "PUBLIC-KEY"), client);
+                    foreach (bool details in new[] { false, true })
+                    {
+                        try
+                        {
+                            if (details) await service.TranslateWithDetailsAsync("Public fixture", "en-zh", null, CancellationToken.None);
+                            else await service.TranslateAsync("Public fixture", "en-zh", CancellationToken.None);
+                            throw new Exception("Incomplete translation was accepted as success.");
+                        }
+                        catch (InvalidOperationException error) { Require(error.Message.Contains("完整") && !error.ToString().Contains("PRIVATE"), "Incomplete response was not safely rejected."); }
+                    }
+                });
+            await Check("provider refusal does not become translated text", async () =>
+            {
+                using var client = new HttpClient(new Handler((_, _) => Task.FromResult(Response(HttpStatusCode.OK,
+                    "{\"choices\":[{\"finish_reason\":\"stop\",\"message\":{\"content\":\"PRIVATE response\",\"refusal\":\"PRIVATE refusal\"}}]}"))));
+                var service = new OnlineTranslator(() => new(OnlineTranslationProviders.Defaults(OnlineTranslationProviders.DeepSeek), "PUBLIC-KEY"), client);
+                try { await service.TranslateAsync("Public fixture", "en-zh", CancellationToken.None); throw new Exception("Refusal accepted."); }
+                catch (InvalidOperationException error) { Require(error.Message.Contains("拒绝") && !error.ToString().Contains("PRIVATE"), "Refusal was not safely rejected."); }
+            });
+            await Check("explicitly completed translation remains compatible", async () =>
+            {
+                using var client = new HttpClient(new Handler((_, _) => Task.FromResult(Response(HttpStatusCode.OK,
+                    "{\"choices\":[{\"finish_reason\":\"stop\",\"message\":{\"content\":\"完整译文\",\"refusal\":null}}]}"))));
+                var service = new OnlineTranslator(() => new(OnlineTranslationProviders.Defaults(OnlineTranslationProviders.DeepSeek), "PUBLIC-KEY"), client);
+                Require(await service.TranslateAsync("Public fixture", "en-zh", CancellationToken.None) == "完整译文", "Completed translation rejected.");
+            });
+            foreach (bool unknownLength in new[] { false, true })
+                await Check("response size is bounded with " + (unknownLength ? "streamed" : "declared") + " length", async () =>
+                {
+                    using var client = new HttpClient(new Handler((_, _) =>
+                    {
+                        HttpContent content = unknownLength ? new StreamContent(new UndeclaredStream(new byte[1_048_577])) : new ByteArrayContent(new byte[1_048_577]);
+                        return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = content });
+                    }));
+                    var service = new OnlineTranslator(() => new(OnlineTranslationProviders.Defaults(OnlineTranslationProviders.DeepSeek), "PUBLIC-KEY"), client);
+                    try { await service.TranslateAsync("Public fixture", "en-zh", CancellationToken.None); throw new Exception("Oversize response accepted."); }
+                    catch (InvalidOperationException error) { Require(error.Message.Contains("过大"), "Missing response limit feedback."); }
+                });
+            await Check("stream read failures do not expose provider content", async () =>
+            {
+                using var client = new HttpClient(new Handler((_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StreamContent(new BrokenStream()) })));
+                var service = new OnlineTranslator(() => new(OnlineTranslationProviders.Defaults(OnlineTranslationProviders.DeepSeek), "PUBLIC-KEY"), client);
+                try { await service.TranslateAsync("Public fixture", "en-zh", CancellationToken.None); throw new Exception("Broken stream accepted."); }
+                catch (InvalidOperationException error) { Require(error.Message.Contains("读取失败") && !error.ToString().Contains("PRIVATE"), "Stream failure details leaked."); }
+            });
             await Check("cancellation interrupts request",async()=>
             {
                 using var current=new CancellationTokenSource(TimeSpan.FromMilliseconds(60));
@@ -181,4 +232,11 @@ internal static class OnlineTranslationChecks
     private static void Require(bool condition,string message){if(!condition)throw new InvalidOperationException(message);}
     private sealed class Handler(Func<HttpRequestMessage,CancellationToken,Task<HttpResponseMessage>> send):HttpMessageHandler
     {protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request,CancellationToken token)=>send(request,token);}
+    private sealed class BrokenStream : MemoryStream
+    {
+        public override ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+            => ValueTask.FromException<int>(new IOException("PRIVATE provider stream"));
+    }
+    private sealed class UndeclaredStream(byte[] bytes) : MemoryStream(bytes)
+    { public override bool CanSeek => false; }
 }

@@ -5,6 +5,38 @@ namespace Snip.Core.Tests;
 
 public sealed class EditHistoryTests
 {
+    [Fact]
+    public void SavedSnapshotOutsideUndoHistoryDoesNotRetainDeletedSticker()
+    {
+        var history = new EditHistory();
+        var saved = SaveStickerThenEvict(history);
+        GC.Collect(); GC.WaitForPendingFinalizers(); GC.Collect();
+        Assert.False(saved.IsAlive);
+        Assert.True(history.IsDirty);
+        GC.KeepAlive(history);
+    }
+
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+    private static WeakReference SaveStickerThenEvict(EditHistory history)
+    {
+        history.Commit([Shape() with { Tool = AnnotationTool.Sticker, StickerPng = new byte[4 * 1024 * 1024] }]);
+        history.MarkExported();
+        var saved = new WeakReference(history.Current.Single());
+        for (int i = 0; i < 101; i++) history.Commit([]);
+        return saved;
+    }
+
+    [Fact]
+    public void ReplacingSavedBranchAtSameDepthRemainsDirty()
+    {
+        var history = new EditHistory();
+        history.Commit([Shape()]); history.MarkExported(); history.Undo();
+        history.Commit([Shape()]);
+        Assert.True(history.IsDirty);
+        history.MarkExported(); history.Undo(); history.Redo();
+        Assert.False(history.IsDirty);
+    }
+
     private static Annotation Shape() => new(Guid.NewGuid(), AnnotationTool.Rectangle, new(10, 10), new(30, 40), "#FF0000", 4, 24, 12, "", []);
 
     [Fact]

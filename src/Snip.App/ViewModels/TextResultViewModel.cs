@@ -45,6 +45,8 @@ public sealed class TextResultViewModel : ObservableObject, IDisposable
     private bool busy, downloading, disposed, initialized, userCancelled;
     private bool autoTranslate, showTranslation;
     private bool hasSourceLayout;
+    private int sourceCharacterCount;
+    private long sourceRevision;
     private double progress;
     private TranslationComputeMode computeMode;
     private string computeStatus = "本地计算：尚未运行";
@@ -232,7 +234,7 @@ public sealed class TextResultViewModel : ObservableObject, IDisposable
     public bool ShowOptions { get => showOptions; set => Set(ref showOptions, value); }
     public int ResultTab { get => resultTab; set { if (value is 0 or 1) Set(ref resultTab, value); } }
     public bool ShowLocalCompute => Mode == TranslationMode.Offline;
-    public string SourceSummary => "识别文字 · " + Source.Length + " 字";
+    public string SourceSummary => "识别文字 · " + sourceCharacterCount + " 字";
     public string SpeechStatus { get => speechStatus; private set => Set(ref speechStatus, value); }
     public bool Speaking { get => speaking; private set { if (Set(ref speaking, value)) { Notify(nameof(SpeechActionText)); SpeakTranslationCommand.Refresh(); } } }
     public string SpeechActionText => Speaking ? "停止朗读" : "朗读英文";
@@ -241,7 +243,7 @@ public sealed class TextResultViewModel : ObservableObject, IDisposable
     public RelayCommand ToggleOptionsCommand { get; }
     public RelayCommand SpeakTranslationCommand { get; }
     public bool HasLanguageNotes => LanguageNotes.Length > 0;
-    public string Source { get => source; set { if (Set(ref source, value)) { TranslateCommand.Refresh(); CopySourceCommand.Refresh(); Notify(nameof(DirectionHint)); Notify(nameof(SourceSummary)); } } }
+    public string Source { get => source; set { if (Set(ref source, value)) { sourceRevision++; sourceCharacterCount = TextContent.CountCharacters(value); TranslateCommand.Refresh(); CopySourceCommand.Refresh(); Notify(nameof(DirectionHint)); Notify(nameof(SourceSummary)); } } }
     public bool HasTranslation => Translated.Length > 0;
     public bool HasSourceLayout { get => hasSourceLayout; private set => Set(ref hasSourceLayout, value); }
     public string Translated { get => translated; private set { if (Set(ref translated, value)) { CopyTranslationCommand.Refresh(); Notify(nameof(HasTranslation)); } } }
@@ -323,7 +325,9 @@ public sealed class TextResultViewModel : ObservableObject, IDisposable
     }
     private async Task Translate(CancellationToken token)
     {
-        var input = Source; var selectedDirection = TranslationDirection.Resolve(input, Direction);
+        long revision = sourceRevision;
+        var input = HasSourceLayout ? TextContent.WithoutLayoutPadding(Source) : Source;
+        var selectedDirection = TranslationDirection.Resolve(input, Direction);
         var selectedMode = Mode;
         bool online = selectedMode == TranslationMode.Online;
         bool basic = selectedMode == TranslationMode.Basic;
@@ -331,6 +335,7 @@ public sealed class TextResultViewModel : ObservableObject, IDisposable
         var service = basic ? basicTranslator : online ? onlineTranslator : translator;
         bool available = service is not null && await Task.Run(() => service.IsAvailableAsync(token), token);
         token.ThrowIfCancellationRequested();
+        if (!TranslationSourceIsCurrent(revision)) return;
         if (!available)
         {
             if (Translated.Length == 0) ShowTranslation = false;
@@ -364,6 +369,7 @@ public sealed class TextResultViewModel : ObservableObject, IDisposable
             result = new(await Task.Run(() => service!.TranslateAsync(input, selectedDirection, updates, token), token), "", []);
         token.ThrowIfCancellationRequested();
         if (disposed) return;
+        if (!TranslationSourceIsCurrent(revision)) return;
         translatedMode = selectedMode; Notify(nameof(TranslationResultTitle));
         bool firstTranslation = Translated.Length == 0;
         Translated = result.Translation;
@@ -375,6 +381,13 @@ public sealed class TextResultViewModel : ObservableObject, IDisposable
         LanguageNotes = online ? FormatNotes(result) : "";
         CopyStatus = "";
         Status = basic ? "基础查词完成，未收录词语已标明；结果为词义参考。" : online ? "在线翻译完成。" + result.Notice : "离线翻译完成。";
+    }
+    private bool TranslationSourceIsCurrent(long revision)
+    {
+        if (revision == sourceRevision) return true;
+        diagnosticOperation?.Stage("source-changed-result-ignored");
+        Status = "原文已更改，本次旧原文的译文未应用；已有译文保留，请重新翻译。";
+        return false;
     }
     private static string FormatNotes(AnnotatedTranslation result)
     {

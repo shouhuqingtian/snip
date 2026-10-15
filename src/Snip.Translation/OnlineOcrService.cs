@@ -9,8 +9,7 @@ namespace Snip.Translation;
 /// <summary>One explicit vision request. No redirects, retries, local model loading or provider-body errors.</summary>
 public sealed class OnlineOcrService(Func<OnlineTranslationCredentials> credentials, HttpClient? client = null) : IOcrService
 {
-    private static readonly HttpClient Shared = new(new HttpClientHandler { AllowAutoRedirect = false, UseCookies = false }) { Timeout = Timeout.InfiniteTimeSpan };
-    private readonly HttpClient http = client ?? Shared;
+    private readonly HttpClient http = client ?? OnlineResponse.Client;
     public IReadOnlyList<string> Languages => ["zh-Hans-CN", "en-US"];
     public Task<OcrResult> RecognizeAsync(ImagePayload image, CancellationToken token) => RecognizeAsync(image, null, token);
     public async Task<OcrResult> RecognizeAsync(ImagePayload image, string? language, CancellationToken token)
@@ -54,16 +53,7 @@ public sealed class OnlineOcrService(Func<OnlineTranslationCredentials> credenti
                 HttpStatusCode.BadRequest or HttpStatusCode.NotFound => "服务不接受识图请求，请在在线设置中检查视觉模型、API 地址及图片限制。文本模型不能用于 OCR。",
                 _ => "在线识别暂不可用（HTTP " + (int)response.StatusCode + "）；可切换服务或选择本地识别。"
             });
-            if (response.Content.Headers.ContentLength > 1_048_576) throw ResponseError();
-            await using var input = await response.Content.ReadAsStreamAsync(timeout.Token).ConfigureAwait(false);
-            using var output = new MemoryStream(); byte[] buffer = new byte[8192];
-            for (int count; (count = await input.ReadAsync(buffer, timeout.Token).ConfigureAwait(false)) > 0;)
-            {
-                if (output.Length + count > 1_048_576) throw ResponseError();
-                output.Write(buffer, 0, count);
-            }
-            timeout.Token.ThrowIfCancellationRequested();
-            using var document = JsonDocument.Parse(output.ToArray());
+            using var document = await OnlineResponse.ReadAsync(response, timeout.Token, ResponseError).ConfigureAwait(false);
             var root = document.RootElement;
             if (root.ValueKind != JsonValueKind.Object || !root.TryGetProperty("choices", out var choices) || choices.ValueKind != JsonValueKind.Array || choices.GetArrayLength() == 0)
                 throw ResponseError();

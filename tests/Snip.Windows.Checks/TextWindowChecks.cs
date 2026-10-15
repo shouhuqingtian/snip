@@ -160,6 +160,8 @@ internal static class TextWindowChecks
             window.Close(); Console.WriteLine("PASS editor toolbar result survives closing the editor.");
 
             stage = "long translation reading and speech";
+            stage = "text optimization regressions";
+            TextOptimizationChecks.Run(image);
             TextReadingChecks.Run(folder, image);
             diagnostics.FlushAsync().GetAwaiter().GetResult();
             string log = File.ReadAllText(Path.Combine(folder, "events.jsonl"));
