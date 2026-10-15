@@ -57,7 +57,8 @@ internal static class InteractionPerformanceCheck
             int commandChanges=0;vm.UndoCommand.CanExecuteChanged+=(_,_)=>commandChanges++;
             vm.BeginPointer(new(1,1),false);window.UpdateLayout();int initialChanges=commandChanges;
             for(int i=1;i<=1000;i++)vm.MovePointer(StrokePoint(i));
-            Require(canvas.IsMeasureValid && canvas.IsArrangeValid && commandChanges==initialChanges,"Pointer updates invalidated text-free layout or refreshed unchanged commands.");
+            // WPF InvalidateVisual normally invalidates Arrange; only the unnecessary Measure must stay valid.
+            Require(canvas.IsMeasureValid && commandChanges==initialChanges,"Pointer updates invalidated text-free measurement or refreshed unchanged commands.");
             vm.EndPointer(StrokePoint(1000));var first=vm.BaseAnnotations.Single();var points=first.Points.ToArray();
             Require(first.Points.Count==1001 && first.Points.SequenceEqual(Enumerable.Range(0,1001).Select(StrokePoint)),"Pen commit changed or dropped sampled points.");
             vm.BeginPointer(new(20,20),false);vm.MovePointer(new(30,30));vm.EndPointer(new(30,30));
