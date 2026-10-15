@@ -183,9 +183,11 @@ internal static class TextWindowChecks
     internal static void PumpUntil(Func<bool> done, TimeSpan timeout)
     {
         var frame = new DispatcherFrame(); var clock = Stopwatch.StartNew();
+        Exception? failure=null;
         var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(25) };
-        timer.Tick += (_, _) => { if (done() || clock.Elapsed > timeout) frame.Continue = false; };
-        timer.Start(); Dispatcher.PushFrame(frame); timer.Stop();
+        timer.Tick += (_, _) => { try { if (done() || clock.Elapsed > timeout) frame.Continue = false; } catch(Exception error) { failure=error; frame.Continue=false; } };
+        timer.Start(); try { Dispatcher.PushFrame(frame); } finally { timer.Stop(); }
+        if(failure is not null)System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(failure).Throw();
         if (!done()) throw new TimeoutException("Text UI workflow did not complete within the deadline.");
     }
     internal static IEnumerable<T> Descendants<T>(DependencyObject root) where T : DependencyObject

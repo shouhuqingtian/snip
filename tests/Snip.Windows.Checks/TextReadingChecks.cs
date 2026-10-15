@@ -20,6 +20,9 @@ internal static class TextReadingChecks
         var speech=new Speech();var clipboard=new Clipboard();var translation=new Translation();
         using var vm=new TextResultViewModel(image,new TextWindowChecks.FakeOcr(),new ModelStore(Path.Combine(folder,"reading-no-models")),translation,journal,clipboard,translation,
             initialPreferences:new(TranslationMode.Online),speech:speech);
+        var expected=new InvalidOperationException("Expected polling assertion");
+        try { TextWindowChecks.PumpUntil(()=>throw expected,TimeSpan.FromSeconds(1));throw new InvalidOperationException("Polling exception was swallowed."); }
+        catch(InvalidOperationException error) when(ReferenceEquals(error,expected)) { }
         var window=new TextResultWindow(vm);window.Show();
         TextWindowChecks.PumpUntil(()=>!vm.Busy && vm.Source.Length>0,TimeSpan.FromSeconds(5));
         vm.Source="中文长文示例";

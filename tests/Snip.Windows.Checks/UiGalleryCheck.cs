@@ -141,7 +141,10 @@ internal static class UiGalleryCheck
             using var readingVm=new TextResultViewModel(image,new GalleryOcr(true),new ModelStore("unused-models"),new GalleryTranslation(),onlineTranslator:new GalleryLong(),initialPreferences:new(TranslationMode.Online)){AutoTranslate=true};
             var initialized=readingVm.InitializeAsync();TextWindowChecks.PumpUntil(()=>initialized.IsCompleted,TimeSpan.FromSeconds(5));initialized.GetAwaiter().GetResult();
             Capture(new TranslationReadingWindow(readingVm),"22-reading-view");
-            Console.WriteLine("PASS 22 actual UI previews including automatic translation with IPA/POS/pinyin at normal and compact sizes; three browser menu actions; no share target invoked or user screenshot used."); return 0;
+            var expandedVm=new TextResultViewModel(image,new GalleryOcr(true),new ModelStore("unused-models"),new GalleryTranslation(),onlineTranslator:new GalleryLong(),initialPreferences:new(TranslationMode.Online)){AutoTranslate=true};
+            var expanded=new TextResultWindow(expandedVm);expanded.Width=expanded.MinWidth;expanded.Height=expanded.MinHeight;
+            Capture(expanded,"23-compact-expanded-source",()=>{TextWindowChecks.PumpUntil(()=>!expandedVm.Busy && expandedVm.Translated.Length>0,TimeSpan.FromSeconds(5));expandedVm.SourceExpanded=true;});
+            Console.WriteLine("PASS 23 actual UI previews including automatic translation with IPA/POS/pinyin at normal and compact sizes; three browser menu actions; no share target invoked or user screenshot used."); return 0;
         }
         catch (Exception error)
         {

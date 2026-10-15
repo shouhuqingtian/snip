@@ -23,6 +23,7 @@ internal static class WindowPlacementChecks
         Exception? unhandled=null;
         DispatcherUnhandledExceptionEventHandler errorHandler=(_,args)=>{unhandled=args.Exception;args.Handled=true;};
         app.DispatcherUnhandledException+=errorHandler;
+        using var watchdog=new System.Threading.Timer(_=>{Console.Error.WriteLine("FAIL window placement check deadline.");Environment.Exit(1);},null,TimeSpan.FromSeconds(40),Timeout.InfiniteTimeSpan);
         try
         {
             var window=Show(); var handle=new WindowInteropHelper(window).Handle;
@@ -39,15 +40,21 @@ internal static class WindowPlacementChecks
 
             window.Close();
             window=Show(compact:true);window.UpdateLayout();
-            var scroll=(ScrollViewer)window.FindName("WorkspaceScroll");
-            TextWindowChecks.PumpUntil(()=>scroll.ScrollableHeight>0,TimeSpan.FromSeconds(3));
+            var vmCompact=(TextResultViewModel)window.DataContext;
+            TextWindowChecks.PumpUntil(()=>!vmCompact.Busy && vmCompact.Translated.Length>0,TimeSpan.FromSeconds(5));window.UpdateLayout();
+            Require(window.FindName("WorkspaceScroll") is null,"Whole-page scrolling returned to the translation layout.");
             var close=(Button)window.FindName("CloseResultButton");
             var content=(FrameworkElement)window.Content;
             var closeBounds=close.TransformToAncestor(content).TransformBounds(new Rect(0,0,close.ActualWidth,close.ActualHeight));
             Require(closeBounds.Top>=0 && closeBounds.Bottom<=content.ActualHeight,"Close button was clipped in a low-height window.");
-            scroll.ScrollToBottom();window.UpdateLayout();Require(scroll.VerticalOffset>0,"Compact content cannot scroll.");
-            Require(((TextBox)window.FindName("RecognizedText")).ActualHeight>=70,"Compact text area became unreadable.");
-            Console.WriteLine("PASS low-height result keeps close control accessible and scrolls remaining readable content.");
+            vmCompact.SourceExpanded=true;window.UpdateLayout();
+            foreach(var name in new[]{"RecognizedText","TranslatedText"})
+            {
+                var field=(TextBox)window.FindName(name);
+                var bounds=field.TransformToAncestor(content).TransformBounds(new Rect(0,0,field.ActualWidth,field.ActualHeight));
+                Require(field.ActualHeight>=70 && bounds.Bottom<=content.ActualHeight,"Compact source/translation is clipped: "+name);
+            }
+            Console.WriteLine("PASS low-height result keeps close, editable source and expanding translation accessible without whole-page scrolling.");
 
             var source=(TextBox)window.FindName("RecognizedText");source.Focus();
             var escape=new KeyEventArgs(Keyboard.PrimaryDevice,PresentationSource.FromVisual(source)!,0,Key.Escape) { RoutedEvent=Keyboard.PreviewKeyDownEvent };
@@ -75,7 +82,7 @@ internal static class WindowPlacementChecks
     {
         var image=BitmapSource.Create(80,60,96,96,PixelFormats.Bgra32,null,Enumerable.Repeat((byte)255,80*60*4).ToArray(),320);image.Freeze();
         var window=new TextResultWindow(new(image,ocr ?? new TextWindowChecks.FakeOcr(),new ModelStore("unused-models"),new TextWindowChecks.FakeTranslation()){ AutoTranslate=true });
-        if(compact){window.MinWidth=420;window.MinHeight=280;window.Width=540;window.Height=420;}
+        if(compact){window.Width=window.MinWidth;window.Height=window.MinHeight;}
         window.Show();window.UpdateLayout();return window;
     }
     private static NativeRect WorkArea(IntPtr handle)
