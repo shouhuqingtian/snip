@@ -27,6 +27,12 @@ internal static class TextOptimizationChecks
             vm.CopySourceCommand.Execute(null);
             TextWindowChecks.PumpUntil(() => vm.CopyStatus.Contains("已复制") && vm.CopySourceCommand.CanExecute(null), TimeSpan.FromSeconds(3));
             Require(clipboard.Text == layout, "Translation normalization changed copied source layout.");
+            var openSource = (System.Windows.Controls.Button)window.FindName("OpenSourceReadingButton");
+            openSource.RaiseEvent(new System.Windows.RoutedEventArgs(System.Windows.Controls.Button.ClickEvent));
+            var reader = window.OwnedWindows.OfType<SourceReadingWindow>().Single(); reader.UpdateLayout();
+            var sourceBox = (System.Windows.Controls.TextBox)reader.FindName("ReadingSource");
+            Require(sourceBox.Text == layout && sourceBox.TextWrapping == System.Windows.TextWrapping.NoWrap && sourceBox.HorizontalScrollBarVisibility == System.Windows.Controls.ScrollBarVisibility.Auto && sourceBox.FontFamily.Source.Contains("Consolas"), "Source reader changed OCR alignment or omitted horizontal navigation.");
+            reader.Close();
 
             translator.Pending = new(TaskCreationOptions.RunContinuationsAsynchronously);
             var pending = vm.TranslateAsync();

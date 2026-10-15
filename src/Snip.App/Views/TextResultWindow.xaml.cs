@@ -26,6 +26,12 @@ public partial class TextResultWindow : Window
     }
     private void CloseClick(object sender, RoutedEventArgs args) => Close();
     private void RecoverClick(object sender, RoutedEventArgs args) => WindowWorkAreaService.Recover(this);
+    private void OpenSourceReadingClick(object sender, RoutedEventArgs args)
+    {
+        var existing = OwnedWindows.OfType<SourceReadingWindow>().FirstOrDefault();
+        if (existing is not null) { existing.Show(); existing.Activate(); return; }
+        new SourceReadingWindow((TextResultViewModel)DataContext) { Owner = this }.Show();
+    }
     private void OpenReadingClick(object sender, RoutedEventArgs args)
     {
         var existing = OwnedWindows.OfType<TranslationReadingWindow>().FirstOrDefault();
