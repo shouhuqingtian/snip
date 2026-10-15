@@ -50,7 +50,7 @@ internal static class RenderPerformanceCheck
             File.WriteAllText(Path.Combine(folder, "editor-performance.json"), JsonSerializer.Serialize(report, new JsonSerializerOptions { WriteIndented = true }));
             Console.WriteLine(JsonSerializer.Serialize(report));
             Console.WriteLine("PASS 4K independent-process performance comparison completed; timings are evidence, not machine-dependent pass thresholds.");
-            return 0;
+            return InteractionPerformanceCheck.Run();
         }
         catch (Exception error) { Console.Error.WriteLine(error); return 1; }
     }

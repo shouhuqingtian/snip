@@ -53,7 +53,6 @@ public sealed class DesktopCaptureService : IDesktopCaptureService
 
     public DesktopFrame Capture()
     {
-        NativeMethods.DwmFlush();
         var displays = GetDisplays();
         double x = displays.Min(d => d.Bounds.X), y = displays.Min(d => d.Bounds.Y);
         var bounds = new PixelRect(x, y, displays.Max(d => d.Bounds.Right) - x, displays.Max(d => d.Bounds.Bottom) - y);

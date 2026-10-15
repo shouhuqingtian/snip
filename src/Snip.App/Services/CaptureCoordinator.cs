@@ -24,17 +24,12 @@ public sealed class CaptureCoordinator(IDesktopCaptureService capture, Annotatio
             foreach (var window in visible) window.Hide();
             await Task.Delay(160); // Let the compositor present the desktop before capturing.
             if (disposed) return;
-            var frame = capture.Capture();
-            operation?.Stage("desktop-captured", new { frame.Image.PixelWidth, frame.Image.PixelHeight, DisplayCount = frame.Displays.Count });
-            var targets = DesktopWindows.Snapshot();
-            using var active = new SelectionSession(frame, capture, renderer, export, targets);
-            session = active; active.Show();
-            var selection = await active.Completion;
+            // The helper releases overlays and the full desktop before any optional long-running workflow.
+            var (selection, cancellationReason) = await SelectAsync(operation);
             operation?.Stage("selection-ended", new { Action = selection?.Action.ToString(), Width = selection?.Region.Width, Height = selection?.Region.Height });
-            session = null;
             if (disposed) return;
             Restore(visible);
-            if (active.CancellationReason is { } reason) MessageBox.Show(reason, "自用截图", MessageBoxButton.OK, MessageBoxImage.Information);
+            if (cancellationReason is { } reason) MessageBox.Show(reason, "自用截图", MessageBoxButton.OK, MessageBoxImage.Information);
             if (selection is not null) await features.HandleAsync(selection);
             else DesktopWindows.Activate(foreground);
             if (selection is null) operation?.Cancel("selection-cancelled"); else operation?.Complete();
@@ -45,6 +40,21 @@ public sealed class CaptureCoordinator(IDesktopCaptureService capture, Annotatio
             session?.Dispose(); session = null; busy = false;
             if (!disposed) Restore(visible);
         }
+    }
+    private async Task<(SelectionResult? Selection, string? Reason)> SelectAsync(DiagnosticOperation? operation)
+    {
+        var frame = await Task.Run(capture.Capture);
+        if (disposed) return (null, null);
+        operation?.Stage("desktop-captured", new { frame.Image.PixelWidth, frame.Image.PixelHeight, DisplayCount = frame.Displays.Count });
+        using var active = new SelectionSession(frame, capture, renderer, export, DesktopWindows.Snapshot());
+        session = active;
+        try
+        {
+            active.Show();
+            var selection = await active.Completion;
+            return (selection, active.CancellationReason);
+        }
+        finally { session = null; }
     }
     private static void Restore(IEnumerable<Window> windows)
     {

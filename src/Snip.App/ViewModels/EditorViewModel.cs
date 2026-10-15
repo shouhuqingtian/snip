@@ -20,6 +20,8 @@ public sealed class EditorViewModel : ObservableObject
     private PixelPoint pointerStart;
     private Annotation? gestureOriginal;
     private Annotation? preview;
+    // Only the active, uncommitted stroke is mutable. EditHistory freezes its points on commit.
+    private List<PixelPoint>? penPoints;
     private bool moving, resizing, exporting, filled;
     private SelectionHandle resizeHandle;
     private PixelRect resizeBounds;
@@ -47,7 +49,7 @@ public sealed class EditorViewModel : ObservableObject
     public int PixelHeight => Image.PixelHeight;
     public string SizeText => $"{PixelWidth} × {PixelHeight} 像素";
     public int BaseRevision { get; private set; }
-    public IReadOnlyList<Annotation> BaseAnnotations => history.Current.Where(a =>
+    public IReadOnlyList<Annotation> BaseAnnotations => !moving && !resizing && InlineText is null ? history.Current : history.Current.Where(a =>
         (!(moving || resizing) || gestureOriginal is null || a.Id != gestureOriginal.Id) && a.Id != InlineText?.Id).ToArray();
     public Annotation? Preview => preview;
     public Annotation? Selected => preview?.Id == selectedId ? preview : history.Current.FirstOrDefault(a => a.Id == selectedId);
@@ -118,6 +120,11 @@ public sealed class EditorViewModel : ObservableObject
             Changed(true); return false;
         }
         gestureOriginal = Create(point); preview = gestureOriginal;
+        if (Tool == AnnotationTool.Pen)
+        {
+            penPoints = new List<PixelPoint>(256) { point };
+            preview = preview with { Points = penPoints.AsReadOnly() };
+        }
         Changed(false); return true;
     }
 
@@ -144,10 +151,11 @@ public sealed class EditorViewModel : ObservableObject
         {
             var points = preview!.Points;
             if (Math.Abs(point.X - points[^1].X) + Math.Abs(point.Y - points[^1].Y) < 0.5) return;
-            preview = preview with { End = point, Points = points.Append(point).ToArray() };
+            penPoints!.Add(point);
+            preview = preview with { End = point };
         }
         else preview = gestureOriginal with { End = point };
-        Changed(false);
+        Changed(false, refreshCommands: false);
     }
 
     public void EndPointer(PixelPoint point)
@@ -162,14 +170,14 @@ public sealed class EditorViewModel : ObservableObject
         }
         else if (final.Tool == AnnotationTool.Pen || (final.Tool == AnnotationTool.Arrow ? final.Start != final.End : final.Bounds.Width >= 1 && final.Bounds.Height >= 1))
             history.Commit(history.Current.Append(final));
-        gestureOriginal = preview = null; moving = resizing = false;
+        gestureOriginal = preview = null; penPoints = null; moving = resizing = false;
         Changed(true);
     }
 
     public void CancelGesture()
     {
         if (gestureOriginal is null) return;
-        gestureOriginal = preview = null; moving = resizing = false; Changed(true);
+        gestureOriginal = preview = null; penPoints = null; moving = resizing = false; Changed(true);
     }
 
     private void EditText(Annotation annotation)
@@ -272,10 +280,11 @@ public sealed class EditorViewModel : ObservableObject
         history.Commit(history.Current.Append(a)); selectedId = a.Id; Tool = AnnotationTool.Select; selectedId = a.Id; Changed(true);
     }
 
-    private void Changed(bool baseChanged)
+    private void Changed(bool baseChanged, bool refreshCommands = true)
     {
         if (baseChanged) BaseRevision++;
-        RefreshCommands(); VisualChanged?.Invoke(this, EventArgs.Empty);
+        if (refreshCommands) RefreshCommands();
+        VisualChanged?.Invoke(this, EventArgs.Empty);
     }
     private void RefreshCommands()
     {

@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.IO;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
@@ -13,6 +15,9 @@ namespace Snip.Infrastructure;
 /// <summary>Shared preview/export renderer. One drawing unit equals one output pixel.</summary>
 public sealed class AnnotationRenderer
 {
+    // Frozen decoded pixels are shared across previews/exports without rooting closed documents.
+    private static readonly ConditionalWeakTable<byte[], DecodedSticker> Stickers = new();
+    private sealed record DecodedSticker(int Offset, int Count, BitmapSource Image);
     private static Point Point(PixelPoint p) => new(p.X, p.Y);
     public static Rect Rect(PixelRect r) => new(r.X, r.Y, r.Width, r.Height);
     private static Brush ColorBrush(string color) => new SolidColorBrush((Color)ColorConverter.ConvertFromString(color));
@@ -59,13 +64,15 @@ public sealed class AnnotationRenderer
         if (width > 4096 || height > 4096)
         {
             var output = new WriteableBitmap(width, height, 96, 96, PixelFormats.Pbgra32, null);
+            // One bounded scratch buffer per export, rather than a new large array for every tile.
+            var buffer = new byte[checked(Math.Min(2048, width) * Math.Min(2048, height) * 4)];
             for (int y = 0; y < height; y += 2048) for (int x = 0; x < width; x += 2048)
             {
                 int w = Math.Min(2048, width - x), h = Math.Min(2048, height - y);
                 var tile = new DrawingVisual();
                 using (var dc = tile.RenderOpen()) { dc.PushTransform(new TranslateTransform(-x - originX, -y - originY)); dc.DrawDrawing(drawing); dc.Pop(); }
                 var targetTile = new RenderTargetBitmap(w, h, 96, 96, PixelFormats.Pbgra32); targetTile.Render(tile);
-                var buffer = new byte[w * h * 4]; targetTile.CopyPixels(buffer, w * 4, 0);
+                targetTile.CopyPixels(buffer, w * 4, 0);
                 output.WritePixels(new Int32Rect(x, y, w, h), buffer, w * 4, 0);
             }
             output.Freeze(); return output;
@@ -152,12 +159,25 @@ public sealed class AnnotationRenderer
             case AnnotationTool.Sticker:
                 if (!annotation.StickerPng.IsEmpty)
                 {
-                    using var stream = new MemoryStream(annotation.StickerPng.ToArray());
-                    var image = new BitmapImage(); image.BeginInit(); image.CacheOption = BitmapCacheOption.OnLoad; image.StreamSource = stream; image.EndInit(); image.Freeze();
-                    context.DrawImage(image, Rect(annotation.Bounds));
+                    context.DrawImage(StickerImage(annotation.StickerPng), Rect(annotation.Bounds));
                 }
                 break;
         }
+    }
+
+    private static BitmapSource StickerImage(ReadOnlyMemory<byte> png)
+    {
+        if (!MemoryMarshal.TryGetArray(png, out ArraySegment<byte> bytes)) bytes = new(png.ToArray());
+        var decoded = Stickers.GetValue(bytes.Array!, _ => new(bytes.Offset, bytes.Count, DecodeSticker(bytes)));
+        // A caller may pack different PNGs into different slices of one array. Never reuse the wrong slice.
+        return decoded.Offset == bytes.Offset && decoded.Count == bytes.Count ? decoded.Image : DecodeSticker(bytes);
+    }
+
+    private static BitmapSource DecodeSticker(ArraySegment<byte> bytes)
+    {
+        using var stream = new MemoryStream(bytes.Array!, bytes.Offset, bytes.Count, writable: false);
+        var image = new BitmapImage(); image.BeginInit(); image.CacheOption = BitmapCacheOption.OnLoad;
+        image.StreamSource = stream; image.EndInit(); image.Freeze(); return image;
     }
 
     private static FormattedText FormatText(Annotation a) => new(a.Text, CultureInfo.GetCultureInfo("zh-CN"), FlowDirection.LeftToRight,

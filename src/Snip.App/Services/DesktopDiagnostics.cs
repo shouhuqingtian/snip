@@ -12,6 +12,17 @@ public static class DesktopDiagnostics
     [DllImport("shcore.dll")] private static extern int GetDpiForMonitor(IntPtr monitor, int type, out uint x, out uint y);
     [StructLayout(LayoutKind.Sequential)] private struct NativePoint { public int X, Y; }
     public static string Version => typeof(DesktopDiagnostics).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "unknown";
+    public static object ResourceUsage()
+    {
+        try
+        {
+            using var process = Process.GetCurrentProcess(); process.Refresh();
+            return new { WorkingSetBytes = process.WorkingSet64, PrivateMemoryBytes = process.PrivateMemorySize64,
+                ManagedHeapBytes = GC.GetTotalMemory(false), ProcessorSeconds = process.TotalProcessorTime.TotalSeconds,
+                Gen0Collections = GC.CollectionCount(0), Gen1Collections = GC.CollectionCount(1), Gen2Collections = GC.CollectionCount(2) };
+        }
+        catch { return new { Unavailable = true }; }
+    }
     public static object EnvironmentInfo(IDesktopCaptureService capture)
     {
         object? displays = null; string? displayError = null;
@@ -33,6 +44,6 @@ public static class DesktopDiagnostics
         }
         return new { AppVersion = Version, OperatingSystem = RuntimeInformation.OSDescription, Runtime = RuntimeInformation.FrameworkDescription,
             Architecture = RuntimeInformation.ProcessArchitecture.ToString(), Environment.ProcessorCount,
-            Displays = displays, DisplayError = displayError, ChromeVersion = Browser("Google/Chrome", "chrome.exe"), EdgeVersion = Browser("Microsoft/Edge", "msedge.exe") };
+            Displays = displays, DisplayError = displayError, Resources = ResourceUsage(), ChromeVersion = Browser("Google/Chrome", "chrome.exe"), EdgeVersion = Browser("Microsoft/Edge", "msedge.exe") };
     }
 }

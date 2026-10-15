@@ -55,6 +55,8 @@ public sealed class EditorCanvas : FrameworkElement
     private void SyncText()
     {
         if (changingText) return;
+        // Pointer motion changes only the drawing, not layout, unless an inline editor enters/exits.
+        if (textBox is null && vm?.InlineText is null) return;
         changingText = true;
         try
         {
