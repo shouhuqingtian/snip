@@ -37,7 +37,7 @@ try {
         $validationTarget = Join-Path $portable 'validation'
         if (Test-Path $validationTarget) { Remove-Item $validationTarget -Recurse -Force }
         if (Test-Path (Join-Path $artifactRoot 'validation')) { Copy-Item (Join-Path $artifactRoot 'validation') $validationTarget -Recurse -Force }
-        $zipName = if ($Channel -eq 'Preview') { 'self-snip-preview-win-x64.zip' } else { "自用截图-$version-win-x64.zip" }
+        $zipName = if ($Channel -eq 'Preview') { 'self-snip-preview-win-x64.zip' } else { "self-snip-$version-win-x64.zip" }
         $payload = @('Snip.exe','build-info.json','使用说明.md','THIRD-PARTY-NOTICES.txt','licenses') | ForEach-Object { Join-Path $portable $_ }
         if (Test-Path (Join-Path $portable 'validation')) { $payload += Join-Path $portable 'validation' }
         Compress-Archive -Path $payload -DestinationPath (Join-Path $artifactRoot $zipName) -Force
@@ -69,12 +69,12 @@ try {
         & $MakensisPath '-INPUTCHARSET' 'UTF8' "-DAPP_VERSION=$version" "-DAPP_VERSION_QUAD=$version.0" (Join-Path $PSScriptRoot 'Snip.nsi')
         if ($LASTEXITCODE -ne 0) { throw '安装包编译失败' }
     }
-    $zipName = if ($Channel -eq 'Preview') { 'self-snip-preview-win-x64.zip' } else { "自用截图-$version-win-x64.zip" }
+    $zipName = if ($Channel -eq 'Preview') { 'self-snip-preview-win-x64.zip' } else { "self-snip-$version-win-x64.zip" }
     $deliverables = @((Join-Path $artifactRoot $zipName), (Join-Path $artifactRoot 'self-snip-source.zip'))
     if (Test-Path (Join-Path $artifactRoot 'ui-previews.zip')) { $deliverables += Join-Path $artifactRoot 'ui-previews.zip' }
     if ($Installer) { $deliverables += Join-Path $artifactRoot "installer/SelfSnip-$version-Setup-x64.exe" }
     $deliverables | Where-Object { Test-Path $_ } | ForEach-Object {
-        $relative = [System.IO.Path]::GetRelativePath($artifactRoot, $_).Replace('\','/')
+        $relative = [System.IO.Path]::GetFileName($_)
         '{0}  {1}' -f (Get-FileHash $_ -Algorithm SHA256).Hash.ToLower(), $relative
     } | Set-Content (Join-Path $artifactRoot 'SHA256SUMS.txt') -Encoding utf8
 } finally { Pop-Location }

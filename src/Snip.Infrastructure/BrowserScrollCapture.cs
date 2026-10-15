@@ -82,8 +82,10 @@ public sealed class BrowserScrollCapture(IDesktopCaptureService capture)
         }
         // ScrollPattern is optional and used only for exact position restoration.
         // Default Chrome commonly exposes no ScrollPattern; wheel capture must still work.
+        // Manual mode tracks real stitched pixel offsets and deliberately keeps the final page
+        // position. Do not initialize Chrome's accessibility tree before accepting its first drag.
         (ScrollPattern Pattern, double Position, double ViewportHeight)? state = null;
-        try { state = await Task.Run(() => FindScroll(region), token).WaitAsync(TimeSpan.FromSeconds(1), token).ConfigureAwait(false); }
+        try { if (mode != BrowserCaptureMode.ManualScroll) state = await Task.Run(() => FindScroll(region), token).WaitAsync(TimeSpan.FromSeconds(1), token).ConfigureAwait(false); }
         catch (Exception e) when (e is not OperationCanceledException) { }
         if (state is { } measured)
         {
@@ -93,7 +95,7 @@ public sealed class BrowserScrollCapture(IDesktopCaptureService capture)
             state = (measured.Pattern, measured.Position, height);
         }
         var source = new WheelSource(capture, region, target.Handle, target.Bounds, state, mode == BrowserCaptureMode.ManualScroll, previewVisibility);
-        diagnostics?.Stage("scroll-interface", new { PositionAvailable = state is not null });
+        diagnostics?.Stage("scroll-interface", new { PositionAvailable = state is not null, OptionalQuerySkipped = mode == BrowserCaptureMode.ManualScroll });
         GetPhysicalCursorPos(out var originalCursor);
         bool completed = false;
         try

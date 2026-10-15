@@ -108,8 +108,10 @@ internal static class ChromeCaptureCheck
                 var renderer = new AnnotationRenderer(); using var pins = new PinManager(export);
                 var features = new FeatureHub(renderer, export, desktop, pins, diagnostics);
                 EditorViewModel Original() => new(desktop.CaptureRegion(region), renderer, export, new EditorDialogs(() => null));
+                var entryClock = Stopwatch.StartNew();
                 var task = features.HandleAsync(new(Original(), region, SelectionAction.Scroll, BrowserCaptureMode.ManualScroll));
                 TextWindowChecks.PumpUntil(() => task.IsCompleted || app.Windows.OfType<ManualScrollCaptureWindow>().Any(w => ((ManualScrollCaptureViewModel)w.DataContext).Ready), TimeSpan.FromSeconds(12));
+                double readyMs = entryClock.Elapsed.TotalMilliseconds;
                 if (task.IsCompleted) { task.GetAwaiter().GetResult(); throw new InvalidOperationException("Drag capture returned before mouse input."); }
                 var toolbar = app.Windows.OfType<ManualScrollCaptureWindow>().Single();
                 ((Border)toolbar.Content).Background = Brushes.Magenta; toolbar.UpdateLayout();
@@ -125,6 +127,23 @@ internal static class ChromeCaptureCheck
                 Send([new() { Type = 0, Data = new() { Mouse = new() { Flags = 2 } } }]);
                 var vm = (ManualScrollCaptureViewModel)toolbar.DataContext;
                 TextWindowChecks.PumpUntil(() => vm.Drag!.Started, TimeSpan.FromSeconds(3));
+                int pulses = 0; double maxGap = 0; var pulseClock = Stopwatch.StartNew();
+                var pulse = new DispatcherTimer(DispatcherPriority.Background) { Interval = TimeSpan.FromMilliseconds(20) };
+                pulse.Tick += (_, _) => { pulses++; maxGap = Math.Max(maxGap, pulseClock.Elapsed.TotalMilliseconds); pulseClock.Restart(); };
+                var moveClock = Stopwatch.StartNew(); pulse.Start();
+                try
+                {
+                    var moving = Task.Run(async () =>
+                    {
+                        for (int i = 0; i < 80; i++) { Move(new(startPoint.X + 40 + i % 120, startPoint.Y + 40 + i % 40)); await Task.Delay(5); }
+                    });
+                    TextWindowChecks.PumpUntil(() => moving.IsCompleted, TimeSpan.FromSeconds(6)); moving.GetAwaiter().GetResult();
+                }
+                finally { pulse.Stop(); maxGap = Math.Max(maxGap, pulseClock.Elapsed.TotalMilliseconds); }
+                if (pulses == 0) throw new InvalidOperationException("Manual native pointer input starved the UI dispatcher.");
+                var responsiveness = new { ReadyMilliseconds = Math.Round(readyMs, 2), NativeMoves = 80, MoveMilliseconds = Math.Round(moveClock.Elapsed.TotalMilliseconds, 2), UiPulses = pulses, MaxUiPulseGapMilliseconds = Math.Round(maxGap, 2) };
+                Directory.CreateDirectory("artifacts/validation"); File.WriteAllText("artifacts/validation/manual-chrome-responsiveness.json", System.Text.Json.JsonSerializer.Serialize(responsiveness, new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
+                Console.WriteLine("PASS real manual Chrome entry and 80 native pointer moves with responsive dispatcher: " + System.Text.Json.JsonSerializer.Serialize(responsiveness));
                 Move(edgePoint);
                 TextWindowChecks.PumpUntil(() => vm.Drag!.AtLowerEdge, TimeSpan.FromSeconds(3));
                 Console.WriteLine("PASS native drag down and move reach lower edge before scrolling.");

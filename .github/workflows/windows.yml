@@ -246,7 +246,7 @@ jobs:
           choco install nsis --no-progress --yes
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $version = ([xml](Get-Content Directory.Build.props -Raw)).Project.PropertyGroup.Version
-          Expand-Archive "artifacts/自用截图-$version-win-x64.zip" 'artifacts/portable/win-x64' -Force
+          Expand-Archive "artifacts/self-snip-$version-win-x64.zip" 'artifacts/portable/win-x64' -Force
           ./packaging/Publish.ps1 -ReusePortable -Installer -Channel Stable
       - name: Verify install, sheep icons, installed EXE and uninstall on Windows
         if: startsWith(github.ref, 'refs/tags/v')

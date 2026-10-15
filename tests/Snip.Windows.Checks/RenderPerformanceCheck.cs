@@ -23,6 +23,7 @@ internal static class RenderPerformanceCheck
         _ = Application.Current ?? new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
         try
         {
+            if (ManualPreviewChecks.Run() != 0) throw new InvalidOperationException("Manual capture preview performance failed.");
             if (EditorZoomChecks.Run() != 0) throw new InvalidOperationException("Editor fit-width workflow failed.");
             var renderer = new AnnotationRenderer();
             var image = Image(320, 240);

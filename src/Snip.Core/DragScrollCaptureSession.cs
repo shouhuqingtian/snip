@@ -27,7 +27,19 @@ public sealed class DragCaptureControl : IDisposable
         }
         Wake(); return true;
     }
-    public void Move(PixelPoint point) { lock (gate) { if (!dragging) return; pointer = Clamp(point); } Wake(); }
+    public void Move(PixelPoint point)
+    {
+        bool edgeChanged;
+        lock (gate)
+        {
+            if (!dragging) return;
+            bool atEdge = pointer.Y >= height - 24;
+            pointer = Clamp(point); edgeChanged = atEdge != (pointer.Y >= height - 24);
+        }
+        // Position is always current, but only an edge transition affects the capture loop.
+        // Hundreds of ordinary pointer events must not enqueue progress/UI work.
+        if (edgeChanged) Wake();
+    }
     public void Release(PixelPoint point) { lock (gate) { if (!dragging) return; pointer = Clamp(point); dragging = false; finished = true; } Wake(); }
     public void RequestFinish() { lock (gate) { if (!started) return; dragging = false; finished = true; } Wake(); }
     public void Advance(int pixels) { lock (gate) offset = checked(offset + pixels); }
@@ -97,12 +109,9 @@ public sealed class DragScrollCaptureSession
         token.ThrowIfCancellationRequested();
         var selected = control.Selection.Intersect(new(0, 0, initial.Width, frames.Height)).RoundOut();
         if (selected.IsEmpty) throw new InvalidOperationException("选区太小，请按住左键拖出区域再松开。");
-        var whole = frames.Finish();
-        int width = (int)selected.Width, height = (int)selected.Height, stride = width * 4;
-        var bytes = new byte[checked(stride * height)];
-        for (int row = 0; row < height; row++)
-            Buffer.BlockCopy(whole.Bgra, ((int)selected.Y + row) * whole.Width * 4 + (int)selected.X * 4, bytes, row * stride, stride);
+        var output = frames.Finish(selected);
+        int width = output.Width, height = output.Height;
         diagnostics?.Stage("drag-selection-cropped", new { width, height });
-        return new(width, height, bytes);
+        return output;
     }
 }

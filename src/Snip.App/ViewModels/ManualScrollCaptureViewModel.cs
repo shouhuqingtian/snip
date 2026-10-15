@@ -27,4 +27,11 @@ public sealed class ManualScrollCaptureViewModel : ObservableObject
     public RelayCommand CancelCommand { get; }
     public void Update(ManualCaptureProgress value)
     { Frames = value.Frames; Height = value.Height; Status = value.Status; Ready = true; CanFinish = value.CanFinish; }
+    public void RefreshSelection()
+    {
+        if (!Ready || Drag?.Started != true) return;
+        var selection = Drag.Selection;
+        Status = $"已选 {selection.Width:0}×{selection.Height:0} 像素 · 松开鼠标完成";
+        CanFinish = !selection.IsEmpty;
+    }
 }

@@ -1,7 +1,6 @@
 using System.ComponentModel;
 using System.Runtime.InteropServices;
 using System.Windows;
-using System.Windows.Controls;
 using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Threading;
@@ -28,17 +27,18 @@ public sealed class ManualScrollCaptureController : IDisposable
     [DllImport("user32.dll")] private static extern IntPtr MonitorFromPoint(Point point, uint flags);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern bool GetMonitorInfo(IntPtr monitor, ref MonitorInfo info);
     [DllImport("user32.dll", SetLastError = true)] private static extern bool SetWindowPos(IntPtr hwnd, IntPtr after, int x, int y, int width, int height, uint flags);
-    [DllImport("user32.dll", EntryPoint = "GetWindowLongPtrW")] private static extern IntPtr GetStyle(IntPtr hwnd, int index);
-    [DllImport("user32.dll", EntryPoint = "SetWindowLongPtrW")] private static extern IntPtr SetStyle(IntPtr hwnd, int index, IntPtr style);
     private readonly Hook mouse, keyboard;
     private readonly Action cancel;
     private readonly DispatcherTimer focus = new() { Interval = TimeSpan.FromMilliseconds(350) };
+    private readonly DispatcherTimer refresh = new(DispatcherPriority.Background) { Interval = TimeSpan.FromMilliseconds(33) };
     private IntPtr mouseHook, keyHook, browser;
     private ManualScrollCaptureWindow? window;
-    private Window? outline;
-    private Canvas? canvas;
-    private Border? selection;
+    private CaptureOutline? outline;
+    private int borderThickness = 2;
+    private bool previewVisible = true;
     private bool disposed;
+    public int PreviewUpdates => outline?.UpdateCount ?? 0;
+    public long PreviewSurfacePixels => outline?.SurfacePixels ?? 0;
     public DragCaptureControl Control { get; } = new();
     public ManualScrollCaptureViewModel ViewModel { get; }
     public PixelRect ToolbarBounds { get; private set; }
@@ -48,6 +48,7 @@ public sealed class ManualScrollCaptureController : IDisposable
     {
         this.cancel = cancel; ViewModel = new(Control, cancel);
         mouse = Mouse; keyboard = Keyboard;
+        refresh.Tick += (_, _) => { refresh.Stop(); DrawSelection(); };
         focus.Tick += (_, _) =>
         {
             if (!disposed && browser != IntPtr.Zero && DesktopWindows.Foreground != browser)
@@ -78,20 +79,8 @@ public sealed class ManualScrollCaptureController : IDisposable
         var fitted = choices.FirstOrDefault(candidate => candidate.Intersect(area) == candidate && candidate.Intersect(region).IsEmpty);
         if (fitted.IsEmpty) throw new InvalidOperationException("请稍微缩小手动截图选区，为选区外的完成按钮留出空间；浏览器全屏时可先退出全屏。");
         ToolbarBounds = fitted.RoundOut(); Move(window, ToolbarBounds); window.UpdateLayout();
-        outline = new Window
-        {
-            Style = null, WindowStyle = WindowStyle.None, ResizeMode = ResizeMode.NoResize, AllowsTransparency = true,
-            Background = Brushes.Transparent, ShowInTaskbar = false, ShowActivated = false, Topmost = true,
-            Content = canvas = new Canvas { Background = Brushes.Transparent, ClipToBounds = true }
-        };
-        outline.SourceInitialized += (_, _) =>
-        {
-            var hwnd = new WindowInteropHelper(outline).Handle;
-            SetStyle(hwnd, -20, new(GetStyle(hwnd, -20).ToInt64() | 0x08000000 | 0x20 | 0x80));
-        };
-        outline.Show(); Move(outline, region);
-        selection = new Border { BorderBrush = Ui.Brush("AccentBrush"), Background = Brushes.Transparent, BorderThickness = new(2), Visibility = Visibility.Collapsed };
-        canvas.Children.Add(selection);
+        borderThickness = Math.Max(1, (int)Math.Round(2 * scale));
+        outline = new CaptureOutline(((SolidColorBrush)Ui.Brush("AccentBrush")).Color);
         mouseHook = SetWindowsHookEx(14, mouse, GetModuleHandle(null), 0);
         keyHook = SetWindowsHookEx(13, keyboard, GetModuleHandle(null), 0);
         if (mouseHook == IntPtr.Zero || keyHook == IntPtr.Zero) throw new Win32Exception();
@@ -103,20 +92,25 @@ public sealed class ManualScrollCaptureController : IDisposable
     }
     public void RefreshSelection()
     {
-        if (disposed || outline is null || selection is null) return;
-        double scale = Math.Max(96, DesktopWindows.GetDpiForWindow(new WindowInteropHelper(outline).Handle)) / 96.0;
+        if (disposed || outline is null) return;
+        if (!refresh.IsEnabled) refresh.Start();
+    }
+    private void DrawSelection()
+    {
+        if (disposed || outline is null) return;
+        if (!previewVisible) { outline.Hide(); return; }
+        ViewModel.RefreshSelection();
         var r = Control.VisibleSelection;
-        selection.Visibility = r.IsEmpty ? Visibility.Collapsed : Visibility.Visible;
-        Canvas.SetLeft(selection, r.X / scale); Canvas.SetTop(selection, r.Y / scale);
-        selection.Width = r.Width / scale; selection.Height = r.Height / scale;
+        if (r.IsEmpty) outline.Hide();
+        else outline.Show(new(Region.X + r.X, Region.Y + r.Y, r.Width, r.Height), borderThickness);
     }
     // The outline is inside the browser viewport. Hide it explicitly for every native read;
     // GDI capture cannot be assumed to honor display-affinity exclusion.
     public void SetPreviewVisible(bool visible)
     {
         if (disposed || outline is null) return;
-        if (visible) { outline.Show(); RefreshSelection(); }
-        else outline.Hide();
+        previewVisible = visible;
+        if (visible) DrawSelection(); else outline.Hide();
     }
     private IntPtr Mouse(int code, IntPtr message, IntPtr data)
     {
@@ -149,9 +143,9 @@ public sealed class ManualScrollCaptureController : IDisposable
     }
     public void Dispose()
     {
-        if (disposed) return; disposed = true; focus.Stop();
+        if (disposed) return; disposed = true; focus.Stop(); refresh.Stop();
         if (mouseHook != IntPtr.Zero) UnhookWindowsHookEx(mouseHook);
         if (keyHook != IntPtr.Zero) UnhookWindowsHookEx(keyHook);
-        outline?.Close(); window?.Close(); Control.Dispose();
+        outline?.Dispose(); window?.Close(); Control.Dispose();
     }
 }

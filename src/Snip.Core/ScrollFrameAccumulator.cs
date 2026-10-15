@@ -50,5 +50,22 @@ public sealed class ScrollFrameAccumulator : IDisposable
         if (footer > 0) Buffer.BlockCopy(Last.Bgra, (viewportHeight - footer) * stride, output, (Height - footer) * stride, footer * stride);
         return new(width, Height, output);
     }
+    public PixelFrame Finish(PixelRect selection)
+    {
+        var r = selection.RoundOut();
+        if (r.IsEmpty || r.Intersect(new(0, 0, width, Height)) != r) throw new ArgumentOutOfRangeException(nameof(selection));
+        int cropWidth = (int)r.Width, cropHeight = (int)r.Height, cropStride = checked(cropWidth * 4);
+        var output = new byte[checked(cropHeight * cropStride)];
+        var stored = body.GetBuffer();
+        for (int row = 0; row < cropHeight; row++)
+        {
+            int y = (int)r.Y + row;
+            bool inFooter = y >= Height - footer;
+            var source = inFooter ? Last.Bgra : stored;
+            int sourceRow = inFooter ? y - origin : y;
+            Buffer.BlockCopy(source, sourceRow * stride + (int)r.X * 4, output, row * cropStride, cropStride);
+        }
+        return new(cropWidth, cropHeight, output);
+    }
     public void Dispose() => body.Dispose();
 }
