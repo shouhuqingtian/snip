@@ -4,7 +4,9 @@
 
 ## 下载
 
-当前开发版 **2.0.31 测试便携版**：[下载便携 ZIP](https://github.com/shouhuqingtian/snip/releases/download/preview-56f0121e3290/self-snip-preview-win-x64.zip) · [完整源码](https://github.com/shouhuqingtian/snip/releases/download/preview-56f0121e3290/self-snip-source.zip)。包含检查记录、版本信息和完整提交号。无需配置在线密钥或下载翻译模型即可使用 Windows 本地 OCR；缺翻译资源时默认保留文字识别结果，见 [修改与验证](docs/2.0.15默认OCR与翻译可用性.md)。
+当前开发版 **2.0.32 测试便携版**：[下载便携 ZIP](https://github.com/shouhuqingtian/snip/releases/download/preview-f88d35dcc16d/self-snip-preview-win-x64.zip) · [完整源码](https://github.com/shouhuqingtian/snip/releases/download/preview-f88d35dcc16d/self-snip-source.zip)。包含检查记录、版本信息和完整提交号。无需配置在线密钥或下载翻译模型即可使用 Windows 本地 OCR；缺翻译资源时默认保留文字识别结果，见 [修改与验证](docs/2.0.15默认OCR与翻译可用性.md)。
+
+2.0.32 修复 Vulkan 推理器就绪后因日志阈值屏蔽 GPU 层确认而误回退 CPU；新增真实原生运行库日志对比检查，无需重新下载模型或 GPU 支持。见 [原因、修改文件与验证](docs/2.0.32GPU翻译加载确认修复.md)。
 
 2.0.31 释放退出撤销历史的已保存标注快照，减少翻译排版空格和响应缓冲分配，修复在线截断结果及修改原文后的过期译文覆盖；显示和复制继续保留 OCR 排列。见 [修改文件、使用与验证](docs/2.0.31性能与稳定性优化.md)。
 
