@@ -16,9 +16,10 @@ $desktopLink = [IO.Path]::GetFullPath((Join-Path ([Environment]::GetFolderPath('
 if ((Test-Path $appKey) -or (Test-Path $uninstallKey) -or (Test-Path $menu) -or (Test-Path $desktopLink) -or
     $null -ne (Get-ItemProperty $runKey -Name SelfSnip -ErrorAction SilentlyContinue)) { throw 'Runner contains an existing installation; refusing to touch it.' }
 
-function Run-Process([string]$File, [string]$Arguments) {
-    $start = [Diagnostics.ProcessStartInfo]::new($File, $Arguments); $start.UseShellExecute = $false
+function Run-Process([string]$File, [string]$Arguments, [bool]$UseShell = $false) {
+    $start = [Diagnostics.ProcessStartInfo]::new($File, $Arguments); $start.UseShellExecute = $UseShell
     $process = [Diagnostics.Process]::Start($start)
+    if ($null -eq $process) { throw 'Shell did not return the launched application process.' }
     try {
         if (-not $process.WaitForExit(30000)) { $process.Kill($true); throw 'Installer/installed EXE timed out.' }
         if ($process.ExitCode -ne 0) { throw "Installer/installed EXE failed: $($process.ExitCode)" }
@@ -40,11 +41,8 @@ try {
     Require ((Get-ItemProperty $uninstallKey).DisplayVersion -eq $version) 'Uninstall registration version differs.'
     $shortcutPath = [IO.Path]::GetFullPath((Join-Path $menu '自用截图.lnk'))
     Require (Test-Path $shortcutPath -PathType Leaf) 'Start menu shortcut file is missing.'
-    $shortcut = (New-Object -ComObject WScript.Shell).CreateShortcut($shortcutPath)
-    Write-Output ("Shortcut: file exists; target empty=" + [string]::IsNullOrWhiteSpace($shortcut.TargetPath))
-    Require (-not [string]::IsNullOrWhiteSpace($shortcut.TargetPath)) 'Start menu shortcut target is empty.'
-    Require ([IO.Path]::GetFullPath($shortcut.TargetPath) -eq $exe) 'Start menu shortcut targets the wrong EXE.'
-    Require ((Get-FileHash $shortcut.TargetPath).Hash -eq (Get-FileHash $exe).Hash) 'Shortcut target binary differs from the installed EXE.'
+    $linkBytes = [IO.File]::ReadAllBytes($shortcutPath)
+    Write-Output ("Shortcut file bytes=" + $linkBytes.Length + "; flags=" + [BitConverter]::ToUInt32($linkBytes, 20))
     foreach ($license in Get-ChildItem (Join-Path $portable 'licenses') -File) {
         Require ((Get-FileHash (Join-Path $install ('licenses/' + $license.Name))).Hash -eq (Get-FileHash $license.FullName).Hash) 'Installed license is missing or changed.'
     }
@@ -55,6 +53,13 @@ try {
     $reportFolder = $report + '.contents'; Expand-Archive $report $reportFolder
     $actual = Get-Content (Join-Path $reportFolder 'environment.json') -Raw | ConvertFrom-Json
     Require ($actual.Environment.AppVersion -eq "$version+$($expected.Commit)") 'Installed EXE version/commit is incorrect.'
+    # Exercise what the user does. A COM property probe is not proof that a shortcut launches.
+    $linkReport = $report + '.start-menu.zip'
+    Run-Process $shortcutPath ('--export-diagnostics "' + $linkReport + '"') $true
+    Require (Test-Path $linkReport -PathType Leaf) 'Start menu shortcut did not launch the installed diagnostic command.'
+    $linkFolder = $linkReport + '.contents'; Expand-Archive $linkReport $linkFolder
+    $linked = Get-Content (Join-Path $linkFolder 'environment.json') -Raw | ConvertFrom-Json
+    Require ($linked.Environment.AppVersion -eq $actual.Environment.AppVersion) 'Start menu launched a different application version.'
 
     if (-not (Test-Path $runKey)) { New-Item $runKey -Force | Out-Null }
     $startup = '"' + $exe + '" --startup'
@@ -70,7 +75,7 @@ try {
     Require (-not (Test-Path $menu) -and -not (Test-Path $desktopLink)) 'Uninstall left shortcuts behind.'
     Require ($null -eq (Get-ItemProperty $runKey -Name SelfSnip -ErrorAction SilentlyContinue)) 'Uninstall retained its own startup entry.'
     Require ((Get-Content (Join-Path $sentinel 'settings.json') -Raw).Trim() -eq '{"publicFixture":true}' -and (Get-Content (Join-Path $sentinel 'model.bin') -Raw).Trim() -eq 'PUBLIC-MODEL-SENTINEL') 'Uninstall removed user settings/models.'
-    [ordered]@{ Version=$version; Commit=$expected.Commit; TestedExeReused=$true; SheepIcons=$true; InstalledDiagnosticExport=$true; AllLicenses=$true; CoverInstall=$true; StartupPreserved=$true; UninstallClean=$true; UserDataPreserved=$true } | ConvertTo-Json | Set-Content (Join-Path $root 'artifacts/validation/installer-check.json') -Encoding utf8
+    [ordered]@{ Version=$version; Commit=$expected.Commit; TestedExeReused=$true; SheepIcons=$true; InstalledDiagnosticExport=$true; StartMenuLaunch=$true; AllLicenses=$true; CoverInstall=$true; StartupPreserved=$true; UninstallClean=$true; UserDataPreserved=$true } | ConvertTo-Json | Set-Content (Join-Path $root 'artifacts/validation/installer-check.json') -Encoding utf8
     Write-Output 'PASS actual installer, installed EXE, all sheep icons/licenses, cover install/startup and uninstall preserving user data.'
 } finally {
     # Only remove fixture files this script created. Never delete the SelfSnip data root.
