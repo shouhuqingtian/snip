@@ -20,7 +20,6 @@ public sealed class TextResultViewModel : ObservableObject, IDisposable
     private readonly ITranslationService? onlineTranslator;
     private TranslationMode mode;
     private TranslationMode? translatedMode;
-    private readonly bool initialDirectionIsAutomatic;
     private readonly ITranslationPreferencesStore? preferences;
     private readonly ITranslationService basicTranslator;
     private bool runtimeHelpRequested;
@@ -32,7 +31,8 @@ public sealed class TextResultViewModel : ObservableObject, IDisposable
     private DiagnosticOperation? diagnosticOperation;
     private readonly DispatcherTimer heartbeat = new() { Interval = TimeSpan.FromSeconds(1) };
     private readonly Stopwatch elapsed = new();
-    private string stage = "", source = "", translated = "", status = "正在准备文字识别…", direction = "en-zh";
+    private string stage = "", source = "", translated = "", status = "正在准备文字识别…", direction = "auto";
+    private string languageNotes = "", resultDirection = "";
     private string? language;
     private IReadOnlyList<string> languages = [];
     private bool busy, downloading, disposed, initialized, userCancelled;
@@ -47,7 +47,7 @@ public sealed class TextResultViewModel : ObservableObject, IDisposable
         this.onlineTranslator = onlineTranslator; this.preferences = preferences;
         this.basicTranslator = basicTranslator ?? new BasicDictionaryTranslator();
         mode = initialPreferences?.Mode ?? (defaultOnline && onlineTranslator is not null ? TranslationMode.Online : TranslationMode.Offline);
-        direction = initialPreferences?.Direction ?? "en-zh";initialDirectionIsAutomatic = initialPreferences is null;
+        direction = initialPreferences?.Direction ?? "auto";
         this.diagnostics = diagnostics;
         try { computeMode = models.ComputeSettings.Read(); }
         catch (InvalidOperationException error) { computeMode = TranslationComputeMode.Auto; diagnostics?.Record("translation-compute", "invalid-configuration", error: error); }
@@ -147,8 +147,13 @@ public sealed class TextResultViewModel : ObservableObject, IDisposable
     public bool ShowTranslation { get => showTranslation; private set { if (Set(ref showTranslation, value)) Notify(nameof(WindowTitle)); } }
     public string WindowTitle => ShowTranslation ? Mode == TranslationMode.Basic ? "自用截图 · 文字识别与基础词典" : UseOnlineTranslation ? "自用截图 · 文字识别与在线翻译" : "自用截图 · 文字识别与离线翻译" : "自用截图 · 文字识别";
     public string? Language { get => language; set { if (value is not null) Set(ref language, value); } }
-    public string Direction { get => direction; set { if (value is "en-zh" or "zh-en") Set(ref direction, value); } }
-    public string Source { get => source; set { if (Set(ref source, value)) { TranslateCommand.Refresh(); CopySourceCommand.Refresh(); } } }
+    public string Direction { get => direction; set { if (!Busy && (value is "auto" or "en-zh" or "zh-en") && Set(ref direction, value)) Notify(nameof(DirectionHint)); } }
+    public string DirectionHint => Direction == "auto" && string.IsNullOrWhiteSpace(Source) ? "自动：中文译英文，英文译中文" :
+        (Direction == "auto" ? "自动判断：" : "手动指定：") + (TranslationDirection.Resolve(Source, Direction) == "zh-en" ? "中文 → 英文" : "英文 → 中文");
+    public string ResultDirection { get => resultDirection; private set => Set(ref resultDirection, value); }
+    public string LanguageNotes { get => languageNotes; private set { if (Set(ref languageNotes, value)) Notify(nameof(HasLanguageNotes)); } }
+    public bool HasLanguageNotes => LanguageNotes.Length > 0;
+    public string Source { get => source; set { if (Set(ref source, value)) { TranslateCommand.Refresh(); CopySourceCommand.Refresh(); Notify(nameof(DirectionHint)); } } }
     public string Translated { get => translated; private set { if (Set(ref translated, value)) CopyTranslationCommand.Refresh(); } }
     public string Status { get => status; private set => Set(ref status, value); }
     public string CopyStatus { get => copyStatus; private set => Set(ref copyStatus, value); }
@@ -214,7 +219,6 @@ public sealed class TextResultViewModel : ObservableObject, IDisposable
         else Status = "文字已识别（" + recognizedLanguage + "），可修正原文后翻译或复制。";
         if (AutoTranslate && !string.IsNullOrWhiteSpace(Source))
         {
-            if (initialDirectionIsAutomatic) Direction = Source.Any(c => c >= 0x4e00 && c <= 0x9fff) ? "zh-en" : "en-zh";
             // Give the translation its own deadline rather than spending the OCR budget on both.
             if (operation is not null) operation.CancelAfter(TimeSpan.FromSeconds(90));
             await Translate(token);
@@ -222,8 +226,10 @@ public sealed class TextResultViewModel : ObservableObject, IDisposable
     }
     private async Task Translate(CancellationToken token)
     {
-        bool online = UseOnlineTranslation;
-        bool basic = Mode == TranslationMode.Basic;
+        var input = Source; var selectedDirection = TranslationDirection.Resolve(input, Direction);
+        var selectedMode = Mode;
+        bool online = selectedMode == TranslationMode.Online;
+        bool basic = selectedMode == TranslationMode.Basic;
         ComputeStatus = basic ? "基础词典：本机查词，不加载模型" : online ? "在线翻译由服务商计算，本机 GPU 不启用" : "本地计算：正在准备";
         var service = basic ? basicTranslator : online ? onlineTranslator : translator;
         bool available = service is not null && await Task.Run(() => service.IsAvailableAsync(token), token);
@@ -239,7 +245,6 @@ public sealed class TextResultViewModel : ObservableObject, IDisposable
         }
         ShowTranslation = true;
         SetStage(basic ? "正在查询内置词典" : online ? "正在连接在线翻译服务" : "正在校验并加载翻译模型");
-        var input = Source; var selectedDirection = Direction;
         diagnosticOperation?.Stage("translation-starting", new { Direction = selectedDirection, CharacterCount = input.Length, Online = online, Mode = Mode.ToString(), ComputeMode = ComputeMode.ToString() });
         string? cpuFallback = null;
         string? loggedStage = null; int loggedSegments = -1, loggedTokens = -1;
@@ -255,8 +260,33 @@ public sealed class TextResultViewModel : ObservableObject, IDisposable
             if (p.Stage.StartsWith("计算方式：", StringComparison.Ordinal)) ComputeStatus = p.Stage == "计算方式：CPU" && cpuFallback is not null ? p.Stage + " · " + cpuFallback : p.Stage;
             SetStage(p.TotalSegments == 0 ? p.Stage : $"{p.Stage}：已完成 {p.CompletedSegments}/{p.TotalSegments} 段");
         });
-        var result = await Task.Run(() => service!.TranslateAsync(input, selectedDirection, updates, token), token);
-        token.ThrowIfCancellationRequested(); translatedMode=Mode;Notify(nameof(TranslationResultTitle));Translated = result; Status = basic ? "基础查词完成，未收录词语已标明；结果为词义参考。" : online ? "在线翻译完成。" : "离线翻译完成。";
+        AnnotatedTranslation result;
+        if (online && service is IAnnotatedTranslationService annotated)
+            result = await Task.Run(() => annotated.TranslateWithDetailsAsync(input, selectedDirection, updates, token), token);
+        else
+            result = new(await Task.Run(() => service!.TranslateAsync(input, selectedDirection, updates, token), token), "", []);
+        token.ThrowIfCancellationRequested();
+        if (disposed) return;
+        translatedMode = selectedMode; Notify(nameof(TranslationResultTitle));
+        Translated = result.Translation;
+        ResultDirection = selectedDirection == "zh-en" ? "本次：中文 → 英文" : "本次：英文 → 中文";
+        LanguageNotes = online ? FormatNotes(result) : "";
+        CopyStatus = "";
+        Status = basic ? "基础查词完成，未收录词语已标明；结果为词义参考。" : online ? "在线翻译完成。" + result.Notice : "离线翻译完成。";
+    }
+    private static string FormatNotes(AnnotatedTranslation result)
+    {
+        var lines = new List<string>();
+        if (!string.IsNullOrWhiteSpace(result.Pinyin)) { lines.Add("中文译文拼音"); lines.Add(result.Pinyin); }
+        if (result.Words.Count > 0)
+        {
+            if (lines.Count > 0) lines.Add("");
+            lines.Add("英语词汇 · 美式音标 · 词性");
+            foreach (var word in result.Words.Take(8))
+                lines.Add(word.English + "  " + word.Ipa + "  " + word.PartOfSpeech + Environment.NewLine + word.Meaning);
+        }
+        if (lines.Count > 0) { lines.Add(""); lines.Add("注释由所选在线模型生成，可选中文字后按 Ctrl+C 复制。"); }
+        return string.Join(Environment.NewLine, lines);
     }
     private void SetStage(string value) { stage = value; ShowStage(); }
     private void ShowStage() { if (Busy) Status = $"{stage} · 已用 {elapsed.Elapsed.TotalSeconds:F0} 秒，可取消"; }

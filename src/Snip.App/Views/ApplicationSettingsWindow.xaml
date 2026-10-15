@@ -19,7 +19,7 @@
      <ComboBoxItem Content="离线模型" Tag="{x:Static core:TranslationMode.Offline}"/>
      <ComboBoxItem Content="基础词典（离线查词 / 简单短语）" Tag="{x:Static core:TranslationMode.Basic}"/>
     </ComboBox>
-    <ComboBox x:Name="DefaultDirectionBox" SelectedValue="{Binding Direction,Mode=TwoWay}" SelectedValuePath="Tag" Margin="0,0,0,10"><ComboBoxItem Content="英文 → 中文" Tag="en-zh"/><ComboBoxItem Content="中文 → 英文" Tag="zh-en"/></ComboBox>
+    <ComboBox x:Name="DefaultDirectionBox" SelectedValue="{Binding Direction,Mode=TwoWay}" SelectedValuePath="Tag" Margin="0,0,0,10"><ComboBoxItem Content="自动（中文译英文，英文译中文）" Tag="auto"/><ComboBoxItem Content="英文 → 中文" Tag="en-zh"/><ComboBoxItem Content="中文 → 英文" Tag="zh-en"/></ComboBox>
     <TextBlock Text="基础词典内置常用词和部分短语，不联网、不加载模型，提供词义参考，不进行整句翻译。在线或离线服务不可用时保留原文，由你选择其他方式。" Style="{StaticResource Subtitle}" FontSize="12"/>
    </StackPanel></Border>
   </StackPanel></ScrollViewer>

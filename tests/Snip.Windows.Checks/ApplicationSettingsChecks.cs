@@ -49,6 +49,7 @@ internal static class ApplicationSettingsChecks
             refused.StartWithWindows=true;
             Require(!refused.StartWithWindows && refused.Status.Contains("失败"),"Failed startup write displayed enabled state.");
             Console.WriteLine("PASS failed startup registration retains unchecked state and reports failure.");
+            CheckDirectionMigration(folder);
             CheckDuplicateStartup();
             CheckTranslationModes(folder);
             return 0;
@@ -59,6 +60,24 @@ internal static class ApplicationSettingsChecks
             foreach(var window in Application.Current!.Windows.Cast<Window>().ToArray())window.Close();
             Registry.CurrentUser.DeleteSubKeyTree(registry,false);Directory.Delete(folder,true);SynchronizationContext.SetSynchronizationContext(context);
         }
+    }
+    private static void CheckDirectionMigration(string folder)
+    {
+        string path=Path.Combine(folder,"legacy-directions.json");var store=new TranslationPreferencesStore(path);
+        foreach(var mode in Enum.GetValues<TranslationMode>())
+            foreach(var direction in new[]{"en-zh","zh-en"})
+            {
+                File.WriteAllText(path,System.Text.Json.JsonSerializer.Serialize(new { Mode=mode,Direction=direction }));
+                Require(store.Read()==new TranslationPreferences(mode,"auto"),"Legacy direction did not migrate or changed translation mode.");
+                store.Save(new(mode,"auto"));Require(new TranslationPreferencesStore(path).Read()==new TranslationPreferences(mode,"auto"),"Automatic direction did not survive restart.");
+                store.Save(new(mode,direction));Require(new TranslationPreferencesStore(path).Read()==new TranslationPreferences(mode,direction),"New explicit direction override did not survive restart.");
+            }
+        foreach(string version in new[]{"null","\"invalid\"","{}"})
+        {
+            File.WriteAllText(path,"{\"SchemaVersion\":"+version+",\"Mode\":1,\"Direction\":\"auto\"}");
+            try{store.Read();throw new Exception("Corrupt schema version accepted.");}catch(InvalidOperationException){}
+        }
+        Console.WriteLine("PASS legacy en/zh directions migrate to automatic without changing mode; new automatic and explicit preferences survive restart; invalid schema fails safely.");
     }
     private static void CheckDuplicateStartup()
     {

@@ -146,6 +146,7 @@ internal static class OnlineSettingsChecks
         online.Fail=true;vm.TranslateCommand.Execute(null);TextWindowChecks.PumpUntil(()=>!vm.Busy && vm.Status.Contains("失败"),TimeSpan.FromSeconds(4));
         Require(vm.Source=="Hello world" && vm.Translated=="在线译文" && result.IsVisible,"Online failure discarded prior text or window.");
         result.Close();Console.WriteLine("PASS online OCR-to-result bypasses model download, displays notice and retains original/result on service failure.");
+        AutomaticTranslationChecks.Run(Path.GetDirectoryName(path)!,image);
     }
     private sealed class PendingOnline : ITranslationService
     {

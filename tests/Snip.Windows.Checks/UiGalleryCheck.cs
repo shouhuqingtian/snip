@@ -123,7 +123,20 @@ internal static class UiGalleryCheck
             Capture(new ApplicationSettingsWindow(new ApplicationSettingsViewModel(new GalleryStartup(),new TranslationPreferencesStore(Path.Combine(output,"unused-preferences.json")),new(TranslationMode.Basic))), "16-application-settings");
             var basic=new TextResultWindow(new TextResultViewModel(image,new GalleryOcr(),new ModelStore("unused-models"),new GalleryTranslation(),initialPreferences:new(TranslationMode.Basic)){AutoTranslate=true});
             Capture(basic,"17-basic-dictionary",()=>TextWindowChecks.PumpUntil(()=>!((TextResultViewModel)basic.DataContext).Busy && ((TextResultViewModel)basic.DataContext).Translated.Length>0,TimeSpan.FromSeconds(5)));
-            Console.WriteLine("PASS 17 actual UI previews and three browser menu actions; no share target invoked or user screenshot used."); return 0;
+            foreach(var (name,chinese,compact) in new[]{("18-online-ipa-pinyin",false,false),("19-online-english-vocabulary",true,false),("20-online-annotations-compact",false,true)})
+            {
+                var annotated=new TextResultWindow(new TextResultViewModel(image,new GalleryOcr(chinese),new ModelStore("unused-models"),new GalleryTranslation(),onlineTranslator:new GalleryAnnotated(),initialPreferences:new(TranslationMode.Online)){AutoTranslate=true});
+                if(compact){annotated.Width=annotated.MinWidth;annotated.Height=annotated.MinHeight;}
+                else {annotated.Height=1000;}
+                Capture(annotated,name,()=>
+                {
+                    var vm=(TextResultViewModel)annotated.DataContext;
+                    TextWindowChecks.PumpUntil(()=>!vm.Busy && vm.HasLanguageNotes,TimeSpan.FromSeconds(5));
+                    Require(vm.Direction=="auto" && vm.LanguageNotes.Contains("音标") && vm.LanguageNotes.Contains("名词(n.)") && vm.LanguageNotes.Contains("中文译文拼音")==!chinese,"Online annotation preview has the wrong language notes.");
+                    if(compact)((TextBox)annotated.FindName("TranslationLanguageNotes")).BringIntoView();
+                });
+            }
+            Console.WriteLine("PASS 20 actual UI previews including automatic translation with IPA/POS/pinyin at normal and compact sizes; three browser menu actions; no share target invoked or user screenshot used."); return 0;
         }
         catch (Exception error)
         {
@@ -154,14 +167,22 @@ internal static class UiGalleryCheck
         var bitmap = new RenderTargetBitmap(1280, 800, 96, 96, PixelFormats.Pbgra32); bitmap.Render(visual); bitmap.Freeze(); return bitmap;
     }
     private sealed class GalleryStartup : IAutoStartService {public bool IsEnabled=>false;public void SetEnabled(bool enabled){}}
-    private sealed class GalleryOcr : IOcrService
+    private sealed class GalleryOcr(bool chinese=false) : IOcrService
     {
         public IReadOnlyList<string> Languages => ["en-US", "zh-CN"];
         public Task<OcrResult> RecognizeAsync(ImagePayload image, CancellationToken token) => RecognizeAsync(image, null, token);
-        public Task<OcrResult> RecognizeAsync(ImagePayload image, string? language, CancellationToken token) => Task.FromResult(new OcrResult([new("A little clarity, every day.\r\n\r\nCapture an idea. Make it yours.\r\nKeep the details that matter.", new(0, 0, 300, 120), null)]));
+        public Task<OcrResult> RecognizeAsync(ImagePayload image, string? language, CancellationToken token) => Task.FromResult(new OcrResult([new(chinese ? "每天，让思路更清晰一点。捕捉一个灵感，留下重要的细节。" : "A little clarity, every day.\r\n\r\nCapture an idea. Make it yours.\r\nKeep the details that matter.", new(0, 0, 300, 120), null)]));
     }
     private sealed class GalleryTranslation : ITranslationService
     { public Task<string> TranslateAsync(string text, string direction, CancellationToken token) => Task.FromResult("每天，让思路更清晰一点。\r\n\r\n捕捉一个灵感，让它成为你的作品。\r\n留下那些重要的细节。"); }
+    private sealed class GalleryAnnotated : IAnnotatedTranslationService
+    {
+        public Task<string> TranslateAsync(string text,string direction,CancellationToken token)=>throw new InvalidOperationException("Gallery must use annotated translation.");
+        public Task<AnnotatedTranslation> TranslateWithDetailsAsync(string text,string direction,IProgress<TranslationProgress>? progress,CancellationToken token)
+            =>Task.FromResult(new AnnotatedTranslation(direction=="en-zh" ? "每天，让思路更清晰一点。\n捕捉一个灵感，留下重要的细节。" : "A little clarity, every day.\nCapture an idea. Keep the details that matter.",
+                direction=="en-zh" ? "Měi tiān, ràng sī lù gèng qīng xī yì diǎn.\nBǔ zhuō yí gè líng gǎn, liú xià zhòng yào de xì jié." : "",
+                [new("clarity","/ˈklærəti/","名词(n.)","清晰；明确"),new("capture","/ˈkæptʃər/","动词(v.)","捕捉；记录"),new("detail","/ˈdiːteɪl/","名词(n.)","细节")]));
+    }
     private sealed class FakeExport : IImageExportService
     { public void SavePng(BitmapSource image, string path) { } public Task CopyAsync(BitmapSource image) => Task.CompletedTask; }
     private sealed class FakeDialogs : IEditorDialogs

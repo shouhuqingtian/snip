@@ -116,9 +116,66 @@ internal static class OnlineTranslationChecks
                 try{await service.TranslateAsync("PUBLIC input","en-zh",CancellationToken.None);throw new Exception("Network failure ignored.");}
                 catch(InvalidOperationException error){Require(!error.ToString().Contains("PRIVATE"),"Network details exposed.");}
             });
+            foreach(var provider in OnlineTranslationProviders.Names)
+                foreach(string direction in new[]{"en-zh","zh-en"})
+                    await Check(provider+" annotated translation "+direction+" uses one text-only request",async()=>
+                    {
+                        int calls=0;string translation=direction=="en-zh" ? "应用已就绪。" : "The application is ready.";
+                        using var client=new HttpClient(new Handler(async(request,token)=>
+                        {
+                            calls++;
+                            using var body=JsonDocument.Parse(await request.Content!.ReadAsStringAsync(token));
+                            var messages=body.RootElement.GetProperty("messages");
+                            string prompt=messages[0].GetProperty("content").GetString()!;
+                            Require(prompt.Contains(direction=="en-zh" ? "Simplified Chinese" : "into English") && prompt.Contains("at most 8") && prompt.Contains("IPA") && prompt.Contains("tone-marked") == (direction=="en-zh"),"Language notes instructions do not match direction.");
+                            Require(messages.GetArrayLength()==2 && messages[1].GetProperty("content").GetString()=="Public fixture" && !body.RootElement.TryGetProperty("response_format",out _),"Detailed request changed input or requires unsupported provider options.");
+                            return ContentResponse(new {translation,pinyin="yìng yòng yǐ jiù xù。",words=new[]{new {english="application",ipa="/ˌæplɪˈkeɪʃən/",partOfSpeech="名词(n.)",meaning="应用程序"}}});
+                        }));
+                        var service=new OnlineTranslator(()=>new(OnlineTranslationProviders.Defaults(provider),"PUBLIC-KEY"),client);
+                        var result=await service.TranslateWithDetailsAsync("Public fixture",direction,null,CancellationToken.None);
+                        Require(calls==1 && result.Translation==translation && result.Words.Single().PartOfSpeech=="名词(n.)" && result.Words[0].Ipa.Contains("æ") && result.Notice.Length==0,"Details were lost or extra requests issued.");
+                        Require(result.Pinyin==(direction=="en-zh" ? "yìng yòng yǐ jiù xù。" : ""),"Pinyin was attached to an English target.");
+                    });
+            await Check("details accept JSON fences, cap eight unique words and retain complete pinyin",async()=>
+            {
+                var words=Enumerable.Range(1,12).Select(i=>new {english="term"+i,ipa="/tɜːrm/",partOfSpeech="名词(n.)",meaning="术语"});
+                string data=JsonSerializer.Serialize(new {translation="你好，世界。",pinyin="nǐ hǎo, shì jiè。",words});
+                var result=await Details("```json\n"+data+"\n```");
+                Require(result.Words.Count==8 && result.Translation=="你好，世界。" && result.Pinyin=="nǐ hǎo, shì jiè。","Fenced details, full pinyin or item bound failed.");
+            });
+            await Check("optional invalid notes retain usable translation with explanation",async()=>
+            {
+                foreach(string data in new[]{"只是译文", "{\"translation\":\"只是译文\",\"pinyin\":null,\"words\":[null,{\"english\":\"bad\"}]}"})
+                {
+                    var result=await Details(data);
+                    Require(result.Translation=="只是译文" && result.Pinyin.Length==0 && result.Words.Count==0 && result.Notice.Contains("注释"),"Optional notes caused translation loss or fabricated details.");
+                }
+            });
+            await Check("malformed structured translation never becomes visible JSON or leaks content",async()=>
+            {
+                foreach(string data in new[]{"{PRIVATE", "{\"words\":[]}","{\"translation\":123}","[\"PRIVATE\"]","```json\nPRIVATE"})
+                {
+                    try{await Details(data);throw new Exception("Invalid structured translation accepted.");}
+                    catch(InvalidOperationException error){Require(!error.ToString().Contains("PRIVATE"),"Structured parser error leaked provider output.");}
+                }
+            });
+            await Check("annotated request cancellation retains cancellation semantics",async()=>
+            {
+                using var current=new CancellationTokenSource(TimeSpan.FromMilliseconds(60));
+                using var client=new HttpClient(new Handler(async(_,token)=>{await Task.Delay(Timeout.Infinite,token);return ContentResponse(new{});}));
+                var service=new OnlineTranslator(()=>new(OnlineTranslationProviders.Defaults(OnlineTranslationProviders.Qwen),"PUBLIC-KEY"),client);
+                try{await service.TranslateWithDetailsAsync("Public fixture","en-zh",null,current.Token);throw new Exception("Detailed cancellation ignored.");}
+                catch(OperationCanceledException)when(current.IsCancellationRequested){}
+            });
             Console.WriteLine(passed+" deterministic online protocol checks passed; no external request or credential used.");return 0;
         }
         catch(Exception error){Console.Error.WriteLine(error);return 1;}
+    }
+    private static HttpResponseMessage ContentResponse(object details)=>Response(HttpStatusCode.OK,JsonSerializer.Serialize(new {choices=new[]{new {message=new {content=details is string text ? text : JsonSerializer.Serialize(details)}}}}));
+    private static async Task<AnnotatedTranslation> Details(string content)
+    {
+        using var client=new HttpClient(new Handler((_,_)=>Task.FromResult(ContentResponse(content))));
+        return await new OnlineTranslator(()=>new(OnlineTranslationProviders.Defaults(OnlineTranslationProviders.DeepSeek),"PUBLIC-KEY"),client).TranslateWithDetailsAsync("Public fixture","en-zh",null,CancellationToken.None);
     }
     private static HttpResponseMessage Response(HttpStatusCode code,string text)=>new(code){Content=new StringContent(text,Encoding.UTF8,"application/json")};
     private static void Require(bool condition,string message){if(!condition)throw new InvalidOperationException(message);}

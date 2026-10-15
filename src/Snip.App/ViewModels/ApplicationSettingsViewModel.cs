@@ -28,7 +28,7 @@ public sealed class ApplicationSettingsViewModel : ObservableObject
         }
     }
     public TranslationMode Mode { get => mode; set { if (Enum.IsDefined(value)) Set(ref mode, value); } }
-    public string Direction { get => direction; set { if (value is "en-zh" or "zh-en") Set(ref direction, value); } }
+    public string Direction { get => direction; set { if (value is "auto" or "en-zh" or "zh-en") Set(ref direction, value); } }
     public string Status { get => status; private set => Set(ref status, value); }
     public RelayCommand SaveCommand { get; }
     private void Save()

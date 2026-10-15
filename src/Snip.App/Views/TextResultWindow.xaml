@@ -9,12 +9,12 @@
   <ScrollViewer x:Name="WorkspaceScroll" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" CanContentScroll="False">
   <Grid MinWidth="786" MinHeight="740" Width="{Binding ElementName=WorkspaceScroll, Path=ViewportWidth, Mode=OneWay}" Height="{Binding ElementName=WorkspaceScroll, Path=ViewportHeight, Mode=OneWay}">
   <DockPanel Margin="8">
-  <StackPanel DockPanel.Dock="Top" Margin="0,0,0,18"><TextBlock Text="从画面提取文字，修正、复制，或进行离线中英互译。" Style="{StaticResource Subtitle}" Margin="0,6,0,14"/>
+  <StackPanel DockPanel.Dock="Top" Margin="0,0,0,18"><TextBlock Text="从画面提取文字；自动中英互译，支持在线、离线模型和基础词典。" Style="{StaticResource Subtitle}" Margin="0,6,0,14"/>
    <Border Style="{StaticResource Card}" Padding="12,9"><WrapPanel VerticalAlignment="Center">
     <TextBlock Text="识别语言" Foreground="{StaticResource MutedBrush}" Margin="6,0,6,0" VerticalAlignment="Center"/><ComboBox ItemsSource="{Binding Languages}" SelectedItem="{Binding Language}" Width="142"/>
     <Button Content="重新识别" Command="{Binding OcrCommand}"/>
     <Border Width="1" Height="22" Background="{StaticResource StrokeBrush}" Margin="12,0"/>
-    <ComboBox SelectedValue="{Binding Direction, Mode=TwoWay}" SelectedValuePath="Tag" Width="138"><ComboBoxItem Content="英文 → 中文" Tag="en-zh"/><ComboBoxItem Content="中文 → 英文" Tag="zh-en"/></ComboBox>
+    <ComboBox x:Name="TranslationDirectionBox" SelectedValue="{Binding Direction, Mode=TwoWay}" SelectedValuePath="Tag" IsEnabled="{Binding CanChangeTranslationMode}" Width="160" ToolTip="{Binding DirectionHint}"><ComboBoxItem Content="自动（中英互译）" Tag="auto"/><ComboBoxItem Content="英文 → 中文" Tag="en-zh"/><ComboBoxItem Content="中文 → 英文" Tag="zh-en"/></ComboBox>
     <ComboBox x:Name="TranslationModeBox" SelectedValue="{Binding Mode,Mode=TwoWay}" SelectedValuePath="Tag" IsEnabled="{Binding CanChangeTranslationMode}" Width="170">
      <ComboBoxItem Content="在线大模型" Tag="{x:Static core:TranslationMode.Online}"/><ComboBoxItem Content="离线模型" Tag="{x:Static core:TranslationMode.Offline}"/><ComboBoxItem Content="基础词典（离线）" Tag="{x:Static core:TranslationMode.Basic}"/>
     </ComboBox>
@@ -32,7 +32,7 @@
      <ComboBoxItem Content="优先 GPU（可回退 CPU）" Tag="{x:Static translation:TranslationComputeMode.Gpu}"/>
     </ComboBox>
     <Button x:Name="DownloadGpuButton" Content="下载 / 修复 GPU 支持" Command="{Binding DownloadGpuCommand}" Style="{StaticResource QuietButton}" ToolTip="仅下载约 32 MB Vulkan 运行库，不重新下载翻译模型。"/>
-    <TextBlock Text="{Binding ComputeStatus}" Style="{StaticResource Subtitle}" FontSize="12" Margin="10,0,6,0" VerticalAlignment="Center"/>
+    <TextBlock Text="{Binding DirectionHint}" Style="{StaticResource Subtitle}" FontSize="12" Margin="10,0,6,0" VerticalAlignment="Center"/><TextBlock Text="{Binding ComputeStatus}" Style="{StaticResource Subtitle}" FontSize="12" Margin="10,0,6,0" VerticalAlignment="Center"/>
    </WrapPanel></Border>
    <TextBlock Visibility="{Binding NeedsWindowsRuntime, Converter={StaticResource BoolVisibility}}" Style="{StaticResource Subtitle}" FontSize="12" Margin="6,8,0,0" TextWrapping="Wrap">离线翻译需要微软 Visual C++ x64 运行库：<Hyperlink NavigateUri="https://aka.ms/vs/17/release/vc_redist.x64.exe" RequestNavigate="RuntimeDownloadNavigate">微软官网下载</Hyperlink>，安装后重启软件。</TextBlock>
   </StackPanel>
@@ -51,8 +51,14 @@
      <TextBox x:Name="RecognizedText" MinHeight="70" Text="{Binding Source, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" VerticalContentAlignment="Top" FontSize="14" Padding="12" Background="#FAFCFB"/>
     </DockPanel></Border>
     <Border Grid.Row="1" Style="{StaticResource Card}" Padding="16" Margin="0,14,0,0" Visibility="{Binding ShowTranslation, Converter={StaticResource BoolVisibility}}"><DockPanel>
-     <DockPanel DockPanel.Dock="Top" Margin="0,0,0,10"><Button x:Name="CopyTranslationButton" Content="复制译文" Command="{Binding CopyTranslationCommand}" DockPanel.Dock="Right" Margin="0"/><StackPanel><TextBlock Text="{Binding TranslationResultTitle}" Style="{StaticResource SectionTitle}"/><TextBlock Text="{Binding TranslationNotice}" Style="{StaticResource Subtitle}" FontSize="12" Margin="0,4,0,0"/></StackPanel></DockPanel>
-     <TextBox x:Name="TranslatedText" MinHeight="70" Text="{Binding Translated, Mode=OneWay}" IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" VerticalContentAlignment="Top" FontSize="14" Padding="12" Background="#FAFCFB"/>
+     <DockPanel DockPanel.Dock="Top" Margin="0,0,0,10"><Button x:Name="CopyTranslationButton" Content="复制译文" Command="{Binding CopyTranslationCommand}" DockPanel.Dock="Right" Margin="0"/><StackPanel><TextBlock Text="{Binding TranslationResultTitle}" Style="{StaticResource SectionTitle}"/><TextBlock x:Name="ResultDirectionLabel" Text="{Binding ResultDirection}" FontSize="12" Foreground="{StaticResource AccentBrush}" Margin="0,3,0,0"/><TextBlock Text="{Binding TranslationNotice}" Style="{StaticResource Subtitle}" FontSize="12" Margin="0,4,0,0"/></StackPanel></DockPanel>
+     <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"><StackPanel>
+      <TextBox x:Name="TranslatedText" MinHeight="70" Height="130" Text="{Binding Translated, Mode=OneWay}" IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" VerticalContentAlignment="Top" FontSize="14" Padding="12" Background="#FAFCFB"/>
+      <Border Margin="0,12,0,0" Padding="12" CornerRadius="10" Background="#F0F7F4" Visibility="{Binding HasLanguageNotes, Converter={StaticResource BoolVisibility}}"><StackPanel>
+       <TextBlock Text="读音与词性" Style="{StaticResource SectionTitle}" FontSize="14" Margin="0,0,0,8"/>
+       <TextBox x:Name="TranslationLanguageNotes" Text="{Binding LanguageNotes,Mode=OneWay}" IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap" BorderThickness="0" Background="Transparent" Padding="0" FontSize="13"/>
+      </StackPanel></Border>
+     </StackPanel></ScrollViewer>
     </DockPanel></Border>
    </Grid>
   </Grid>
