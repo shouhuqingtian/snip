@@ -4,7 +4,9 @@
 
 ## 下载
 
-当前开发版 **2.0.20 测试便携版**：[下载便携 ZIP](https://github.com/shouhuqingtian/snip/releases/download/preview-cf8eddfc8a1d/self-snip-preview-win-x64.zip) · [完整源码](https://github.com/shouhuqingtian/snip/releases/download/preview-cf8eddfc8a1d/self-snip-source.zip)。包含检查记录、版本信息和完整提交号。无需配置在线密钥或下载翻译模型即可使用 Windows 本地 OCR；缺翻译资源时默认保留文字识别结果，见 [修改与验证](docs/2.0.15默认OCR与翻译可用性.md)。
+当前开发版 **2.0.21 测试便携版**：[下载便携 ZIP](https://github.com/shouhuqingtian/snip/releases/download/preview-80ae5496fd7a/self-snip-preview-win-x64.zip) · [完整源码](https://github.com/shouhuqingtian/snip/releases/download/preview-80ae5496fd7a/self-snip-source.zip)。包含检查记录、版本信息和完整提交号。无需配置在线密钥或下载翻译模型即可使用 Windows 本地 OCR；缺翻译资源时默认保留文字识别结果，见 [修改与验证](docs/2.0.15默认OCR与翻译可用性.md)。
+
+2.0.21 新增“通用设置”：可开关开机自启，默认关闭。文字工作台可在在线大模型、离线模型、基础词典之间选择并“保存为默认”；新截图及重启后沿用，不再反复请求旧的在线服务。基础词典内置 12151 词条，不下载、不联网、不启动模型，仅用于查词和部分短语，见 [修改文件、使用与验证](docs/2.0.21开机自启与默认翻译.md)。
 
 2.0.20 在线翻译增加 OpenAI、智谱 GLM、Moonshot / Kimi、硅基流动，与 DeepSeek、通义千问共六家预设；模型名可直接输入，支持多组自定义兼容接口、独立加密密钥和保存切换。服务故障时保留原文，选择备用配置后重试，见 [修改文件、使用与验证](docs/2.0.20多服务与自定义在线翻译.md)。
 
