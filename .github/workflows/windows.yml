@@ -82,8 +82,14 @@ jobs:
         shell: pwsh
         timeout-minutes: 6
         run: |
-          dotnet run --project tests/Snip.Windows.Checks/Snip.Windows.Checks.csproj -c Release --no-build -- --enhanced-ocr
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          New-Item -ItemType Directory -Path artifacts/validation -Force | Out-Null
+          dotnet run --project tests/Snip.Windows.Checks/Snip.Windows.Checks.csproj -c Release --no-build -- --enhanced-ocr *> artifacts/validation/early-enhanced-ocr.log
+          $checkExit = $LASTEXITCODE
+          if ($checkExit -ne 0) {
+            $detail = (Get-Content artifacts/validation/early-enhanced-ocr.log -Tail 25 | Out-String).Replace('%','%25').Replace("`r",'%0D').Replace("`n",'%0A')
+            Write-Output "::error title=Enhanced OCR regression::$detail"
+            exit $checkExit
+          }
       - name: Verify shared online configuration and three OCR modes early
         shell: pwsh
         timeout-minutes: 3
