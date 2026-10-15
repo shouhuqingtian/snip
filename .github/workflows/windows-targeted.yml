@@ -40,10 +40,18 @@ jobs:
         run: |
           $flag = switch ($env:CHECK) { 'clipboard' { '--clipboard-ui' }; 'chrome' { '--chrome' }; 'enhanced-ocr' { '--enhanced-ocr' }; default { throw 'Unsupported check.' } }
           $rounds = [Math]::Clamp([int]$env:ROUNDS,1,5)
+          New-Item -ItemType Directory -Path artifacts/validation -Force | Out-Null
           foreach ($round in 1..$rounds) {
             Write-Output "Targeted $($env:CHECK) process round $round"
-            dotnet run --project tests/Snip.Windows.Checks/Snip.Windows.Checks.csproj -c Release --no-build -- $flag
-            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            $log = "artifacts/validation/targeted-$($env:CHECK)-$round.log"
+            dotnet run --project tests/Snip.Windows.Checks/Snip.Windows.Checks.csproj -c Release --no-build -- $flag *> $log
+            $checkExit = $LASTEXITCODE
+            Get-Content $log | Write-Output
+            if ($checkExit -ne 0) {
+              $detail = (Get-Content $log -Tail 25 | Out-String).Replace('%','%25').Replace("`r",'%0D').Replace("`n",'%0A')
+              Write-Output "::error title=Targeted desktop failure::$detail"
+              exit $checkExit
+            }
           }
       - uses: actions/upload-artifact@v4
         if: always()
