@@ -135,7 +135,7 @@ internal static class ChromeCaptureCheck
                 {
                     var moving = Task.Run(async () =>
                     {
-                        for (int i = 0; i < 80; i++) { Move(new(startPoint.X + 40 + i % 120, startPoint.Y + 40 + i % 40)); await Task.Delay(5); }
+                        for (int i = 0; i < 80; i++) { Move(new(startPoint.X + 40 + i % 120, startPoint.Y + 40 + i % 40), waitForPaint: false); await Task.Delay(5); }
                     });
                     TextWindowChecks.PumpUntil(() => moving.IsCompleted, TimeSpan.FromSeconds(6)); moving.GetAwaiter().GetResult();
                 }
@@ -352,18 +352,31 @@ internal static class ChromeCaptureCheck
         SetPhysicalCursorPos((int)point.X, (int)point.Y);
         Send([new() { Type = 0, Data = new() { Mouse = new() { Flags = 0x0002 } } }, new() { Type = 0, Data = new() { Mouse = new() { Flags = 0x0004 } } }]);
     }
-    private static void Move(Point point)
+    private static void Move(Point point, bool waitForPaint = true)
     {
         var displays = new DesktopCaptureService().GetDisplays();
         double left = displays.Min(d => d.Bounds.X), top = displays.Min(d => d.Bounds.Y);
         double width = displays.Max(d => d.Bounds.Right) - left, height = displays.Max(d => d.Bounds.Bottom) - top;
         Send([new() { Type = 0, Data = new() { Mouse = new() { X = Math.Clamp((int)Math.Ceiling((point.X - left) * 65536 / width), 0, 65535), Y = Math.Clamp((int)Math.Ceiling((point.Y - top) * 65536 / height), 0, 65535), Flags = 0xC001 } } }]);
         // Pump the actual low-level hook, rather than assuming SetPhysicalCursorPos injects a move.
-        var paint = Task.Delay(40); TextWindowChecks.PumpUntil(() => paint.IsCompleted, TimeSpan.FromSeconds(2));
+        if (waitForPaint) { var paint = Task.Delay(40); TextWindowChecks.PumpUntil(() => paint.IsCompleted, TimeSpan.FromSeconds(2)); }
     }
     private static void Key(ushort key) => Send([new() { Type = 1, Data = new() { Keyboard = new() { Key = key } } }, new() { Type = 1, Data = new() { Keyboard = new() { Key = key, Flags = 2 } } }]);
     private static void Send(Input[] inputs)
-    { if (SendInput((uint)inputs.Length, inputs, Marshal.SizeOf<Input>()) != inputs.Length) throw new InvalidOperationException("Fixture browser input was rejected."); }
+    {
+        // Real mouse input originates outside the UI thread. Keep the hook's dispatcher
+        // pumping while SendInput delivers events, including the release after edge scrolling.
+        // Calling it synchronously on the hook thread can stall Windows' low-level hook chain.
+        uint accepted;
+        if (SynchronizationContext.Current is DispatcherSynchronizationContext)
+        {
+            var sending = Task.Run(() => SendInput((uint)inputs.Length, inputs, Marshal.SizeOf<Input>()));
+            TextWindowChecks.PumpUntil(() => sending.IsCompleted, TimeSpan.FromSeconds(3));
+            accepted = sending.GetAwaiter().GetResult();
+        }
+        else accepted = SendInput((uint)inputs.Length, inputs, Marshal.SizeOf<Input>());
+        if (accepted != inputs.Length) throw new InvalidOperationException("Fixture browser input was rejected.");
+    }
     private static string Fixture(string name)
     {
         var path = Path.Combine(AppContext.BaseDirectory, "Fixtures", "scrolling", name);
