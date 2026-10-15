@@ -1,12 +1,12 @@
 <Window x:Class="Snip.App.Views.OnlineTranslationSettingsWindow" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
- xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" Title="自用截图 · 在线翻译设置" Width="720" Height="710" MinWidth="540" MinHeight="420" WindowStartupLocation="CenterScreen">
+ xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" Title="自用截图 · 在线识别与翻译设置" Width="720" Height="710" MinWidth="540" MinHeight="420" WindowStartupLocation="CenterScreen">
  <DockPanel Margin="24">
-  <DockPanel DockPanel.Dock="Top" Margin="0,0,0,16"><Button Content="关闭 Esc" Click="CloseClick" DockPanel.Dock="Right"/><TextBlock Text="在线大模型翻译" Style="{StaticResource PageTitle}" VerticalAlignment="Center"/></DockPanel>
+  <DockPanel DockPanel.Dock="Top" Margin="0,0,0,16"><Button Content="关闭 Esc" Click="CloseClick" DockPanel.Dock="Right"/><TextBlock Text="在线识别与翻译" Style="{StaticResource PageTitle}" VerticalAlignment="Center"/></DockPanel>
   <StackPanel DockPanel.Dock="Bottom" Margin="0,16,0,0"><TextBlock Text="{Binding Status}" TextWrapping="Wrap" Style="{StaticResource Subtitle}" FontSize="12"/>
    <WrapPanel HorizontalAlignment="Right" Margin="0,10,0,0"><Button Content="清除当前密钥" Command="{Binding ClearKeyCommand}"/><Button Content="测试连接" Command="{Binding TestCommand}"/><Button Content="保存并使用此服务" Command="{Binding SaveCommand}" Style="{StaticResource PrimaryButton}"/></WrapPanel>
   </StackPanel>
   <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"><StackPanel>
-   <TextBlock Text="在线模式将识别后的文字发送给所选服务，费用由服务商收取；截图仍留在本机。测试连接会发送固定短句，也可能计费。" Style="{StaticResource Subtitle}" Margin="0,0,0,16"/>
+   <TextBlock Text="在线翻译只发送文字；在线 OCR 会发送当前截图。系统和增强离线 OCR 不上传截图。两项共用当前服务地址与密钥，费用由服务商收取；测试连接仅测试固定短句翻译。" Style="{StaticResource Subtitle}" Margin="0,0,0,16"/>
    <Border Style="{StaticResource Card}" Padding="18"><StackPanel IsEnabled="{Binding CanEdit}">
     <TextBlock Text="服务 / 已保存配置" Style="{StaticResource SectionTitle}"/><ComboBox x:Name="ProviderChoice" ItemsSource="{Binding Providers}" SelectedItem="{Binding Provider}" Margin="0,6,0,8"/>
     <TextBlock Text="服务不可用时，选择另一组配置并保存，再返回原文重试。切换会放弃尚未保存的修改。" Style="{StaticResource Subtitle}" FontSize="11" Margin="0,0,0,12"/>
@@ -20,6 +20,8 @@
     <TextBlock Text="须兼容 OpenAI Chat Completions；可填基础地址或完整 chat/completions 地址。通义千问地址须与密钥地域匹配。" Style="{StaticResource Subtitle}" FontSize="11" Margin="0,0,0,14"/>
     <TextBlock Text="模型名称（可直接输入）" Style="{StaticResource SectionTitle}"/><ComboBox x:Name="ModelBox" IsEditable="True" IsTextSearchEnabled="False" ItemsSource="{Binding SuggestedModels}" Text="{Binding Model,UpdateSourceTrigger=PropertyChanged}" Margin="0,6,0,4"/>
     <TextBlock Text="候选名称仅供参考，请以服务商控制台支持的模型为准；每组配置分别保存密钥。" Style="{StaticResource Subtitle}" FontSize="11" Margin="0,0,0,14"/>
+    <TextBlock Text="OCR 视觉模型（可选，留空共用上方模型）" Style="{StaticResource SectionTitle}"/><ComboBox x:Name="VisionModelBox" IsEditable="True" IsTextSearchEnabled="False" ItemsSource="{Binding SuggestedVisionModels}" Text="{Binding VisionModel,UpdateSourceTrigger=PropertyChanged}" Margin="0,6,0,4"/>
+    <TextBlock Text="模型必须支持 image_url 图片输入。DeepSeek 文本模型不能识图；通义千问可填写 qwen-vl-plus / qwen-vl-max。候选以服务商实际支持为准；翻译模型不受此项影响。" Style="{StaticResource Subtitle}" FontSize="11" Margin="0,0,0,14"/>
     <TextBlock Text="API Key" Style="{StaticResource SectionTitle}"/><PasswordBox x:Name="ApiKeyBox" PasswordChanged="KeyChanged" Padding="10,8" Margin="0,6,0,4"/>
     <TextBlock Text="{Binding KeyHint}" Style="{StaticResource Subtitle}" FontSize="11" Margin="0,0,0,16"/>
     <TextBlock Text="默认翻译方式请在“通用设置”或文字工作台中保存。这里仅保存当前在线服务配置，不改变已保存的翻译方式。" Style="{StaticResource Subtitle}" FontSize="12"/>

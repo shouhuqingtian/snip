@@ -200,7 +200,7 @@ internal static class TextWindowChecks
         }
     }
     private static void Require(bool condition, string message) { if (!condition) throw new InvalidOperationException(message); }
-    private static BitmapSource Image(int width, int height)
+    internal static BitmapSource Image(int width, int height)
     { var image = BitmapSource.Create(width, height, 96, 96, PixelFormats.Bgra32, null, Enumerable.Repeat((byte)255, width * height * 4).ToArray(), width * 4); image.Freeze(); return image; }
     private sealed class NoLanguageOcr : IOcrService
     {

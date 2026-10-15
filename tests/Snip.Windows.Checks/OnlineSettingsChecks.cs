@@ -54,7 +54,11 @@ internal static class OnlineSettingsChecks
             store.Delete();Require(store.Read() is null,"Settings delete failed.");
             Console.WriteLine("PASS explicit key removal and configuration deletion work.");
             store.Save(new("DeepSeek","https://api.deepseek.com/v1","deepseek-chat",true),secret);
-            string oldBlob=JsonNode.Parse(File.ReadAllText(path))!["Profiles"]![0]!["ProtectedKey"]!.GetValue<string>();
+            var legacyProfile = JsonNode.Parse(File.ReadAllText(path))!;
+            legacyProfile["Profiles"]![0]!.AsObject().Remove("VisionModel");
+            File.WriteAllText(path, legacyProfile.ToJsonString());
+            Require(store.Read()!.VisionModel == "" && store.ReadCredentials().ApiKey == secret, "Legacy profile without vision field lost credentials.");
+            string oldBlob=legacyProfile["Profiles"]![0]!["ProtectedKey"]!.GetValue<string>();
             store.Save(new("自定义：迁移检查","https://custom.example.com/v1","custom-model",true),"PUBLIC-MIGRATION-KEY");
             var migrated=JsonNode.Parse(File.ReadAllText(path))!;
             Require(migrated["Version"]!.GetValue<int>()==1 && migrated["Profiles"]![0]!["ProtectedKey"]!.GetValue<string>()==oldBlob && store.ReadCredentials("DeepSeek").ApiKey==secret,"Version-one credentials were rewritten or lost.");
@@ -62,6 +66,7 @@ internal static class OnlineSettingsChecks
             store.Delete();
             Console.WriteLine("PASS existing version-one profile encryption remains unchanged when adding custom profiles.");
             CheckWindows(path);
+            OcrModeChecks.Run(folder);
             return 0;
         }
         catch(Exception error){Console.Error.WriteLine(error);return 1;}
@@ -86,7 +91,10 @@ internal static class OnlineSettingsChecks
         Require(((PasswordBox)window.FindName("ApiKeyBox")).Password.Length==0,"Save did not clear visible password buffer.");
         settings.Provider=OnlineTranslationProviders.Qwen;
         Require(settings.Model=="qwen-plus" && !settings.HasSavedKey,"Switching provider reused previous key.");
+        var visionControl = (ComboBox)window.FindName("VisionModelBox");
+        visionControl.Text = "qwen-vl-plus";
         ((PasswordBox)window.FindName("ApiKeyBox")).Password="PUBLIC-KEY-QWEN";settings.DefaultOnline=true;settings.SaveCommand.Execute(null);
+        Require(store.Read(OnlineTranslationProviders.Qwen) is { Model: "qwen-plus", VisionModel: "qwen-vl-plus" } && store.ReadCredentials(OnlineTranslationProviders.Qwen).Settings.VisionModel == "qwen-vl-plus", "Shared profile did not retain separate vision model.");
         settings.Provider=OnlineTranslationProviders.DeepSeek;
         Require(settings.HasSavedKey && ((PasswordBox)window.FindName("ApiKeyBox")).Password.Length==0,"Saved provider key should remain encrypted and not be repopulated.");
         Require(store.ReadCredentials(OnlineTranslationProviders.Qwen).ApiKey=="PUBLIC-KEY-QWEN" && store.ReadCredentials(OnlineTranslationProviders.DeepSeek).ApiKey=="PUBLIC-KEY-DEEPSEEK","Provider profiles did not persist independently.");

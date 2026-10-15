@@ -1,6 +1,6 @@
 namespace Snip.Core;
 
-public sealed record OnlineTranslationSettings(string Provider, string Endpoint, string Model, bool DefaultOnline = false, bool HasApiKey = false);
+public sealed record OnlineTranslationSettings(string Provider, string Endpoint, string Model, bool DefaultOnline = false, bool HasApiKey = false, string VisionModel = "");
 
 /// <summary>Ephemeral credentials; never serialize or put this object in diagnostics.</summary>
 public sealed class OnlineTranslationCredentials(OnlineTranslationSettings settings, string apiKey)

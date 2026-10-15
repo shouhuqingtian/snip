@@ -84,6 +84,18 @@ jobs:
         run: |
           dotnet run --project tests/Snip.Windows.Checks/Snip.Windows.Checks.csproj -c Release --no-build -- --enhanced-ocr
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Verify shared online configuration and three OCR modes early
+        shell: pwsh
+        timeout-minutes: 3
+        run: |
+          New-Item -ItemType Directory -Path artifacts/validation -Force | Out-Null
+          dotnet run --project tests/Snip.Windows.Checks/Snip.Windows.Checks.csproj -c Release --no-build -- --online-settings *> artifacts/validation/early-ocr-modes.log
+          $checkExit = $LASTEXITCODE
+          if ($checkExit -ne 0) {
+            $detail = (Get-Content artifacts/validation/early-ocr-modes.log -Tail 25 | Out-String).Replace('%','%25').Replace("`r",'%0D').Replace("`n",'%0A')
+            Write-Output "::error title=OCR mode and shared settings regression::$detail"
+            exit $checkExit
+          }
       - name: Verify text clipboard contention separately
         shell: pwsh
         timeout-minutes: 2

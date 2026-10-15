@@ -8,7 +8,14 @@
    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal"><Button Content="移回当前屏幕" Click="RecoverClick" Style="{StaticResource QuietButton}"/><Button x:Name="CloseResultButton" Content="关闭 Esc" Click="CloseClick"/></StackPanel>
    <StackPanel><TextBlock Text="文字工作台" Style="{StaticResource PageTitle}"/><TextBlock Text="提取、修正与翻译，清楚地看完整句话。" Style="{StaticResource Subtitle}" FontSize="12"/></StackPanel>
   </DockPanel>
-  <Border Grid.Row="1" Style="{StaticResource Card}" Padding="10" Margin="0,0,0,14"><WrapPanel>
+  <Border Grid.Row="1" Style="{StaticResource Card}" Padding="10" Margin="0,0,0,14"><StackPanel>
+   <WrapPanel Visibility="{Binding SupportsOcrModes,Converter={StaticResource BoolVisibility}}" Margin="0,0,0,6">
+    <TextBlock Text="文字识别" VerticalAlignment="Center" Margin="4,0,8,0"/>
+    <ComboBox x:Name="OcrModeBox" SelectedValue="{Binding RecognitionMode,Mode=TwoWay}" SelectedValuePath="Tag" IsEnabled="{Binding CanChangeOcrMode}" Width="210"><ComboBoxItem Content="系统识别（免下载）" Tag="{x:Static core:OcrMode.System}"/><ComboBoxItem Content="增强离线识别" Tag="{x:Static core:OcrMode.EnhancedOffline}"/><ComboBoxItem Content="在线视觉识别" Tag="{x:Static core:OcrMode.Online}"/></ComboBox>
+    <Button x:Name="SaveOcrSettingsButton" Content="保存识别默认" Command="{Binding SaveOcrSettingsCommand}"/>
+   </WrapPanel>
+   <TextBlock Text="{Binding OcrModeNotice}" Visibility="{Binding SupportsOcrModes,Converter={StaticResource BoolVisibility}}" Style="{StaticResource Subtitle}" FontSize="11" Margin="4,0,4,6"/>
+   <WrapPanel>
    <ComboBox x:Name="TranslationDirectionBox" SelectedValue="{Binding Direction,Mode=TwoWay}" SelectedValuePath="Tag" IsEnabled="{Binding CanChangeTranslationMode}" Width="156" ToolTip="{Binding DirectionHint}"><ComboBoxItem Content="自动（中英互译）" Tag="auto"/><ComboBoxItem Content="英文 → 中文" Tag="en-zh"/><ComboBoxItem Content="中文 → 英文" Tag="zh-en"/></ComboBox>
    <ComboBox x:Name="TranslationModeBox" SelectedValue="{Binding Mode,Mode=TwoWay}" SelectedValuePath="Tag" IsEnabled="{Binding CanChangeTranslationMode}" Width="158"><ComboBoxItem Content="在线大模型" Tag="{x:Static core:TranslationMode.Online}"/><ComboBoxItem Content="离线模型" Tag="{x:Static core:TranslationMode.Offline}"/><ComboBoxItem Content="基础词典（离线）" Tag="{x:Static core:TranslationMode.Basic}"/></ComboBox>
    <Button Content="{Binding TranslationActionText}" Style="{StaticResource PrimaryButton}" Command="{Binding TranslateCommand}"/>
@@ -16,14 +23,14 @@
    <Button Content="在线设置" Command="{Binding ConfigureOnlineCommand}" Style="{StaticResource QuietButton}"/>
    <Button x:Name="MoreSettingsButton" Content="更多设置" Command="{Binding ToggleOptionsCommand}" Style="{StaticResource QuietButton}"/>
    <Button Content="取消操作" Command="{Binding CancelCommand}" Style="{StaticResource QuietButton}" Visibility="{Binding Busy,Converter={StaticResource BoolVisibility}}"/>
-  </WrapPanel></Border>
+  </WrapPanel></StackPanel></Border>
   <Popup x:Name="TextOptionsPopup" Placement="Bottom" PlacementTarget="{Binding ElementName=MoreSettingsButton}" DataContext="{Binding PlacementTarget.DataContext,RelativeSource={RelativeSource Self}}" IsOpen="{Binding ShowOptions,Mode=TwoWay}" AllowsTransparency="True" StaysOpen="False">
    <Border Style="{StaticResource Card}" Width="650" Padding="18" Margin="4"><StackPanel>
     <TextBlock Text="识别与翻译设置" Style="{StaticResource SectionTitle}" Margin="0,0,0,10"/>
-    <WrapPanel><TextBlock Text="识别语言" VerticalAlignment="Center" Margin="3,0,8,0"/><ComboBox ItemsSource="{Binding Languages}" SelectedItem="{Binding Language}" IsEnabled="{Binding CanSelectOcrLanguage}" Width="160"/><Button x:Name="SaveTranslationSettingsButton" Content="保存为默认" Command="{Binding SaveTranslationSettingsCommand}"/></WrapPanel>
+    <WrapPanel><TextBlock Text="识别语言" VerticalAlignment="Center" Margin="3,0,8,0"/><ComboBox ItemsSource="{Binding Languages}" SelectedItem="{Binding Language}" IsEnabled="{Binding CanSelectOcrLanguage}" Width="160"/><Button x:Name="SaveTranslationSettingsButton" Content="保存翻译默认" Command="{Binding SaveTranslationSettingsCommand}"/></WrapPanel>
     <TextBlock Text="{Binding DirectionHint}" Style="{StaticResource Subtitle}" FontSize="12" Margin="3,8,0,10"/>
     <StackPanel Visibility="{Binding SupportsEnhancedOcr,Converter={StaticResource BoolVisibility}}" Margin="0,0,0,12">
-     <WrapPanel><CheckBox x:Name="EnhancedOcrBox" Content="增强离线识别（中英自动）" IsChecked="{Binding UseEnhancedOcr}" IsEnabled="{Binding CanSwitchOcr}" VerticalAlignment="Center" Margin="3,0,12,0"/><Button x:Name="DownloadOcrButton" Content="下载 / 修复增强 OCR" Command="{Binding DownloadOcrCommand}"/></WrapPanel>
+     <WrapPanel><CheckBox x:Name="EnhancedOcrBox" Content="增强离线识别（中英自动）" IsChecked="{Binding UseEnhancedOcr}" IsEnabled="{Binding CanSwitchOcr}" VerticalAlignment="Center" Margin="3,0,12,0"><CheckBox.Style><Style TargetType="CheckBox"><Setter Property="Visibility" Value="Visible"/><Style.Triggers><DataTrigger Binding="{Binding SupportsOcrModes}" Value="True"><Setter Property="Visibility" Value="Collapsed"/></DataTrigger></Style.Triggers></Style></CheckBox.Style></CheckBox><Button x:Name="DownloadOcrButton" Content="下载 / 修复增强 OCR" Command="{Binding DownloadOcrCommand}"/></WrapPanel>
      <TextBlock Text="{Binding OcrModelStatus}" Style="{StaticResource Subtitle}" FontSize="12" Margin="3,6,0,0"/>
      <TextBlock Style="{StaticResource Subtitle}" FontSize="12" Margin="3,6,0,0">运行库缺失时可安装 <Hyperlink NavigateUri="https://aka.ms/vs/17/release/vc_redist.x64.exe" RequestNavigate="RuntimeDownloadNavigate">微软 Visual C++ x64 运行库</Hyperlink>。</TextBlock>
     </StackPanel>

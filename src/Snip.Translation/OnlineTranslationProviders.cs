@@ -21,6 +21,13 @@ public static class OnlineTranslationProviders
         _ => new(provider, "", "")
     };
 
+    public static string[] VisionModels(string provider) => provider switch
+    {
+        Qwen => ["qwen-vl-plus", "qwen-vl-max"],
+        OpenAI => ["gpt-4.1-mini", "gpt-4o-mini"],
+        _ => []
+    };
+
     public static string[] Models(string provider) => provider switch
     {
         DeepSeek => ["deepseek-chat", "deepseek-reasoner"],

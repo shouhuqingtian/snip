@@ -17,7 +17,7 @@ public sealed class OnlineTranslationSettingsStore : IOnlineTranslationSettingsS
     {
         this.path = Path.GetFullPath(path ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SelfSnip", "online-translation.json"));
     }
-    private sealed record Profile(string Provider, string Endpoint, string Model, string ProtectedKey);
+    private sealed record Profile(string Provider, string Endpoint, string Model, string ProtectedKey, string VisionModel = "");
     private sealed record StoredSettings(int Version, string ActiveProvider, bool DefaultOnline, Profile[] Profiles);
     private static Profile? Find(StoredSettings? stored, string? provider) => stored is null ? null : Array.Find(stored.Profiles, value => value.Provider == (provider ?? stored.ActiveProvider));
     private StoredSettings? Load()
@@ -39,13 +39,13 @@ public sealed class OnlineTranslationSettingsStore : IOnlineTranslationSettingsS
     public OnlineTranslationSettings? Read(string? provider = null)
     {
         var stored = Load(); var profile = Find(stored, provider);
-        return profile is null ? null : new(profile.Provider, profile.Endpoint, profile.Model, stored!.DefaultOnline, profile.ProtectedKey.Length > 0);
+        return profile is null ? null : new(profile.Provider, profile.Endpoint, profile.Model, stored!.DefaultOnline, profile.ProtectedKey.Length > 0, profile.VisionModel ?? "");
     }
     public IReadOnlyList<OnlineTranslationSettings> ReadProfiles()
     {
         var stored = Load();
         return stored?.Profiles.Select(profile => new OnlineTranslationSettings(profile.Provider, profile.Endpoint,
-            profile.Model, stored.DefaultOnline, profile.ProtectedKey.Length > 0)).ToArray() ?? [];
+            profile.Model, stored.DefaultOnline, profile.ProtectedKey.Length > 0, profile.VisionModel ?? "")).ToArray() ?? [];
     }
     public void DeleteProfile(string provider)
     {
@@ -66,7 +66,7 @@ public sealed class OnlineTranslationSettingsStore : IOnlineTranslationSettingsS
         try
         {
             key = ProtectedData.Unprotect(Convert.FromBase64String(profile.ProtectedKey), null, DataProtectionScope.CurrentUser);
-            return new(new(profile.Provider,profile.Endpoint,profile.Model,stored!.DefaultOnline,true),Encoding.UTF8.GetString(key));
+            return new(new(profile.Provider,profile.Endpoint,profile.Model,stored!.DefaultOnline,true,profile.VisionModel ?? ""),Encoding.UTF8.GetString(key));
         }
         catch (Exception error) when (error is CryptographicException or FormatException)
         { throw new InvalidOperationException("保存的密钥无法解密，请在当前 Windows 用户下重新填写。"); }
@@ -83,6 +83,8 @@ public sealed class OnlineTranslationSettingsStore : IOnlineTranslationSettingsS
         var previousSettings = Load(); var previous = Find(previousSettings, settings.Provider.Trim());
         if (previous is null && previousSettings?.Profiles.Length >= 32)
             throw new InvalidOperationException("最多保存 32 组在线配置，请先删除不再使用的自定义配置。");
+        if (settings.VisionModel is null || settings.VisionModel.Length > 256 || settings.VisionModel.Any(char.IsControl))
+            throw new ArgumentException("视觉模型名称无效，请检查填写内容。");
         string encrypted = "";
         if (!removeKey)
         {
@@ -98,7 +100,7 @@ public sealed class OnlineTranslationSettingsStore : IOnlineTranslationSettingsS
                 encrypted = previous.ProtectedKey;
         }
         if (settings.DefaultOnline && encrypted.Length == 0) throw new InvalidOperationException("默认在线翻译需要先保存密钥。");
-        var profile = new Profile(settings.Provider.Trim(),settings.Endpoint.Trim(),settings.Model.Trim(),encrypted);
+        var profile = new Profile(settings.Provider.Trim(),settings.Endpoint.Trim(),settings.Model.Trim(),encrypted,settings.VisionModel.Trim());
         var profiles = new System.Collections.Generic.List<Profile>(previousSettings?.Profiles ?? Array.Empty<Profile>());
         profiles.RemoveAll(value => value.Provider == profile.Provider); profiles.Add(profile);
         var stored = new StoredSettings(1,profile.Provider,settings.DefaultOnline,profiles.ToArray());

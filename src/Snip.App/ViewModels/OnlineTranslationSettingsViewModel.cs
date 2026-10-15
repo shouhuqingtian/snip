@@ -11,7 +11,7 @@ public sealed class OnlineTranslationSettingsViewModel : ObservableObject, IDisp
     private readonly Func<OnlineTranslationCredentials,ITranslationService> factory;
     private CancellationTokenSource? cancellation;
     private string provider=OnlineTranslationProviders.DeepSeek,endpoint="",model="",apiKey="",status="密钥仅加密保存在当前 Windows 用户下。";
-    private string customProfileName="";
+    private string customProfileName="", visionModel="";
     private bool defaultOnline,hasSavedKey,busy,disposed;
     public OnlineTranslationSettingsViewModel(IOnlineTranslationSettingsStore store,Func<OnlineTranslationCredentials,ITranslationService>? factory=null)
     {
@@ -36,10 +36,12 @@ public sealed class OnlineTranslationSettingsViewModel : ObservableObject, IDisp
         {
             if (busy || disposed || value is null || !Providers.Contains(value) || value==provider) return;
             provider=value;apiKey="";
-            Notify(nameof(Provider));Notify(nameof(SuggestedModels));
+            Notify(nameof(Provider));Notify(nameof(SuggestedModels));Notify(nameof(SuggestedVisionModels));
             LoadProfile();Notify(nameof(IsCustomProfile));DeleteProfileCommand.Refresh();
         }
     }
+    public string VisionModel { get=>visionModel;set=>Set(ref visionModel,value); }
+    public string[] SuggestedVisionModels => OnlineTranslationProviders.VisionModels(provider);
     public string Endpoint{get=>endpoint;set=>Set(ref endpoint,value);}
     public string Model{get=>model;set=>Set(ref model,value);}
     public bool DefaultOnline{get=>defaultOnline;set=>Set(ref defaultOnline,value);}
@@ -82,15 +84,15 @@ public sealed class OnlineTranslationSettingsViewModel : ObservableObject, IDisp
     public void SetApiKey(string value)=>apiKey=value;
     private void LoadDefaults()
     {
-        var defaults=OnlineTranslationProviders.Defaults(provider);Endpoint=defaults.Endpoint;Model=defaults.Model;HasSavedKey=false;
+        var defaults=OnlineTranslationProviders.Defaults(provider);Endpoint=defaults.Endpoint;Model=defaults.Model;VisionModel="";HasSavedKey=false;
     }
     private void LoadProfile()
     {
         var saved=store.Read(provider);
         if(saved is null){LoadDefaults();DefaultOnline=store.Read()?.DefaultOnline ?? false;return;}
-        Endpoint=saved.Endpoint;Model=saved.Model;DefaultOnline=saved.DefaultOnline;HasSavedKey=saved.HasApiKey;
+        Endpoint=saved.Endpoint;Model=saved.Model;VisionModel=saved.VisionModel;DefaultOnline=saved.DefaultOnline;HasSavedKey=saved.HasApiKey;
     }
-    private OnlineTranslationSettings Draft()=>new(provider,endpoint,model,defaultOnline);
+    private OnlineTranslationSettings Draft()=>new(provider,endpoint,model,defaultOnline,VisionModel:visionModel);
     private void Save()
     {
         try

@@ -18,6 +18,8 @@ public sealed class FeatureHub
     private readonly IDesktopCaptureService capture;
     private readonly PinManager pins;
     private readonly IOcrService ocr;
+    private readonly IOcrService systemOcr = new OfflineOcrService();
+    private readonly IOcrPreferencesStore ocrPreferences = new OcrPreferencesStore();
     private readonly ModelStore models;
     private readonly ITranslationService translator;
     private readonly IOnlineTranslationSettingsStore onlineSettings;
@@ -29,7 +31,7 @@ public sealed class FeatureHub
         IOcrService? ocr = null, ITranslationService? translator = null, ModelStore? models = null, Func<IntPtr, IWindowsShareSession>? shareFactory = null, IOnlineTranslationSettingsStore? onlineSettings = null, ITranslationService? onlineTranslator = null, ITranslationPreferencesStore? translationPreferences = null)
     {
         this.renderer = renderer; this.export = export; this.capture = capture; this.pins = pins; this.diagnostics = diagnostics;
-        this.ocr = ocr ?? new EnhancedOcrService(new OfflineOcrService(), new OcrModelStore(System.IO.Path.Combine(
+        this.ocr = ocr ?? new EnhancedOcrService(systemOcr, new OcrModelStore(System.IO.Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SelfSnip", "Ocr", "PP-OCRv6-small")), WorkerHost, diagnostics);
         this.models = models ?? new(System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SelfSnip", "Models"));
         this.translator = translator ?? new OfflineTranslator(this.models); this.shareFactory = shareFactory;
@@ -57,9 +59,18 @@ public sealed class FeatureHub
         {
             var image = vm.Compose();
             operation?.Stage("image-composed", new { image.PixelWidth, image.PixelHeight });
-            text = new TextResultViewModel(image, ocr, models, translator, diagnostics, onlineTranslator: onlineTranslator,
+            IOcrService selectedOcr = ocr;
+            if (ocr is EnhancedOcrService enhanced)
+            {
+                OcrMode selected;
+                try { selected = ocrPreferences.Read() ?? (enhanced.IsInstalled && enhanced.Enabled ? OcrMode.EnhancedOffline : OcrMode.System); }
+                catch (InvalidOperationException error)
+                { diagnostics?.Record("ocr-preferences", "invalid-configuration", error: error); selected = OcrMode.System; }
+                selectedOcr = new SelectableOcrService(systemOcr, enhanced, new OnlineOcrService(() => onlineSettings.ReadCredentials()), selected);
+            }
+            text = new TextResultViewModel(image, selectedOcr, models, translator, diagnostics, onlineTranslator: onlineTranslator,
                 configureOnline: () => ShowOnlineSettings(),
-                defaultOnline: DefaultOnline(), preferences: translationPreferences, initialPreferences: ReadSavedTranslationPreferences()) { AutoTranslate = translate };
+                defaultOnline: DefaultOnline(), preferences: translationPreferences, initialPreferences: ReadSavedTranslationPreferences(), ocrPreferences: ocrPreferences) { AutoTranslate = translate };
             operation?.Stage("view-model-created");
             // A result must outlive the screenshot overlay. Do not give it the overlay as owner.
             window = new TextResultWindow(text) { WindowStartupLocation = WindowStartupLocation.CenterScreen };

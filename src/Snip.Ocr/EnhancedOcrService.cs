@@ -30,8 +30,13 @@ public sealed class EnhancedOcrService : IOcrService, IOcrEnhancement
     { await models.InstallAsync(progress, token).ConfigureAwait(false); token.ThrowIfCancellationRequested(); Enabled = true; }
     public Task<OcrResult> RecognizeAsync(ImagePayload image, CancellationToken token) => RecognizeAsync(image, null, token);
     public async Task<OcrResult> RecognizeAsync(ImagePayload image, string? language, CancellationToken token)
+        => await RecognizeCoreAsync(image, language, enabled, token).ConfigureAwait(false);
+    // A per-window selection must not change another window's engine or the legacy saved default.
+    public Task<OcrResult> RecognizeEnhancedAsync(ImagePayload image, string? language, CancellationToken token)
+        => RecognizeCoreAsync(image, language, true, token);
+    private async Task<OcrResult> RecognizeCoreAsync(ImagePayload image, string? language, bool useEnhanced, CancellationToken token)
     {
-        if (!enabled || !IsInstalled)
+        if (!useEnhanced || !IsInstalled)
         {
             description = "系统 OCR（免下载）";
             return await SystemRecognizeAsync(image, language, token).ConfigureAwait(false);

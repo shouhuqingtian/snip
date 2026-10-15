@@ -7,7 +7,9 @@ if (args.Length == 1 && args[0] == "--online")
     int compute = await ComputeBackendChecks.RunAsync();
     if(compute!=0)return compute;
     int basic=await BasicDictionaryChecks.RunAsync();
-    return basic==0 ? await OnlineTranslationChecks.RunAsync() : basic;
+    if (basic != 0) return basic;
+    int translation = await OnlineTranslationChecks.RunAsync();
+    return translation == 0 ? await OnlineOcrChecks.RunAsync() : translation;
 }
 if (args.Length == 2 && args[1] == "--performance") return await TranslationPerformanceChecks.RunAsync(args[0]);
 if (args.Length == 2 && args[1] is "--gpu-runtime" or "--gpu-inference") return await GpuRuntimeChecks.RunAsync(args[0], args[1] == "--gpu-inference");
