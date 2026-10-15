@@ -6,6 +6,7 @@ using Snip.App.ViewModels;
 using Snip.App.Views;
 using Snip.Core;
 using Snip.Infrastructure;
+using Snip.Ocr;
 
 namespace Snip.App;
 
@@ -34,6 +35,7 @@ public partial class App : Application
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
+        if (e.Args.Length == 2 && e.Args[0] == "--ocr-worker") { RunOcrWorker(e.Args[1]); return; }
         diagnostics = new DiagnosticJournal(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SelfSnip", "Logs"));
         diagnostics.Record("app", "started", new { Version = DesktopDiagnostics.Version });
         DispatcherUnhandledException += (_, args) => RecordUnhandled(args.Exception, "dispatcher-unhandled");
@@ -108,6 +110,14 @@ public partial class App : Application
             }
         }
         catch (Exception ex) { ShowError(ex); Shutdown(1); }
+    }
+
+    private async void RunOcrWorker(string folder)
+    {
+        int code;
+        try { code = await Task.Run(() => OcrWorker.RunAsync(folder, Console.OpenStandardInput(), Console.OpenStandardOutput())); }
+        catch { code = 6; }
+        Shutdown(code);
     }
 
     private void UpdateHotkey(HotkeyGesture gesture)

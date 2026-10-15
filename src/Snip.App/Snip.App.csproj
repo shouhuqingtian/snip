@@ -13,6 +13,7 @@
     <ProjectReference Include="../Snip.Core/Snip.Core.csproj" />
     <ProjectReference Include="../Snip.Infrastructure/Snip.Infrastructure.csproj" />
     <ProjectReference Include="../Snip.Translation/Snip.Translation.csproj" />
+    <ProjectReference Include="../Snip.Ocr/Snip.Ocr.csproj" />
   </ItemGroup>
   <ItemGroup><Resource Include="../Snip.Infrastructure/Assets/sheep.ico" Link="Assets/sheep.ico" /></ItemGroup>
 </Project>

@@ -5,6 +5,8 @@ using Snip.App.Views;
 using Snip.Core;
 using Snip.Infrastructure;
 using Snip.Translation;
+using Snip.Ocr;
+using System.Diagnostics;
 
 namespace Snip.App.Services;
 
@@ -27,7 +29,8 @@ public sealed class FeatureHub
         IOcrService? ocr = null, ITranslationService? translator = null, ModelStore? models = null, Func<IntPtr, IWindowsShareSession>? shareFactory = null, IOnlineTranslationSettingsStore? onlineSettings = null, ITranslationService? onlineTranslator = null, ITranslationPreferencesStore? translationPreferences = null)
     {
         this.renderer = renderer; this.export = export; this.capture = capture; this.pins = pins; this.diagnostics = diagnostics;
-        this.ocr = ocr ?? new OfflineOcrService();
+        this.ocr = ocr ?? new EnhancedOcrService(new OfflineOcrService(), new OcrModelStore(System.IO.Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SelfSnip", "Ocr", "PP-OCRv6-small")), WorkerHost, diagnostics);
         this.models = models ?? new(System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SelfSnip", "Models"));
         this.translator = translator ?? new OfflineTranslator(this.models); this.shareFactory = shareFactory;
         if (this.translator is OfflineTranslator native)
@@ -36,6 +39,14 @@ public sealed class FeatureHub
         this.translationPreferences = translationPreferences ?? new TranslationPreferencesStore();
         this.onlineSettings = onlineSettings ?? new OnlineTranslationSettingsStore();
         this.onlineTranslator = onlineTranslator ?? new OnlineTranslator(() => this.onlineSettings.ReadCredentials());
+    }
+    private static ProcessStartInfo WorkerHost()
+    {
+        string executable = Environment.ProcessPath ?? throw new InvalidOperationException("无法定位截图程序。");
+        var info = new ProcessStartInfo(executable);
+        if (System.IO.Path.GetFileNameWithoutExtension(executable).Equals("dotnet", StringComparison.OrdinalIgnoreCase))
+            info.ArgumentList.Add(System.IO.Path.Combine(AppContext.BaseDirectory, "Snip.dll"));
+        return info;
     }
     public TextResultWindow? ShowText(EditorViewModel vm, bool translate)
     {

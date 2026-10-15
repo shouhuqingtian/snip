@@ -1,4 +1,4 @@
-自用截图 2.0.22 第三方组件与模型说明
+自用截图 2.0.27 第三方组件与模型说明
 
 唯一离线中英翻译模型：Tencent Hy-MT2-1.8B，Apache License 2.0。
 原始模型：https://huggingface.co/tencent/Hy-MT2-1.8B
@@ -36,3 +36,14 @@ Vulkan 设备能力由系统显卡驱动提供；本软件不安装或分发显�
 子集生成脚本：packaging/BuildBasicDictionary.py；100000 词条（含 5000 短语），5400790 字节。
 子集 SHA256：b2bb3a1943ea9304dfb51ac3f0c1003eb1c8f920494825141d16d6195a965a1b
 词典提供查词和部分短语释义，不是整句翻译模型；运行时无需下载或访问任何服务。
+
+
+2.0.27 可选增强离线 OCR：PP-OCRv6 small 检测与识别模型，Apache-2.0。
+模型发布与固定转换来源：RapidAI/RapidOCR v3.10.0；SHA256 见 src/Snip.Ocr/OcrModelStore.cs。
+模型镜像、字符表：BobLd/RapidOcrNet 固定提交 7b5c432e4262470b6d81bf1710c3bd52fc438566。
+四个模型/字符表文件共 32,257,432 字节，按用户操作下载，不随安装包嵌入。
+推理库 RapidOcrNet 4.2.0，Apache-2.0：https://github.com/BobLd/RapidOcrNet。
+ONNX Runtime 1.29.0，MIT；SkiaSharp 3.119.1，MIT；Clipper2 2.0.0，Boost Software License 1.0。
+上述许可和 ONNX/Skia 原生第三方说明完整放在 licenses/，源码对应 docs/licenses。
+本轮重新为增强 OCR 引入 ONNX Runtime；离线翻译仍使用独立的 llama.cpp，不因此常驻 OCR 模型。
+增强 OCR 使用本地管道调用短生命周期识别进程；截图和识别文字不写入临时文件或诊断日志，也不发送到在线 OCR 服务。

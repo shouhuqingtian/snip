@@ -1,0 +1,8 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><TargetFramework>net8.0</TargetFramework></PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Snip.Core/Snip.Core.csproj" />
+    <!-- Models are optional downloads. Do not copy the package's Latin-only model set. -->
+    <PackageReference Include="RapidOcrNet" Version="4.2.0" ExcludeAssets="build;buildTransitive;contentFiles" />
+  </ItemGroup>
+</Project>

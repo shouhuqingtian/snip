@@ -59,6 +59,7 @@ try {
         Check 'chrome' @('run','--project','tests/Snip.Windows.Checks/Snip.Windows.Checks.csproj','-c','Release','--no-build','--','--chrome')
         Check 'ocr' @('run','--project','tests/Snip.Windows.Checks/Snip.Windows.Checks.csproj','-c','Release','--no-build','--','--ocr') -AllowsMissingOcr
         Check 'ocr-ui' @('run','--project','tests/Snip.Windows.Checks/Snip.Windows.Checks.csproj','-c','Release','--no-build','--','--ocr-ui') -AllowsMissingOcr
+        Check 'enhanced-ocr' @('run','--project','tests/Snip.Windows.Checks/Snip.Windows.Checks.csproj','-c','Release','--no-build','--','--enhanced-ocr')
     } elseif ($Scope -eq 'Desktop') { throw 'Desktop 检查必须在 Windows 交互桌面运行。' }
     if ($env:GITHUB_STEP_SUMMARY) {
         @('| Check | Outcome | Seconds |','| --- | --- | --- |') + @($results | ForEach-Object { "| $($_.Name) | $($_.Outcome) | $($_.ElapsedSeconds) |" }) |

@@ -20,8 +20,13 @@
   <Popup x:Name="TextOptionsPopup" Placement="Bottom" PlacementTarget="{Binding ElementName=MoreSettingsButton}" DataContext="{Binding PlacementTarget.DataContext,RelativeSource={RelativeSource Self}}" IsOpen="{Binding ShowOptions,Mode=TwoWay}" AllowsTransparency="True" StaysOpen="False">
    <Border Style="{StaticResource Card}" Width="650" Padding="18" Margin="4"><StackPanel>
     <TextBlock Text="识别与翻译设置" Style="{StaticResource SectionTitle}" Margin="0,0,0,10"/>
-    <WrapPanel><TextBlock Text="识别语言" VerticalAlignment="Center" Margin="3,0,8,0"/><ComboBox ItemsSource="{Binding Languages}" SelectedItem="{Binding Language}" Width="160"/><Button x:Name="SaveTranslationSettingsButton" Content="保存为默认" Command="{Binding SaveTranslationSettingsCommand}"/></WrapPanel>
+    <WrapPanel><TextBlock Text="识别语言" VerticalAlignment="Center" Margin="3,0,8,0"/><ComboBox ItemsSource="{Binding Languages}" SelectedItem="{Binding Language}" IsEnabled="{Binding CanSelectOcrLanguage}" Width="160"/><Button x:Name="SaveTranslationSettingsButton" Content="保存为默认" Command="{Binding SaveTranslationSettingsCommand}"/></WrapPanel>
     <TextBlock Text="{Binding DirectionHint}" Style="{StaticResource Subtitle}" FontSize="12" Margin="3,8,0,10"/>
+    <StackPanel Visibility="{Binding SupportsEnhancedOcr,Converter={StaticResource BoolVisibility}}" Margin="0,0,0,12">
+     <WrapPanel><CheckBox x:Name="EnhancedOcrBox" Content="增强离线识别（中英自动）" IsChecked="{Binding UseEnhancedOcr}" IsEnabled="{Binding CanSwitchOcr}" VerticalAlignment="Center" Margin="3,0,12,0"/><Button x:Name="DownloadOcrButton" Content="下载 / 修复增强 OCR" Command="{Binding DownloadOcrCommand}"/></WrapPanel>
+     <TextBlock Text="{Binding OcrModelStatus}" Style="{StaticResource Subtitle}" FontSize="12" Margin="3,6,0,0"/>
+     <TextBlock Style="{StaticResource Subtitle}" FontSize="12" Margin="3,6,0,0">运行库缺失时可安装 <Hyperlink NavigateUri="https://aka.ms/vs/17/release/vc_redist.x64.exe" RequestNavigate="RuntimeDownloadNavigate">微软 Visual C++ x64 运行库</Hyperlink>。</TextBlock>
+    </StackPanel>
     <StackPanel Visibility="{Binding ShowLocalCompute,Converter={StaticResource BoolVisibility}}">
      <WrapPanel><TextBlock Text="离线计算" VerticalAlignment="Center" Margin="3,0,8,0"/><ComboBox x:Name="ComputeModeBox" SelectedValue="{Binding ComputeMode,Mode=TwoWay}" SelectedValuePath="Tag" IsEnabled="{Binding CanUseLocalCompute}" Width="210"><ComboBoxItem Content="自动（GPU 可用时优先）" Tag="{x:Static translation:TranslationComputeMode.Auto}"/><ComboBoxItem Content="仅 CPU" Tag="{x:Static translation:TranslationComputeMode.Cpu}"/><ComboBoxItem Content="优先 GPU（可回退 CPU）" Tag="{x:Static translation:TranslationComputeMode.Gpu}"/></ComboBox></WrapPanel>
      <WrapPanel><Button Content="下载 / 修复模型" Command="{Binding DownloadCommand}"/><Button x:Name="DownloadGpuButton" Content="下载 / 修复 GPU 支持" Command="{Binding DownloadGpuCommand}"/></WrapPanel>

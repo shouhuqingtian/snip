@@ -68,6 +68,16 @@ jobs:
         run: |
           dotnet build Snip.sln -c Release --maxcpucount:2
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - uses: actions/cache@v4
+        with:
+          path: .model-cache/ocr
+          key: enhanced-ocr-${{ hashFiles('src/Snip.Ocr/OcrModelStore.cs') }}
+      - name: Verify enhanced bilingual OCR and isolated worker cleanup early
+        shell: pwsh
+        timeout-minutes: 6
+        run: |
+          dotnet run --project tests/Snip.Windows.Checks/Snip.Windows.Checks.csproj -c Release --no-build -- --enhanced-ocr
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Verify text clipboard contention separately
         shell: pwsh
         timeout-minutes: 2
@@ -168,6 +178,12 @@ jobs:
           Expand-Archive $report 'artifacts/validation/packaged-report' -Force
           $environment = Get-Content 'artifacts/validation/packaged-report/environment.json' -Raw | ConvertFrom-Json
           if (-not $environment.Environment.Displays.Count -or $environment.Environment.AppVersion -notlike "*+$env:GITHUB_SHA") { throw 'Packaged version/display metadata incorrect.' }
+      - name: Verify OCR through the actual single-file EXE
+        shell: pwsh
+        timeout-minutes: 3
+        run: |
+          dotnet run --project tests/Snip.Windows.Checks/Snip.Windows.Checks.csproj -c Release --no-build -- --enhanced-ocr --worker-executable "$PWD/artifacts/portable/win-x64/Snip.exe"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - uses: actions/upload-artifact@v4
         if: always()
         with:

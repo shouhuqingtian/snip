@@ -62,6 +62,22 @@ public sealed class TextResultViewModel : ObservableObject, IDisposable
         // No codec, WinRT or model calls in the constructor: first paint must not wait on native work.
         heartbeat.Tick += (_, _) => ShowStage();
         OcrCommand = new(() => Run("文字识别", TimeSpan.FromSeconds(45), Recognize), Report, () => !Busy);
+        DownloadOcrCommand = new(() => Run("下载增强 OCR", TimeSpan.FromMinutes(15), async token =>
+        {
+            if (ocr is not IOcrEnhancement enhancement) return;
+            downloading = true; Notify(nameof(Indeterminate)); ShowOptions = false;
+            var updates = new Progress<OcrDownloadProgress>(p =>
+            {
+                if (disposed || operation is null || operation.Token != token || token.IsCancellationRequested) return;
+                Progress = p.CompletedBytes * 100.0 / p.TotalBytes;
+                SetStage($"下载增强 OCR：{Progress:F1}%（约 31 MB，截图不会上传）");
+            });
+            await Task.Run(() => enhancement.InstallAsync(updates, token), token);
+            token.ThrowIfCancellationRequested(); Languages = [];
+            NotifyOcrSettings(); downloading = false; Notify(nameof(Indeterminate));
+            operation?.CancelAfter(TimeSpan.FromSeconds(45));
+            await Recognize(token);
+        }), Report, () => !Busy && SupportsEnhancedOcr);
         TranslateCommand = new(TranslateAsync, Report, () => !Busy && !string.IsNullOrWhiteSpace(Source));
         DownloadCommand = new(() => Run("下载模型", TimeSpan.FromMinutes(15), async token =>
         {
@@ -151,6 +167,29 @@ public sealed class TextResultViewModel : ObservableObject, IDisposable
     public string TranslationResultTitle => (translatedMode ?? Mode) == TranslationMode.Basic ? "基础查词结果" : "翻译结果";
     public string TranslationNotice => Mode == TranslationMode.Basic ? "10 万词条离线词典；查词及短语，不作整句翻译。" : UseOnlineTranslation ? "原文将发送给所配置的大模型服务，按服务商规则计费。" : "Hy-MT2 专业中英翻译，文字留在本机。";
     public RelayCommand ConfigureOnlineCommand { get; }
+    public bool SupportsEnhancedOcr => ocr is IOcrEnhancement;
+    public bool CanSwitchOcr => !Busy && ocr is IOcrEnhancement { IsInstalled: true };
+    public bool CanSelectOcrLanguage => !Busy && !UseEnhancedOcr;
+    public bool UseEnhancedOcr
+    {
+        get => ocr is IOcrEnhancement { IsInstalled: true, Enabled: true };
+        set
+        {
+            if (!CanSwitchOcr || ocr is not IOcrEnhancement enhancement || enhancement.Enabled == value) return;
+            try
+            {
+                enhancement.Enabled = value; Languages = []; NotifyOcrSettings();
+                Status = value ? "已保存：增强离线 OCR；点击重新识别生效。" : "已保存：系统 OCR（免下载）；点击重新识别生效。";
+            }
+            catch (Exception error) { diagnostics?.Record("ocr", "settings-save-failed", error: error); Status = "识别方式保存失败，原设置保留。"; NotifyOcrSettings(); }
+        }
+    }
+    public string OcrModelStatus => ocr is IOcrEnhancement { IsInstalled: true }
+        ? "增强模型已安装。仅识别时启动，结束即退出；支持中英混排。"
+        : "增强识别约需下载 31 MB 模型；保留免下载的系统 OCR。";
+    private void NotifyOcrSettings()
+    { Notify(nameof(UseEnhancedOcr)); Notify(nameof(CanSwitchOcr)); Notify(nameof(CanSelectOcrLanguage)); Notify(nameof(OcrModelStatus)); }
+    public AsyncCommand DownloadOcrCommand { get; }
     public IReadOnlyList<string> Languages { get => languages; private set => Set(ref languages, value); }
     public bool AutoTranslate { get => autoTranslate; init { autoTranslate = value; ShowTranslation = value; } }
     public BitmapSource PreviewImage => snapshot;
@@ -181,7 +220,7 @@ public sealed class TextResultViewModel : ObservableObject, IDisposable
     public string Translated { get => translated; private set { if (Set(ref translated, value)) { CopyTranslationCommand.Refresh(); Notify(nameof(HasTranslation)); } } }
     public string Status { get => status; private set => Set(ref status, value); }
     public string CopyStatus { get => copyStatus; private set => Set(ref copyStatus, value); }
-    public bool Busy { get => busy; private set { Set(ref busy, value); Notify(nameof(Indeterminate)); Notify(nameof(CanChangeTranslationMode)); Notify(nameof(CanUseLocalCompute)); OcrCommand.Refresh(); TranslateCommand.Refresh(); DownloadCommand.Refresh(); DownloadGpuCommand.Refresh(); CancelCommand.Refresh(); ConfigureOnlineCommand.Refresh(); SaveTranslationSettingsCommand.Refresh(); SpeakTranslationCommand.Refresh(); } }
+    public bool Busy { get => busy; private set { Set(ref busy, value); Notify(nameof(Indeterminate)); Notify(nameof(CanChangeTranslationMode)); Notify(nameof(CanUseLocalCompute)); Notify(nameof(CanSwitchOcr)); Notify(nameof(CanSelectOcrLanguage)); OcrCommand.Refresh(); DownloadOcrCommand.Refresh(); TranslateCommand.Refresh(); DownloadCommand.Refresh(); DownloadGpuCommand.Refresh(); CancelCommand.Refresh(); ConfigureOnlineCommand.Refresh(); SaveTranslationSettingsCommand.Refresh(); SpeakTranslationCommand.Refresh(); } }
     public bool Indeterminate => Busy && !downloading;
     public double Progress { get => progress; private set => Set(ref progress, value); }
     public AsyncCommand OcrCommand { get; }
@@ -203,7 +242,9 @@ public sealed class TextResultViewModel : ObservableObject, IDisposable
             var available = await Task.Run(() => ocr.Languages, token);
             token.ThrowIfCancellationRequested(); Languages = available.Count == 0 ? [] : new[] { OcrLanguageSelection.Automatic }.Concat(available).ToArray();
             diagnosticOperation?.Stage("ocr-languages-loaded", new { Count = available.Count });
-            if (Languages.Count == 0) throw new InvalidOperationException("未安装 Windows OCR 语言组件，请在 Windows 语言设置中添加中文/英语文字识别组件。");
+            if (Languages.Count == 0) throw new InvalidOperationException(SupportsEnhancedOcr
+                ? "未安装 Windows OCR 语言组件。可在更多设置下载增强 OCR，或在 Windows 语言设置中添加中文/英语文字识别组件。"
+                : "未安装 Windows OCR 语言组件，请在 Windows 语言设置中添加中文/英语文字识别组件。");
             Language = Language is { } selected && Languages.Contains(selected) ? selected : OcrLanguageSelection.Automatic;
         }
         SetStage("正在识别文字");
@@ -221,7 +262,8 @@ public sealed class TextResultViewModel : ObservableObject, IDisposable
         }
         var selectedLanguage = Language;
         var installed = Languages.Where(value => value != OcrLanguageSelection.Automatic).ToArray();
-        var candidates = OcrLanguageSelection.Candidates(installed, selectedLanguage);
+        IReadOnlyList<string> candidates = ocr is IOcrEnhancement { IsInstalled: true, Enabled: true }
+            ? [OcrLanguageSelection.Automatic] : OcrLanguageSelection.Candidates(installed, selectedLanguage);
         if (candidates.Count == 0) throw new InvalidOperationException("所选 Windows OCR 语言组件不可用，请切换到自动模式或安装相应语言组件。");
         OcrResult? result = null;
         string? recognizedLanguage = null;
@@ -241,7 +283,9 @@ public sealed class TextResultViewModel : ObservableObject, IDisposable
                 : selectedLanguage != OcrLanguageSelection.Automatic
                     ? "没有识别到文字；请切换到“自动（中英）”或与截图内容匹配的语言后重新识别，也可扩大截图边缘留白。"
                     : "没有识别到文字；已尝试已安装的中英识别组件。请截取清晰文字并保留少量边缘留白。";
-        else Status = "文字已识别（" + recognizedLanguage + "），可修正原文后翻译或复制。";
+        else Status = ocr is IOcrEnhancement enhancement
+            ? enhancement.EngineDescription + "，可修正后翻译或复制。" + (enhancement.IsInstalled ? "" : "识别不准时，可在更多设置下载增强 OCR。")
+            : "文字已识别（" + recognizedLanguage + "），可修正原文后翻译或复制。";
         if (AutoTranslate && !string.IsNullOrWhiteSpace(Source))
         {
             // Give the translation its own deadline rather than spending the OCR budget on both.
