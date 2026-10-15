@@ -35,7 +35,9 @@ public sealed class UiIcon : FrameworkElement
         ["adjust"] = "M 4 8 L 4 4 L 8 4 M 16 4 L 20 4 L 20 8 M 20 16 L 20 20 L 16 20 M 8 20 L 4 20 L 4 16 M 8 12 L 16 12 M 12 8 L 12 16",
         ["close"] = "M 6 6 L 18 18 M 18 6 L 6 18",
         ["check"] = "M 4 12 L 9 17 L 20 6",
-        ["copy"] = "M 8 8 L 20 8 L 20 21 L 8 21 Z M 15 8 L 15 3 L 3 3 L 3 16 L 8 16"
+        ["copy"] = "M 8 8 L 20 8 L 20 21 L 8 21 Z M 15 8 L 15 3 L 3 3 L 3 16 L 8 16",
+        ["speaker"] = "M 4 9 L 8 9 L 13 5 L 13 19 L 8 15 L 4 15 Z M 16 8 Q 20 12 16 16 M 19 5 Q 25 12 19 19",
+        ["expand"] = "M 9 4 L 4 4 L 4 9 M 15 4 L 20 4 L 20 9 M 20 15 L 20 20 L 15 20 M 9 20 L 4 20 L 4 15"
     };
     private static readonly IReadOnlyDictionary<string, Geometry> Geometries = Paths.ToDictionary(pair => pair.Key, pair =>
     {

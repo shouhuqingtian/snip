@@ -15,11 +15,11 @@ try {
     $output = Join-Path $root 'artifacts/validation'
     New-Item -ItemType Directory -Path $output -Force | Out-Null
     $results = [System.Collections.Generic.List[object]]::new()
-    function Check([string]$Name, [string[]]$Arguments, [switch]$AllowsMissingOcr, [switch]$AllowsMissingShare, [switch]$AllowsMissingGpu) {
+    function Check([string]$Name, [string[]]$Arguments, [switch]$AllowsMissingOcr, [switch]$AllowsMissingShare, [switch]$AllowsMissingGpu, [switch]$AllowsMissingSpeech) {
         $watch = [System.Diagnostics.Stopwatch]::StartNew()
         & dotnet @Arguments 2>&1 | Tee-Object -FilePath (Join-Path $output "$Name.log") | Out-Host
         $code = $LASTEXITCODE
-        $outcome = if ($code -eq 0) { 'Passed' } elseif (($AllowsMissingOcr -or $AllowsMissingShare -or $AllowsMissingGpu) -and $code -eq 2) { 'Unrun' } else { 'Failed' }
+        $outcome = if ($code -eq 0) { 'Passed' } elseif (($AllowsMissingOcr -or $AllowsMissingShare -or $AllowsMissingGpu -or $AllowsMissingSpeech) -and $code -eq 2) { 'Unrun' } else { 'Failed' }
         $results.Add([pscustomobject]@{ Name = $Name; Outcome = $outcome; ExitCode = $code; ElapsedSeconds = [Math]::Round($watch.Elapsed.TotalSeconds, 2) })
         $results | ConvertTo-Json -Depth 4 -AsArray | Set-Content (Join-Path $output "validation-$($Scope.ToLower()).json") -Encoding utf8
         if ($outcome -eq 'Unrun') { Write-Output "::warning::$Name unrun: required Windows capability is unavailable; see $Name.log." }
@@ -45,6 +45,7 @@ try {
         Check 'online-settings' @('run','--project','tests/Snip.Windows.Checks/Snip.Windows.Checks.csproj','-c','Release','--no-build','--','--online-settings')
         Check 'hotkey' @('run','--project','tests/Snip.Windows.Checks/Snip.Windows.Checks.csproj','-c','Release','--no-build','--','--hotkey')
         Check 'window-placement' @('run','--project','tests/Snip.Windows.Checks/Snip.Windows.Checks.csproj','-c','Release','--no-build','--','--window-placement')
+        Check 'speech-native' @('run','--project','tests/Snip.Windows.Checks/Snip.Windows.Checks.csproj','-c','Release','--no-build','--','--speech-native') -AllowsMissingSpeech
         Check 'text-ui' @('run','--project','tests/Snip.Windows.Checks/Snip.Windows.Checks.csproj','-c','Release','--no-build','--','--text-ui')
         Check 'clipboard-ui' @('run','--project','tests/Snip.Windows.Checks/Snip.Windows.Checks.csproj','-c','Release','--no-build','--','--clipboard-ui')
         Check 'ui-gallery' @('run','--project','tests/Snip.Windows.Checks/Snip.Windows.Checks.csproj','-c','Release','--no-build','--','--ui-gallery')

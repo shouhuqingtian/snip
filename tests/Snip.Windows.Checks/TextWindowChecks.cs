@@ -76,6 +76,7 @@ internal static class TextWindowChecks
             var compute = new TextResultViewModel(image, new FakeOcr(), computeModels, new FakeTranslation());
             window = new TextResultWindow(compute); window.Show();
             PumpUntil(() => !compute.Busy && compute.Source.Length > 0, TimeSpan.FromSeconds(8));
+            compute.ShowOptions = true; window.UpdateLayout();
             var computeBox = (ComboBox)window.FindName("ComputeModeBox");
             computeBox.SelectedValue = TranslationComputeMode.Gpu;
             Require(compute.ComputeMode == TranslationComputeMode.Gpu && new ModelStore(computeModels.DirectoryPath).ComputeSettings.Read() == TranslationComputeMode.Gpu,
@@ -158,6 +159,8 @@ internal static class TextWindowChecks
             editor.Close(); Require(window.IsVisible && window.Owner is null, "Closing editor lost OCR results.");
             window.Close(); Console.WriteLine("PASS editor toolbar result survives closing the editor.");
 
+            stage = "long translation reading and speech";
+            TextReadingChecks.Run(folder, image);
             diagnostics.FlushAsync().GetAwaiter().GetResult();
             string log = File.ReadAllText(Path.Combine(folder, "events.jsonl"));
             Require(log.Contains("window-created") && log.Contains("loaded") && log.Contains("ocr-recognized") && log.Contains("closed"), "Window/OCR lifecycle was not written to runtime logs.");

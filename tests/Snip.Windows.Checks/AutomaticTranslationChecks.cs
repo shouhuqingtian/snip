@@ -29,6 +29,7 @@ internal static class AutomaticTranslationChecks
         TextWindowChecks.PumpUntil(()=>!vm.Busy && vm.Translated.Length>0,TimeSpan.FromSeconds(8));
         Require(vm.Direction=="auto" && handler.Directions.SequenceEqual(new[]{"en-zh"}) && vm.Translated=="应用已就绪。" && vm.LanguageNotes.Contains("yìng yòng") && vm.LanguageNotes.Contains("名词(n.)"),"OCR did not automatically translate English with annotations.");
         window.UpdateLayout();
+        ((TabItem)window.FindName("LanguageNotesTab")).IsSelected=true;window.UpdateLayout();
         var notes=(TextBox)window.FindName("TranslationLanguageNotes");notes.BringIntoView();window.UpdateLayout();
         Require(notes.IsVisible && notes.IsReadOnly && notes.Text.Contains("/ˌæplɪˈkeɪʃən/"),"Language annotations are missing from the actual result XAML.");
         vm.CopyTranslationCommand.Execute(null);TextWindowChecks.PumpUntil(()=>vm.CopyStatus.Contains("已复制"),TimeSpan.FromSeconds(3));
