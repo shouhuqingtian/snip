@@ -10,6 +10,7 @@
    <Border Style="{StaticResource Card}" Padding="18"><StackPanel IsEnabled="{Binding CanEdit}">
     <TextBlock Text="服务 / 已保存配置" Style="{StaticResource SectionTitle}"/><ComboBox x:Name="ProviderChoice" ItemsSource="{Binding Providers}" SelectedItem="{Binding Provider}" Margin="0,6,0,8"/>
     <TextBlock Text="服务不可用时，选择另一组配置并保存，再返回原文重试。切换会放弃尚未保存的修改。" Style="{StaticResource Subtitle}" FontSize="11" Margin="0,0,0,12"/>
+    <TextBlock Text="自定义配置名称（例如备用网关）" Style="{StaticResource SectionTitle}" Margin="0,0,0,6"/>
     <Grid Margin="0,0,0,8"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
      <TextBox x:Name="CustomNameBox" Text="{Binding CustomProfileName,UpdateSourceTrigger=PropertyChanged}" ToolTip="自定义配置名称，例如公司网关或备用账号" VerticalContentAlignment="Center"/>
      <Button Grid.Column="1" Content="新增自定义" Command="{Binding AddProfileCommand}"/>
