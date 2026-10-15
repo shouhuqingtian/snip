@@ -74,6 +74,19 @@ jobs:
         run: |
           dotnet run --project tests/Snip.Windows.Checks/Snip.Windows.Checks.csproj -c Release --no-build -- --clipboard-ui
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Verify Windows English speech synthesis separately
+        shell: pwsh
+        timeout-minutes: 2
+        run: |
+          New-Item -ItemType Directory -Path artifacts/validation -Force | Out-Null
+          dotnet run --project tests/Snip.Windows.Checks/Snip.Windows.Checks.csproj -c Release --no-build -- --speech-native *> artifacts/validation/early-speech.log
+          $checkExit = $LASTEXITCODE
+          if ($checkExit -ne 0 -and $checkExit -ne 2) {
+            $detail = (Get-Content artifacts/validation/early-speech.log -Tail 20 | Out-String).Replace('%','%25').Replace("`r",'%0D').Replace("`n",'%0A')
+            Write-Output "::error title=Windows speech synthesis::$detail"
+            exit $checkExit
+          }
+          $global:LASTEXITCODE = 0
       - name: Verify long translation reading and speech controls
         shell: pwsh
         timeout-minutes: 3

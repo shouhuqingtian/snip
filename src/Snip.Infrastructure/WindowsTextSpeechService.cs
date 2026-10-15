@@ -22,7 +22,7 @@ public sealed class WindowsTextSpeechService : ITextSpeechService
         foreach (var part in chunks)
         {
             token.ThrowIfCancellationRequested();
-            using var stream = await synthesizer.SynthesizeTextToStreamAsync(part).AsTask(token).ConfigureAwait(false);
+            using var stream = await synthesizer.SynthesizeTextToStreamAsync(part).AsTask(token).WaitAsync(TimeSpan.FromSeconds(30), token).ConfigureAwait(false);
             token.ThrowIfCancellationRequested();
             using var source = MediaSource.CreateFromStream(stream, stream.ContentType);
             var ended = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -47,7 +47,7 @@ public sealed class WindowsTextSpeechService : ITextSpeechService
     {
         token.ThrowIfCancellationRequested();
         using var synthesizer = CreateEnglishSynthesizer();
-        using var stream = await synthesizer.SynthesizeTextToStreamAsync("Hello world.").AsTask(token).ConfigureAwait(false);
+        using var stream = await synthesizer.SynthesizeTextToStreamAsync("Hello world.").AsTask(token).WaitAsync(TimeSpan.FromSeconds(30), token).ConfigureAwait(false);
         token.ThrowIfCancellationRequested();
         return stream.Size;
     }, token);

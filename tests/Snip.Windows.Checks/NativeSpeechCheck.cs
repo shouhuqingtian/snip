@@ -8,7 +8,7 @@ internal static class NativeSpeechCheck
         try
         {
             using var deadline=new CancellationTokenSource(TimeSpan.FromSeconds(30));
-            ulong bytes=new WindowsTextSpeechService().SynthesizeEnglishSampleAsync(deadline.Token).GetAwaiter().GetResult();
+            ulong bytes=new WindowsTextSpeechService().SynthesizeEnglishSampleAsync(deadline.Token).WaitAsync(deadline.Token).GetAwaiter().GetResult();
             if(bytes<44)throw new InvalidOperationException("Windows synthesis returned no audio.");
             Console.WriteLine($"PASS actual Windows English speech synthesis: {bytes} bytes; audible output requires an audio device and remains a manual check.");return 0;
         }
