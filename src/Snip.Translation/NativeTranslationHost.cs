@@ -5,7 +5,6 @@ using System.Net.Http.Json;
 using System.Net.Sockets;
 using System.Runtime.InteropServices;
 using System.Text.Json;
-using System.Text;
 using System.Text.RegularExpressions;
 using Microsoft.Win32.SafeHandles;
 
@@ -23,8 +22,9 @@ internal sealed class NativeTranslationHost : IAsyncDisposable
     private readonly Process parent = Process.GetCurrentProcess();
     private long peak;
     private long combinedPeak;
-    private int offloadedLayers;
-    public int OffloadedLayers => Volatile.Read(ref offloadedLayers);
+    private readonly GpuLayerSignal layerSignal = new();
+    public int OffloadedLayers => layerSignal.Layers;
+    public bool LayerSignalObserved => layerSignal.Observed;
     public TranslationBackend Backend { get; }
     public CpuInferenceProfile CpuProfile { get; }
     private long processorTicks;
@@ -49,7 +49,7 @@ internal sealed class NativeTranslationHost : IAsyncDisposable
         string key = Guid.NewGuid().ToString("N");
         start.Environment["LLAMA_API_KEY"] = key;
         foreach (string value in backend == TranslationBackend.Vulkan
-            ? new[] { "--device", device!, "-ngl", "all", "--fit", "off", "-b", "128", "-ub", "128", "--log-verbosity", "3" }
+            ? new[] { "--device", device!, "-ngl", "all", "--fit", "off", "-b", "128", "-ub", "128", "--log-verbosity", GpuLayerSignal.LogVerbosity }
             : new[] { "--device", "none", "-ngl", "0", "--no-op-offload", "--log-disable" }) start.ArgumentList.Add(value);
         if (backend == TranslationBackend.Cpu)
         {
@@ -74,32 +74,13 @@ internal sealed class NativeTranslationHost : IAsyncDisposable
             parent.Dispose();
             throw new NativeWorkerException("无法启动本地翻译推理器，请下载 / 修复模型；如安全软件拦截，请核对官方下载来源。");
         }
-        drain = Task.WhenAll(process.StandardOutput.BaseStream.CopyToAsync(Stream.Null), backend == TranslationBackend.Vulkan ? ReadGpuLayerSignalAsync(process.StandardError) : process.StandardError.BaseStream.CopyToAsync(Stream.Null));
+        drain = backend == TranslationBackend.Vulkan
+            ? Task.WhenAll(layerSignal.ReadAsync(process.StandardOutput), layerSignal.ReadAsync(process.StandardError))
+            : Task.WhenAll(process.StandardOutput.BaseStream.CopyToAsync(Stream.Null), process.StandardError.BaseStream.CopyToAsync(Stream.Null));
         sampler = new Timer(_ => Sample(), null, TimeSpan.Zero, TimeSpan.FromMilliseconds(100));
         http = new HttpClient(new SocketsHttpHandler { UseProxy = false, AllowAutoRedirect = false, ConnectTimeout = TimeSpan.FromSeconds(2) })
         { BaseAddress = new Uri($"http://127.0.0.1:{port}/"), Timeout = Timeout.InfiniteTimeSpan };
         http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", key);
-    }
-    private async Task ReadGpuLayerSignalAsync(StreamReader reader)
-    {
-        // Never retain raw model/driver output. Only the numeric startup offload signal survives.
-        var line = new StringBuilder(512); var buffer = new char[1024]; bool overflow = false;
-        for (int count; (count = await reader.ReadAsync(buffer.AsMemory()).ConfigureAwait(false)) > 0;)
-            for (int i = 0; i < count; i++)
-            {
-                char value = buffer[i];
-                if (value == '\n')
-                {
-                    if (!overflow)
-                    {
-                        var match = Regex.Match(line.ToString(), @"offloaded (\d+)/\d+ layers to GPU");
-                        if (match.Success && int.TryParse(match.Groups[1].Value, out int layers)) Interlocked.Exchange(ref offloadedLayers, layers);
-                    }
-                    line.Clear(); overflow = false;
-                }
-                else if (line.Length < 512 && !overflow) line.Append(value);
-                else overflow = true;
-            }
     }
     private void Sample()
     {
@@ -133,8 +114,9 @@ internal sealed class NativeTranslationHost : IAsyncDisposable
                 {
                     if (Backend == TranslationBackend.Vulkan)
                     {
-                        for (int i = 0; i < 10 && OffloadedLayers == 0; i++) await Task.Delay(50, token).ConfigureAwait(false);
-                        if (OffloadedLayers == 0) throw new NativeWorkerException("GPU 未实际加载模型层，已准备回退 CPU。");
+                        for (int i = 0; i < 10 && !LayerSignalObserved; i++) await Task.Delay(50, token).ConfigureAwait(false);
+                        if (!LayerSignalObserved) throw new NativeWorkerException("推理器已就绪，但未收到 GPU 层加载确认信号，已准备回退 CPU；可导出诊断包。");
+                        if (OffloadedLayers == 0) throw new NativeWorkerException("推理器报告没有模型层加载到 GPU，已准备回退 CPU。");
                     }
                     return;
                 }

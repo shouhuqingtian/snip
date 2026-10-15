@@ -5,7 +5,7 @@ using Snip.Core;
 
 namespace Snip.Translation;
 
-public sealed record OfflineInferenceMetrics(int ProcessId, long PeakWorkingSetBytes, long PeakCombinedWorkingSetBytes, double ElapsedSeconds, bool ProcessExited, int? ExitCode, TranslationBackend Backend = TranslationBackend.Cpu, int OffloadedLayers = 0, double ProcessorSeconds = 0, int Threads = 0, int BatchThreads = 0, bool Repack = false);
+public sealed record OfflineInferenceMetrics(int ProcessId, long PeakWorkingSetBytes, long PeakCombinedWorkingSetBytes, double ElapsedSeconds, bool ProcessExited, int? ExitCode, TranslationBackend Backend = TranslationBackend.Cpu, int OffloadedLayers = 0, double ProcessorSeconds = 0, int Threads = 0, int BatchThreads = 0, bool Repack = false, bool LayerSignalObserved = false);
 
 public sealed class OfflineTranslator(ModelStore models) : ITranslationService
 {
@@ -102,7 +102,7 @@ public sealed class OfflineTranslator(ModelStore models) : ITranslationService
                     if (host is not null)
                     {
                         await host.DisposeAsync().ConfigureAwait(false);
-                        try { InferenceCompleted?.Invoke(new(host.ProcessId, host.PeakWorkingSetBytes, host.PeakCombinedWorkingSetBytes, watch.Elapsed.TotalSeconds, host.Exited, host.ExitCode, backend, host.OffloadedLayers, host.ProcessorSeconds, host.CpuProfile.Threads, host.CpuProfile.BatchThreads, host.CpuProfile.Repack)); } catch { }
+                        try { InferenceCompleted?.Invoke(new(host.ProcessId, host.PeakWorkingSetBytes, host.PeakCombinedWorkingSetBytes, watch.Elapsed.TotalSeconds, host.Exited, host.ExitCode, backend, host.OffloadedLayers, host.ProcessorSeconds, host.CpuProfile.Threads, host.CpuProfile.BatchThreads, host.CpuProfile.Repack, host.LayerSignalObserved)); } catch { }
                         progress?.Report(new("已释放本地模型"));
                     }
                 }

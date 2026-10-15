@@ -38,6 +38,8 @@ internal static class GpuRuntimeChecks
                 finally { Directory.Delete(isolatedFolder, true); }
                 Console.WriteLine("PASS downloaded official Vulkan archive; verified all required native files; shared model unchanged.");
             }
+            if (!requirePhysicalGpu && await NativeGpuLoggingChecks.RunAsync(folder) != 0)
+                throw new InvalidOperationException("Real native GPU startup logging regression failed.");
             var device = await GpuDeviceProbe.DetectAsync(models, CancellationToken.None);
             if (requirePhysicalGpu && device is null)
             {

@@ -9,6 +9,7 @@ internal static class ComputeBackendChecks
         void Require(bool condition, string message) { if (!condition) throw new InvalidOperationException(message); count++; }
         try
         {
+            await GpuLayerSignalChecks.RunAsync();
             var store = new ModelStore(folder);
             Require(store.ComputeSettings.Read() == TranslationComputeMode.Auto && !Directory.Exists(folder), "Fresh preference load created files or did not default to automatic.");
             foreach (var mode in Enum.GetValues<TranslationComputeMode>())

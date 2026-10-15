@@ -1,6 +1,7 @@
 using Snip.Translation;
 
 if (args.Length == 1 && args[0] == "--dictionary") return await BasicDictionaryChecks.RunAsync();
+if (args.Length == 2 && args[1] == "--gpu-startup-logging") return await NativeGpuLoggingChecks.RunAsync(args[0]);
 
 if (args.Length == 1 && args[0] == "--online")
 {
