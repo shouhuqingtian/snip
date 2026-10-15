@@ -4,7 +4,9 @@
 
 ## 下载
 
-当前开发版 **2.0.30 测试便携版**：[下载便携 ZIP](https://github.com/shouhuqingtian/snip/releases/download/preview-00d2cc2d7dba/self-snip-preview-win-x64.zip) · [完整源码](https://github.com/shouhuqingtian/snip/releases/download/preview-00d2cc2d7dba/self-snip-source.zip)。包含检查记录、版本信息和完整提交号。无需配置在线密钥或下载翻译模型即可使用 Windows 本地 OCR；缺翻译资源时默认保留文字识别结果，见 [修改与验证](docs/2.0.15默认OCR与翻译可用性.md)。
+当前开发版 **2.0.31 测试便携版**：[下载便携 ZIP](https://github.com/shouhuqingtian/snip/releases/download/preview-56f0121e3290/self-snip-preview-win-x64.zip) · [完整源码](https://github.com/shouhuqingtian/snip/releases/download/preview-56f0121e3290/self-snip-source.zip)。包含检查记录、版本信息和完整提交号。无需配置在线密钥或下载翻译模型即可使用 Windows 本地 OCR；缺翻译资源时默认保留文字识别结果，见 [修改与验证](docs/2.0.15默认OCR与翻译可用性.md)。
+
+2.0.31 释放退出撤销历史的已保存标注快照，减少翻译排版空格和响应缓冲分配，修复在线截断结果及修改原文后的过期译文覆盖；显示和复制继续保留 OCR 排列。见 [修改文件、使用与验证](docs/2.0.31性能与稳定性优化.md)。
 
 2.0.30 修复增强离线 OCR 改变原文排列的问题：同一行保持左右顺序，近似保留列间空白、缩进和段落间隔，等距行间隔一致；结果不自动折行，复制保留空格与换行。继续使用原来的约 31 MiB 模型，见 [修改文件、使用与验证](docs/2.0.30离线OCR保留原图排列.md)。
 
