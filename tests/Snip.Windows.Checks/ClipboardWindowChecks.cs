@@ -57,7 +57,9 @@ internal static class ClipboardWindowChecks
                 ((IInvokeProvider)new ButtonAutomationPeer(button).GetPattern(PatternInterface.Invoke)).Invoke();
                 Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.Background);
             }
-            void WaitCopy(TextResultViewModel vm) => TextWindowChecks.PumpUntil(() => vm.CopyStatus.Contains("已复制") || vm.CopyStatus.Contains("复制未完成") || vm.CopyStatus.Contains("复制失败"), TimeSpan.FromSeconds(8));
+            void WaitCopy(TextResultViewModel vm) => TextWindowChecks.PumpUntil(() =>
+                (vm.CopyStatus.Contains("已复制") || vm.CopyStatus.Contains("复制未完成") || vm.CopyStatus.Contains("复制失败")) &&
+                vm.CopySourceCommand.CanExecute(null) && vm.CopyTranslationCommand.CanExecute(null), TimeSpan.FromSeconds(8));
 
             Stage("idle wait deadline");
             var idleWait = Stopwatch.StartNew();
@@ -124,7 +126,10 @@ internal static class ClipboardWindowChecks
                 var clock = Stopwatch.StartNew(); Stage("persistent lock: invoking real copy button"); Click(window, "CopySourceButton");
                 Stage("persistent lock: awaiting bounded retry result"); WaitCopy(vm);
                 Stage("persistent lock: verifying failure feedback");
-                Require(clock.Elapsed < TimeSpan.FromSeconds(5) && vm.CopyStatus.Contains("复制未完成") && vm.Source == "Hello world" && window.IsVisible && vm.CopySourceCommand.CanExecute(null), "Persistent lock lost results, claimed success or exceeded the retry bound.");
+                Require(clock.Elapsed < TimeSpan.FromSeconds(5), "Persistent clipboard retry exceeded its time bound.");
+                Require(vm.CopyStatus.Contains("复制未完成"), "Persistent clipboard lock did not show failure feedback.");
+                Require(vm.Source == "Hello world" && window.IsVisible, "Persistent clipboard lock lost source text or closed the window.");
+                Require(vm.CopySourceCommand.CanExecute(null), "Copy command did not become ready after retry completion.");
             }
             Stage("persistent lock: reading preserved sentinel after release");
             Require(Clipboard.GetText() == Sentinel, "Failed copy cleared unrelated clipboard contents.");

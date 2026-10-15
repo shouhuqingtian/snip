@@ -191,7 +191,7 @@ internal static class TextWindowChecks
         using var timer = new System.Threading.Timer(_ =>
         {
             if (Volatile.Read(ref active) == 0 || Interlocked.Exchange(ref posted, 1) != 0) return;
-            dispatcher.BeginInvoke(DispatcherPriority.Send, new Action(() =>
+            dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(() =>
             {
                 Interlocked.Exchange(ref posted, 0);
                 if (Volatile.Read(ref active) == 0) return;
