@@ -52,3 +52,19 @@ jobs:
                       'normal_working_set_mib':max((r.get('WorkingSetMiB',0) for r in rows if r['Name'] not in ['4k-form','long-page']),default=0),
                       'exact':sum(r['Exact'] for r in rows),'measured':len(rows),'unrun':len(data['Rows'])-len(rows),'failures':failures},ensure_ascii=False)
                   print('::notice title=OCR details '+name+'::'+value.replace('%','%25').replace(chr(13),'%0D').replace(chr(10),'%0A'))
+
+      - name: Surface public Chrome fixture diagnostics
+        shell: python
+        run: |
+          import json, base64
+          from pathlib import Path
+          for path in Path('saved-validation').rglob('events.jsonl'):
+              if 'chrome-check' not in path.parts:
+                  continue
+              rows=[json.loads(line) for line in path.read_text(encoding='utf-8-sig').splitlines() if line.strip()]
+              rows=[{'stage':r['Stage'],'fields':r['Fields'],'elapsed':r.get('TimestampUtc')} for r in rows if r['Stage'] in ['first-frame','viewport-found','scroll-interface','wheel-settled','overlap-match','position-fallback','failed']]
+              value=json.dumps(rows[-30:],ensure_ascii=False)
+              print('::notice title=Public Chrome fixture stages::'+value.replace('%','%25').replace(chr(13),'%0D').replace(chr(10),'%0A'))
+          for path in Path('saved-validation').rglob('initial.png'):
+              if 'chrome-check' in path.parts and path.stat().st_size<40000:
+                  print('::notice title=Public Chrome initial image::'+base64.b64encode(path.read_bytes()).decode())
