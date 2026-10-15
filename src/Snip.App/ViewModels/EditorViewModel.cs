@@ -7,6 +7,8 @@ using Snip.Infrastructure;
 
 namespace Snip.App.ViewModels;
 
+public enum EditorZoomMode { Manual, FitWindow, FitWidth }
+
 public sealed class EditorViewModel : ObservableObject
 {
     private readonly AnnotationRenderer renderer;
@@ -26,6 +28,8 @@ public sealed class EditorViewModel : ObservableObject
     private SelectionHandle resizeHandle;
     private PixelRect resizeBounds;
     private Guid? selectedId;
+    private EditorZoomMode zoomMode = EditorZoomMode.FitWindow;
+    private double viewportWidth, viewportHeight;
 
     public EditorViewModel(BitmapSource image, AnnotationRenderer renderer, IImageExportService export, IEditorDialogs dialogs)
     {
@@ -37,6 +41,8 @@ public sealed class EditorViewModel : ObservableObject
         CopyCommand = new(CopyAsync, e => dialogs.ShowError($"复制失败，请重试：{e.Message}"), () => !exporting);
         ZoomInCommand = new(() => Zoom *= 1.25);
         ZoomOutCommand = new(() => Zoom /= 1.25);
+        FitWindowCommand = new(() => SetZoomMode(EditorZoomMode.FitWindow), () => viewportWidth > 0);
+        FitWidthCommand = new(() => SetZoomMode(EditorZoomMode.FitWidth), () => viewportWidth > 0);
     }
 
     public event EventHandler? VisualChanged;
@@ -71,8 +77,21 @@ public sealed class EditorViewModel : ObservableObject
     public double FontSize { get => fontSize; set => Set(ref fontSize, value); }
     public int MosaicSize { get => mosaicSize; set => Set(ref mosaicSize, value); }
     public bool Filled { get => filled; set => Set(ref filled, value); }
-    public double Zoom { get => zoom; set { if (Set(ref zoom, Math.Clamp(value, 0.1, 4))) Notify(nameof(ZoomText)); } }
-    public string ZoomText => $"{Zoom:P0}";
+    public double Zoom
+    {
+        get => zoom;
+        set
+        {
+            if (!double.IsFinite(value) || value <= 0) return;
+            SetZoomMode(EditorZoomMode.Manual);
+            // Keep a step from an extreme automatic fit from jumping in the opposite direction.
+            ApplyZoom(Math.Clamp(value, Math.Min(0.001, zoom), Math.Max(16, zoom)));
+        }
+    }
+    public string ZoomText => Zoom < 0.1 ? $"{Zoom:P1}" : $"{Zoom:P0}";
+    public EditorZoomMode ZoomMode => zoomMode;
+    public bool IsFitWindow => ZoomMode == EditorZoomMode.FitWindow;
+    public bool IsFitWidth => ZoomMode == EditorZoomMode.FitWidth;
     public string Status { get => status; private set => Set(ref status, value); }
     public double[] StrokeWidths { get; } = [2, 4, 6, 8];
     public double[] FontSizes { get; } = [16, 20, 24, 32, 48, 64];
@@ -85,6 +104,8 @@ public sealed class EditorViewModel : ObservableObject
     public AsyncCommand CopyCommand { get; }
     public RelayCommand ZoomInCommand { get; }
     public RelayCommand ZoomOutCommand { get; }
+    public RelayCommand FitWindowCommand { get; }
+    public RelayCommand FitWidthCommand { get; }
 
     private PixelPoint Clamp(PixelPoint p) => new(Math.Clamp(p.X, 0, PixelWidth), Math.Clamp(p.Y, 0, PixelHeight));
 
@@ -197,7 +218,32 @@ public sealed class EditorViewModel : ObservableObject
         history.Commit(history.Current.Where(a => a.Id != selectedId)); selectedId = null; Changed(true);
     }
 
-    public void Fit(double width, double height) => Zoom = Math.Min(1, Math.Min(Math.Max(1, width - 32) / PixelWidth, Math.Max(1, height - 32) / PixelHeight));
+    public void UpdateViewport(double width, double height)
+    {
+        if (!double.IsFinite(width) || !double.IsFinite(height) || width <= 0 || height <= 0) return;
+        bool first = viewportWidth <= 0;
+        viewportWidth = width; viewportHeight = height;
+        ApplyFit();
+        if (first) { FitWindowCommand.Refresh(); FitWidthCommand.Refresh(); }
+    }
+    private void SetZoomMode(EditorZoomMode mode)
+    {
+        if (Set(ref zoomMode, mode, nameof(ZoomMode))) { Notify(nameof(IsFitWindow)); Notify(nameof(IsFitWidth)); }
+        ApplyFit();
+    }
+    private void ApplyFit()
+    {
+        if (viewportWidth <= 0 || viewportHeight <= 0 || ZoomMode == EditorZoomMode.Manual) return;
+        // ScrollViewer reports the real content viewport, excluding padding and visible scrollbars.
+        // A DIP of slack avoids fractional layout rounding adding a horizontal scrollbar.
+        double widthScale = Math.Max(1, viewportWidth - 1) / PixelWidth;
+        ApplyZoom(ZoomMode == EditorZoomMode.FitWidth ? widthScale : Math.Min(1, Math.Min(widthScale, Math.Max(1, viewportHeight - 1) / PixelHeight)));
+    }
+    private void ApplyZoom(double value)
+    {
+        if (Math.Abs(zoom - value) < 0.0000001) return;
+        if (Set(ref zoom, value, nameof(Zoom))) Notify(nameof(ZoomText));
+    }
 
     public bool Save()
     {

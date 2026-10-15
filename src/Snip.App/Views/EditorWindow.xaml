@@ -17,12 +17,18 @@
           <Button Content="−" Command="{Binding ZoomOutCommand}" Padding="10,3"/>
           <TextBlock Text="{Binding ZoomText}" VerticalAlignment="Center" Margin="8,0"/>
           <Button Content="+" Command="{Binding ZoomInCommand}" Padding="10,3"/>
-          <Button Content="适应窗口" Click="FitClick" Padding="10,3"/>
+          <Button x:Name="FitWindowButton" Content="适应窗口" Command="{Binding FitWindowCommand}" Padding="10,3" ToolTip="显示整张图片；窗口大小变化时自动调整">
+            <Button.Style><Style TargetType="Button" BasedOn="{StaticResource {x:Type Button}}"><Style.Triggers><DataTrigger Binding="{Binding IsFitWindow}" Value="True"><Setter Property="Background" Value="{StaticResource AccentSoftBrush}"/><Setter Property="Foreground" Value="{StaticResource AccentBrush}"/></DataTrigger></Style.Triggers></Style></Button.Style>
+          </Button>
+          <Button x:Name="FitWidthButton" Content="适应宽度" Command="{Binding FitWidthCommand}" Padding="10,3" ToolTip="按编辑区宽度铺开图片，长图上下滚动查看；窗口大小变化时自动调整">
+            <Button.Style><Style TargetType="Button" BasedOn="{StaticResource {x:Type Button}}"><Style.Triggers><DataTrigger Binding="{Binding IsFitWidth}" Value="True"><Setter Property="Background" Value="{StaticResource AccentSoftBrush}"/><Setter Property="Foreground" Value="{StaticResource AccentBrush}"/></DataTrigger></Style.Triggers></Style></Button.Style>
+          </Button>
         </StackPanel>
         <TextBlock Text="{Binding Status}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" Foreground="{StaticResource MutedBrush}" Margin="0,0,10,0"/>
       </DockPanel>
     </Border>
-    <ScrollViewer x:Name="Viewport" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto" Background="{StaticResource CanvasBrush}" Padding="24">
+    <ScrollViewer x:Name="Viewport" HorizontalScrollBarVisibility="Auto" Background="{StaticResource CanvasBrush}" Padding="24">
+      <ScrollViewer.Style><Style TargetType="ScrollViewer"><Setter Property="VerticalScrollBarVisibility" Value="Auto"/><Style.Triggers><DataTrigger Binding="{Binding IsFitWidth}" Value="True"><Setter Property="VerticalScrollBarVisibility" Value="Visible"/></DataTrigger></Style.Triggers></Style></ScrollViewer.Style>
       <local:EditorCanvas HorizontalAlignment="Left" VerticalAlignment="Top">
         <local:EditorCanvas.LayoutTransform><ScaleTransform ScaleX="{Binding Zoom}" ScaleY="{Binding Zoom}"/></local:EditorCanvas.LayoutTransform>
       </local:EditorCanvas>
