@@ -11,8 +11,8 @@ $install = [IO.Path]::GetFullPath((Join-Path $env:RUNNER_TEMP ('SelfSnip install
 $appKey = 'HKCU:\Software\SelfSnip'
 $uninstallKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\SelfSnip'
 $runKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
-$menu = Join-Path ([Environment]::GetFolderPath('StartMenu')) 'Programs/自用截图'
-$desktopLink = Join-Path ([Environment]::GetFolderPath('Desktop')) '自用截图.lnk'
+$menu = [IO.Path]::GetFullPath((Join-Path ([Environment]::GetFolderPath('StartMenu')) 'Programs/自用截图'))
+$desktopLink = [IO.Path]::GetFullPath((Join-Path ([Environment]::GetFolderPath('Desktop', 'DoNotVerify')) '自用截图.lnk'))
 if ((Test-Path $appKey) -or (Test-Path $uninstallKey) -or (Test-Path $menu) -or (Test-Path $desktopLink) -or
     $null -ne (Get-ItemProperty $runKey -Name SelfSnip -ErrorAction SilentlyContinue)) { throw 'Runner contains an existing installation; refusing to touch it.' }
 
@@ -38,7 +38,11 @@ try {
     Require ((Get-FileHash $exe).Hash -eq (Get-FileHash (Join-Path $portable 'Snip.exe')).Hash) 'Installer did not reuse the tested EXE.'
     Require ((Get-Content (Join-Path $install 'build-info.json') -Raw | ConvertFrom-Json).Commit -eq $expected.Commit) 'Installed build metadata differs.'
     Require ((Get-ItemProperty $uninstallKey).DisplayVersion -eq $version) 'Uninstall registration version differs.'
-    $shortcut = (New-Object -ComObject WScript.Shell).CreateShortcut((Join-Path $menu '自用截图.lnk'))
+    $shortcutPath = [IO.Path]::GetFullPath((Join-Path $menu '自用截图.lnk'))
+    Require (Test-Path $shortcutPath -PathType Leaf) 'Start menu shortcut file is missing.'
+    $shortcut = (New-Object -ComObject WScript.Shell).CreateShortcut($shortcutPath)
+    Write-Output ("Shortcut: file exists; target empty=" + [string]::IsNullOrWhiteSpace($shortcut.TargetPath))
+    Require (-not [string]::IsNullOrWhiteSpace($shortcut.TargetPath)) 'Start menu shortcut target is empty.'
     Require ([IO.Path]::GetFullPath($shortcut.TargetPath) -eq $exe) 'Start menu shortcut targets the wrong EXE.'
     Require ((Get-FileHash $shortcut.TargetPath).Hash -eq (Get-FileHash $exe).Hash) 'Shortcut target binary differs from the installed EXE.'
     foreach ($license in Get-ChildItem (Join-Path $portable 'licenses') -File) {
