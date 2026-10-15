@@ -1,13 +1,13 @@
 #requires -Version 7.0
 # Runs only on an ephemeral GitHub Windows runner: deliberately exercises HKCU install/uninstall registration.
-param([Parameter(Mandatory)][string]$Installer)
+param([Parameter(Mandatory)][string]$Installer, [string]$RepositoryRoot = (Split-Path $PSScriptRoot -Parent))
 $ErrorActionPreference = 'Stop'
 if (-not $IsWindows -or $env:GITHUB_ACTIONS -ne 'true') { throw 'Installer regression requires an isolated GitHub Windows runner.' }
-$root = Split-Path $PSScriptRoot -Parent
+$root = [IO.Path]::GetFullPath($RepositoryRoot)
 $version = ([xml](Get-Content (Join-Path $root 'Directory.Build.props') -Raw)).Project.PropertyGroup.Version
 $portable = Join-Path $root 'artifacts/portable/win-x64'
 $expected = Get-Content (Join-Path $portable 'build-info.json') -Raw | ConvertFrom-Json
-$install = Join-Path $env:RUNNER_TEMP ('SelfSnip installer check-' + [guid]::NewGuid() + '/程序')
+$install = [IO.Path]::GetFullPath((Join-Path $env:RUNNER_TEMP ('SelfSnip installer check-' + [guid]::NewGuid() + '/程序')))
 $appKey = 'HKCU:\Software\SelfSnip'
 $uninstallKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\SelfSnip'
 $runKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
@@ -39,11 +39,12 @@ try {
     Require ((Get-Content (Join-Path $install 'build-info.json') -Raw | ConvertFrom-Json).Commit -eq $expected.Commit) 'Installed build metadata differs.'
     Require ((Get-ItemProperty $uninstallKey).DisplayVersion -eq $version) 'Uninstall registration version differs.'
     $shortcut = (New-Object -ComObject WScript.Shell).CreateShortcut((Join-Path $menu '自用截图.lnk'))
-    Require ($shortcut.TargetPath -eq $exe) 'Start menu shortcut targets the wrong EXE.'
+    Require ([IO.Path]::GetFullPath($shortcut.TargetPath) -eq $exe) 'Start menu shortcut targets the wrong EXE.'
+    Require ((Get-FileHash $shortcut.TargetPath).Hash -eq (Get-FileHash $exe).Hash) 'Shortcut target binary differs from the installed EXE.'
     foreach ($license in Get-ChildItem (Join-Path $portable 'licenses') -File) {
         Require ((Get-FileHash (Join-Path $install ('licenses/' + $license.Name))).Hash -eq (Get-FileHash $license.FullName).Hash) 'Installed license is missing or changed.'
     }
-    & python (Join-Path $PSScriptRoot 'CheckIcons.py') --icon (Join-Path $root 'src/Snip.Infrastructure/Assets/sheep.ico') --output (Join-Path $root 'artifacts/validation/installer-icons.json') $Installer $exe (Join-Path $install 'Uninstall.exe')
+    & python (Join-Path $root 'packaging/CheckIcons.py') --icon (Join-Path $root 'src/Snip.Infrastructure/Assets/sheep.ico') --output (Join-Path $root 'artifacts/validation/installer-icons.json') $Installer $exe (Join-Path $install 'Uninstall.exe')
     if ($LASTEXITCODE -ne 0) { throw 'Installed shell icon regression failed.' }
     $report = Join-Path $env:RUNNER_TEMP ('snip-installed-' + [guid]::NewGuid() + '.zip')
     Run-Process $exe ('--export-diagnostics "' + $report + '"')

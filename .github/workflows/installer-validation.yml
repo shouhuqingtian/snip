@@ -6,14 +6,25 @@ on:
         description: Run containing the tested portable artifact
         required: true
         type: string
+      publish:
+        description: Publish only after the complete installer check passes
+        default: false
+        type: boolean
 permissions:
   contents: read
   actions: read
 jobs:
   installer:
+    permissions:
+      contents: write
+      actions: read
     runs-on: windows-latest
     timeout-minutes: 8
     steps:
+      - uses: actions/checkout@v4
+      - name: Retain the current independent validation tool
+        shell: pwsh
+        run: Copy-Item packaging/CheckInstaller.ps1 "$env:RUNNER_TEMP/CheckInstaller.ps1"
       - uses: actions/checkout@v4
         with:
           ref: v2.0.34
@@ -36,13 +47,26 @@ jobs:
         run: |
           New-Item -ItemType Directory artifacts/validation -Force | Out-Null
           try {
-            ./packaging/CheckInstaller.ps1 -Installer "$PWD/artifacts/installer/SelfSnip-2.0.34-Setup-x64.exe" *> artifacts/validation/installer-check.log
+            & "$env:RUNNER_TEMP/CheckInstaller.ps1" -RepositoryRoot "$PWD" -Installer "$PWD/artifacts/installer/SelfSnip-2.0.34-Setup-x64.exe" *> artifacts/validation/installer-check.log
           } catch {
             $_ | Out-String | Add-Content artifacts/validation/installer-check.log
             $detail = (Get-Content artifacts/validation/installer-check.log -Tail 30 | Out-String).Replace('%','%25').Replace("`r",'%0D').Replace("`n",'%0A')
             Write-Output "::error title=Actual installer regression::$detail"
             throw
           }
+          Compress-Archive artifacts/validation/installer-check.json,artifacts/validation/installer-icons.json artifacts/installer-verification.zip -Force
+          $hash = (Get-FileHash artifacts/installer-verification.zip -Algorithm SHA256).Hash.ToLower()
+          "$hash  installer-verification.zip" | Add-Content artifacts/SHA256SUMS.txt -Encoding utf8
+      - name: Publish the validated formal-tag installer
+        if: inputs.publish
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $assets = @(Get-ChildItem artifacts -File -Filter '*.zip' | ForEach-Object FullName) + @((Join-Path $PWD 'artifacts/SHA256SUMS.txt')) + @(Get-ChildItem artifacts/installer -File -Filter '*.exe' | ForEach-Object FullName)
+          'Validated application commit: acf73474bef8113a8172d5bc2e84b1dc732b5325. Installer reuses the tested portable EXE. Current independent installer validation checks normalized Windows paths. Full release notes will be added after asset verification.' | Set-Content artifacts/release-notes.md -Encoding utf8
+          gh release create v2.0.34 @assets --repo $env:GITHUB_REPOSITORY --verify-tag --title '自用截图 2.0.34' --notes-file artifacts/release-notes.md
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - uses: actions/upload-artifact@v4
         if: always()
         with:

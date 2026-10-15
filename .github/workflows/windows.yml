@@ -254,7 +254,14 @@ jobs:
         timeout-minutes: 4
         run: |
           $version = ([xml](Get-Content Directory.Build.props -Raw)).Project.PropertyGroup.Version
-          ./packaging/CheckInstaller.ps1 -Installer "$PWD/artifacts/installer/SelfSnip-$version-Setup-x64.exe"
+          New-Item -ItemType Directory artifacts/validation -Force | Out-Null
+          try { ./packaging/CheckInstaller.ps1 -Installer "$PWD/artifacts/installer/SelfSnip-$version-Setup-x64.exe" *> artifacts/validation/installer-check.log }
+          catch {
+            $_ | Out-String | Add-Content artifacts/validation/installer-check.log
+            $detail = (Get-Content artifacts/validation/installer-check.log -Tail 30 | Out-String).Replace('%','%25').Replace("`r",'%0D').Replace("`n",'%0A')
+            Write-Output "::error title=Installer regression::$detail"
+            throw
+          }
           Compress-Archive artifacts/validation/installer-check.json,artifacts/validation/installer-icons.json artifacts/installer-verification.zip -Force
           $hash = (Get-FileHash artifacts/installer-verification.zip -Algorithm SHA256).Hash.ToLower()
           "$hash  installer-verification.zip" | Add-Content artifacts/SHA256SUMS.txt -Encoding utf8
