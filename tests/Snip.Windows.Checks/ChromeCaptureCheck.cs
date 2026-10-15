@@ -55,9 +55,9 @@ internal static class ChromeCaptureCheck
                 foreach (var candidate in DesktopWindows.Snapshot()) Console.WriteLine($"Visible window: PID {candidate.ProcessId} {Title(candidate.Handle)} {candidate.Bounds}");
                 throw new InvalidOperationException("Chrome did not create the fixture desktop window.");
             }
-            Task.Delay(1500).GetAwaiter().GetResult(); DesktopWindows.Activate(window.Handle);
+            DesktopWindows.Activate(window.Handle);
             var region = new PixelRect(window.Bounds.X + 60, window.Bounds.Y + 180, Math.Min(450, window.Bounds.Width - 100), Math.Min(300, window.Bounds.Height - 220)).RoundOut();
-            var export = new ImageExportService(); export.SavePng(desktop.CaptureRegion(region), Path.Combine(output, "initial.png"));
+            var export = new ImageExportService(); export.SavePng(WaitForColoredFixture(desktop, region), Path.Combine(output, "initial.png"));
             var service = new BrowserScrollCapture(desktop); using var cancel = new CancellationTokenSource(TimeSpan.FromMinutes(3));
             var progress = new Progress<string>(Console.WriteLine);
             BitmapSource Capture(PixelRect selectedRegion, BrowserCaptureMode mode)
@@ -289,6 +289,32 @@ internal static class ChromeCaptureCheck
             browser?.Dispose();
             try { Directory.Delete(directory, true); } catch { }
         }
+    }
+    private static BitmapSource WaitForColoredFixture(IDesktopCaptureService capture, PixelRect region)
+    {
+        // A Chrome title can precede the first renderer paint, especially on a loaded runner.
+        // Verify the public fixture's actual pixels rather than treating a fixed delay as readiness.
+        var palette = Enumerable.Range(0, 50).Select(i => ((80 + i * 17 % 160) << 16) | ((80 + i * 29 % 160) << 8) | (80 + i * 43 % 160)).ToHashSet();
+        var clock = Stopwatch.StartNew();
+        while (clock.Elapsed < TimeSpan.FromSeconds(15))
+        {
+            var image = capture.CaptureRegion(region);
+            var pixels = Pixels(image); var visible = new HashSet<int>();
+            for (int y = 0; y < image.PixelHeight; y += 9)
+            for (int x = 0; x < image.PixelWidth; x += 13)
+            {
+                int index = (y * image.PixelWidth + x) * 4;
+                int rgb = (pixels[index + 2] << 16) | (pixels[index + 1] << 8) | pixels[index];
+                if (palette.Contains(rgb)) visible.Add(rgb);
+            }
+            if (visible.Count >= 3)
+            {
+                Console.WriteLine($"PASS Chrome renderer readiness: {visible.Count} public fixture row colors visible after {clock.ElapsedMilliseconds} ms.");
+                return image;
+            }
+            Task.Delay(100).GetAwaiter().GetResult();
+        }
+        throw new InvalidOperationException("Chrome fixture title appeared but its colored page did not paint within 15 seconds.");
     }
     [DllImport("user32.dll")] private static extern bool SetPhysicalCursorPos(int x, int y);
     [DllImport("user32.dll", SetLastError = true)] private static extern uint SendInput(uint count, Input[] inputs, int size);
