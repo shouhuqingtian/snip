@@ -29,12 +29,14 @@ internal static class ClipboardWindowChecks
         string folder = Path.Combine(Path.GetTempPath(), "Snip.Clipboard-" + Guid.NewGuid());
         using var diagnostics = new DiagnosticJournal(folder);
         string stage = "initialization";
+        var elapsed = Stopwatch.StartNew(); long stageStart = 0;
         using var watchdog = new System.Threading.Timer(_ =>
         {
-            Console.WriteLine("::error title=Clipboard check deadline::Timed out in " + Volatile.Read(ref stage));
+            Console.WriteLine("::error title=Clipboard check deadline::Timed out in " + Volatile.Read(ref stage) + $"; total={elapsed.ElapsedMilliseconds}ms; stage={elapsed.ElapsedMilliseconds-Interlocked.Read(ref stageStart)}ms");
+            CaptureStack();
             Environment.Exit(1);
         }, null, TimeSpan.FromSeconds(45), Timeout.InfiniteTimeSpan);
-        void Stage(string value) { stage = value; Console.WriteLine("::notice title=Clipboard check stage::" + value); }
+        void Stage(string value) { stage = value; Interlocked.Exchange(ref stageStart, elapsed.ElapsedMilliseconds); Console.WriteLine("::notice title=Clipboard check stage::" + value + $"; elapsed={elapsed.ElapsedMilliseconds}ms"); }
         Exception? dispatcherError = null;
         DispatcherUnhandledExceptionEventHandler handler = (_, e) => { dispatcherError = e.Exception; e.Handled = true; };
         app.DispatcherUnhandledException += handler;
@@ -125,14 +127,21 @@ internal static class ClipboardWindowChecks
             window.Close(); Console.WriteLine("PASS persistent lock gives bounded failure, retains results and existing clipboard, and allows a later retry.");
 
             Stage("window close during retry");
-            window = Show(); vm = (TextResultViewModel)window.DataContext; Clipboard.SetText(Sentinel);
+            Stage("close retry: creating actual result window");
+            window = Show(); vm = (TextResultViewModel)window.DataContext;
+            Stage("close retry: writing sentinel"); Clipboard.SetText(Sentinel);
+            Stage("close retry: acquiring external holder");
             using (var holder = new ClipboardLock())
             {
-                Click(window, "CopySourceButton"); window.Close();
+                Stage("close retry: invoking copy"); Click(window, "CopySourceButton");
+                Stage("close retry: closing actual window"); window.Close();
+                Stage("close retry: verifying cancelled commands");
                 TextWindowChecks.PumpUntil(() => !vm.CopyStatus.Contains("已复制") && !vm.CopySourceCommand.CanExecute(null), TimeSpan.FromSeconds(2));
                 // Drain the cancelled async command before allowing the holder to release the clipboard.
                 var drain = Task.Delay(150); TextWindowChecks.PumpUntil(() => drain.IsCompleted, TimeSpan.FromSeconds(2));
+                Stage("close retry: releasing holder");
             }
+            Stage("close retry: reading preserved sentinel");
             Require(Clipboard.GetText() == Sentinel, "Closing during retry published a late clipboard result.");
             Console.WriteLine("PASS closing during a clipboard lock cancels retry without publishing a late result.");
 
@@ -166,6 +175,24 @@ internal static class ClipboardWindowChecks
             SynchronizationContext.SetSynchronizationContext(previous);
             diagnostics.Dispose(); if (Directory.Exists(folder)) Directory.Delete(folder, true);
         }
+    }
+    private static void CaptureStack()
+    {
+        var executable = Environment.GetEnvironmentVariable("SNIP_CHECK_STACK_TOOL");
+        if (string.IsNullOrEmpty(executable) || !File.Exists(executable)) return;
+        try
+        {
+            var start = new ProcessStartInfo(executable) { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true };
+            start.ArgumentList.Add("report"); start.ArgumentList.Add("--process-id"); start.ArgumentList.Add(Environment.ProcessId.ToString());
+            using var process = Process.Start(start)!;
+            var output = process.StandardOutput.ReadToEndAsync(); var errors = process.StandardError.ReadToEndAsync();
+            if (!process.WaitForExit(5000)) { process.Kill(true); return; }
+            string stack = output.GetAwaiter().GetResult();
+            // Thread stacks only: no dump, locals, memory, environment values, or clipboard text.
+            Console.WriteLine("::error title=Clipboard managed thread stacks::" + stack[..Math.Min(stack.Length, 24000)].Replace("%", "%25").Replace("\r", "%0D").Replace("\n", "%0A"));
+            _ = errors.GetAwaiter().GetResult();
+        }
+        catch { }
     }
 
     public static int PublishFixture()

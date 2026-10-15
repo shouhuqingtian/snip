@@ -1,0 +1,54 @@
+name: Run a targeted Windows regression
+on:
+  workflow_dispatch:
+    inputs:
+      check:
+        type: choice
+        options: [clipboard, chrome, enhanced-ocr]
+        default: clipboard
+        required: true
+      rounds:
+        type: number
+        default: 3
+        required: true
+permissions:
+  contents: read
+jobs:
+  targeted:
+    runs-on: windows-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.4xx'
+          cache: true
+          cache-dependency-path: '**/*.csproj'
+      - name: Compile and prepare stack diagnostics
+        shell: pwsh
+        run: |
+          dotnet build Snip.sln -c Release --maxcpucount:2
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          dotnet tool install dotnet-stack --version 8.0.547301 --tool-path artifacts/check-tools
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          "SNIP_CHECK_STACK_TOOL=$PWD/artifacts/check-tools/dotnet-stack.exe" | Add-Content $env:GITHUB_ENV
+      - name: Run selected real desktop scenario
+        shell: pwsh
+        env:
+          CHECK: ${{ inputs.check }}
+          ROUNDS: ${{ inputs.rounds }}
+        run: |
+          $flag = switch ($env:CHECK) { 'clipboard' { '--clipboard-ui' }; 'chrome' { '--chrome' }; 'enhanced-ocr' { '--enhanced-ocr' }; default { throw 'Unsupported check.' } }
+          $rounds = [Math]::Clamp([int]$env:ROUNDS,1,5)
+          foreach ($round in 1..$rounds) {
+            Write-Output "Targeted $($env:CHECK) process round $round"
+            dotnet run --project tests/Snip.Windows.Checks/Snip.Windows.Checks.csproj -c Release --no-build -- $flag
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Targeted-Windows-validation
+          path: |
+            artifacts/validation/
+            artifacts/chrome-check/

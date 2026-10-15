@@ -72,6 +72,12 @@ jobs:
         with:
           path: .model-cache/ocr
           key: enhanced-ocr-${{ hashFiles('src/Snip.Ocr/OcrModelStore.cs') }}
+      - name: Prepare bounded thread-stack capture for stalled desktop checks
+        shell: pwsh
+        run: |
+          dotnet tool install dotnet-stack --version 8.0.547301 --tool-path artifacts/check-tools
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          "SNIP_CHECK_STACK_TOOL=$PWD/artifacts/check-tools/dotnet-stack.exe" | Add-Content $env:GITHUB_ENV
       - name: Verify enhanced bilingual OCR and isolated worker cleanup early
         shell: pwsh
         timeout-minutes: 6
