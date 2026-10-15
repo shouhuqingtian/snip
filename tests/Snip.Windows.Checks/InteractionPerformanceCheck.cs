@@ -20,6 +20,7 @@ internal static class InteractionPerformanceCheck
 {
     public static int Run()
     {
+        Ui.EnsureTheme();
         CheckStrokeAndLayout();
         CheckStickerCache();
         var closed=CloseEditor();Pump();Collect();
