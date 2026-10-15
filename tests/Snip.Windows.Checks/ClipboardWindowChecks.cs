@@ -59,6 +59,13 @@ internal static class ClipboardWindowChecks
             }
             void WaitCopy(TextResultViewModel vm) => TextWindowChecks.PumpUntil(() => vm.CopyStatus.Contains("已复制") || vm.CopyStatus.Contains("复制未完成") || vm.CopyStatus.Contains("复制失败"), TimeSpan.FromSeconds(8));
 
+            Stage("idle wait deadline");
+            var idleWait = Stopwatch.StartNew();
+            bool timedOut = false;
+            try { TextWindowChecks.PumpUntil(() => false, TimeSpan.FromMilliseconds(100)); }
+            catch (TimeoutException) { timedOut = true; }
+            Require(timedOut && idleWait.Elapsed < TimeSpan.FromSeconds(2), "Idle dispatcher wait did not honor its deadline.");
+            Console.WriteLine("PASS idle message queue honors the test deadline without relying on a WPF timer tick.");
             Stage("original failure reproduction");
             using (var holder = new ClipboardLock())
             {

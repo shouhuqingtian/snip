@@ -184,9 +184,22 @@ internal static class TextWindowChecks
     {
         var frame = new DispatcherFrame(); var clock = Stopwatch.StartNew();
         Exception? failure=null;
-        var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(25) };
-        timer.Tick += (_, _) => { try { if (done() || clock.Elapsed > timeout) frame.Continue = false; } catch(Exception error) { failure=error; frame.Continue=false; } };
-        timer.Start(); try { Dispatcher.PushFrame(frame); } finally { timer.Stop(); }
+        var dispatcher = Dispatcher.CurrentDispatcher;
+        int active = 1, posted = 0;
+        // A DispatcherTimer cannot enforce this deadline if its idle native timer stops waking
+        // GetMessage. An external tick posts at most one check; UI predicates still run on the STA.
+        using var timer = new System.Threading.Timer(_ =>
+        {
+            if (Volatile.Read(ref active) == 0 || Interlocked.Exchange(ref posted, 1) != 0) return;
+            dispatcher.BeginInvoke(DispatcherPriority.Send, new Action(() =>
+            {
+                Interlocked.Exchange(ref posted, 0);
+                if (Volatile.Read(ref active) == 0) return;
+                try { if (done() || clock.Elapsed > timeout) frame.Continue = false; }
+                catch (Exception error) { failure = error; frame.Continue = false; }
+            }));
+        }, null, TimeSpan.Zero, TimeSpan.FromMilliseconds(25));
+        try { Dispatcher.PushFrame(frame); } finally { Interlocked.Exchange(ref active, 0); }
         if(failure is not null)System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(failure).Throw();
         if (!done()) throw new TimeoutException("Text UI workflow did not complete within the deadline.");
     }
