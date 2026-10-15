@@ -2,7 +2,10 @@
  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:core="clr-namespace:Snip.Core;assembly=Snip.Core" Title="自用截图 · 通用设置" Width="660" Height="640" MinWidth="520" MinHeight="420" WindowStartupLocation="CenterScreen">
  <DockPanel Margin="24">
   <DockPanel DockPanel.Dock="Top" Margin="0,0,0,18"><Button Content="关闭 Esc" DockPanel.Dock="Right" Click="CloseClick"/><TextBlock Text="通用设置" Style="{StaticResource PageTitle}" VerticalAlignment="Center"/></DockPanel>
-  <TextBlock DockPanel.Dock="Bottom" Text="{Binding Status}" Style="{StaticResource Subtitle}" FontSize="12" Margin="0,16,0,0"/>
+  <StackPanel DockPanel.Dock="Bottom" Margin="0,14,0,0">
+   <Button x:Name="SaveDefaultsButton" Content="保存默认翻译设置" Command="{Binding SaveCommand}" Style="{StaticResource PrimaryButton}" HorizontalAlignment="Right" Margin="0,0,0,10"/>
+   <TextBlock Text="{Binding Status}" Style="{StaticResource Subtitle}" FontSize="12"/>
+  </StackPanel>
   <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"><StackPanel>
    <Border Style="{StaticResource Card}" Margin="0,0,0,14"><StackPanel>
     <TextBlock Text="启动" Style="{StaticResource SectionTitle}" Margin="0,0,0,12"/>
@@ -18,7 +21,6 @@
     </ComboBox>
     <ComboBox x:Name="DefaultDirectionBox" SelectedValue="{Binding Direction,Mode=TwoWay}" SelectedValuePath="Tag" Margin="0,0,0,10"><ComboBoxItem Content="英文 → 中文" Tag="en-zh"/><ComboBoxItem Content="中文 → 英文" Tag="zh-en"/></ComboBox>
     <TextBlock Text="基础词典内置常用词和部分短语，不联网、不加载模型，提供词义参考，不进行整句翻译。在线或离线服务不可用时保留原文，由你选择其他方式。" Style="{StaticResource Subtitle}" FontSize="12"/>
-    <Button x:Name="SaveDefaultsButton" Content="保存默认翻译设置" Command="{Binding SaveCommand}" Style="{StaticResource PrimaryButton}" HorizontalAlignment="Right" Margin="0,14,0,0"/>
    </StackPanel></Border>
   </StackPanel></ScrollViewer>
  </DockPanel>
