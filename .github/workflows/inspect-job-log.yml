@@ -1,0 +1,35 @@
+name: Inspect a failed delivery job log
+on:
+  workflow_dispatch:
+    inputs:
+      job_id:
+        description: Repository Actions job ID
+        required: true
+        type: string
+permissions:
+  actions: read
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Surface bounded sanitized build failure details
+        shell: python
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          JOB_ID: ${{ inputs.job_id }}
+        run: |
+          import os, re, subprocess
+          job=os.environ['JOB_ID']
+          if not job.isdecimal():
+              raise ValueError('Job ID must be numeric.')
+          result=subprocess.run(['gh','api',f"repos/{os.environ['REPOSITORY']}/actions/jobs/{job}/logs"],capture_output=True,text=True)
+          value='\n'.join((result.stdout if result.returncode==0 else result.stderr).splitlines()[-65:])
+          value=re.sub(r'https?://[^\s"<>]+','[URL omitted]',value)
+          for index in range(0,len(value),3500):
+              part=value[index:index+3500].replace('%','%25').replace('\r','%0D').replace('\n','%0A')
+              print(f'::notice title=Delivery log part {index//3500+1}::{part}')
+          if result.returncode:
+              raise SystemExit(result.returncode)
