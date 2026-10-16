@@ -37,7 +37,7 @@ public sealed class SelectionWindow : Window
         toolbar.OcrRequested += (_, _) => session.Request(SelectionAction.Ocr);
         toolbar.TranslateRequested += (_, _) => session.Request(SelectionAction.Translate);
         overlay.Children.Add(toolbar);
-        hint = new TextBlock { Text = "拖动选区 · 悬停自动选择窗口 · 单击选窗口 · 方向键微调 · Esc取消", Foreground = Brushes.White, FontSize = 12, Padding = new Thickness(12, 8, 12, 8), IsHitTestVisible = false };
+        hint = new TextBlock { Text = "悬停自动选择窗口 · Enter复制 · 拖动重新选择 · Esc取消", Foreground = Brushes.White, FontSize = 12, Padding = new Thickness(12, 8, 12, 8), IsHitTestVisible = false };
         var hintFrame = new Border { Child = hint, CornerRadius = new CornerRadius(8), Background = new SolidColorBrush(Color.FromArgb(225, 36, 50, 57)), IsHitTestVisible = false };
         overlay.Children.Add(hintFrame); Canvas.SetLeft(hintFrame, 16); Canvas.SetTop(hintFrame, 16); Content = root;
         SourceInitialized += (_, _) => capture.PlaceOverlay(this, display.Bounds);
@@ -78,7 +78,7 @@ public sealed class SelectionWindow : Window
     }
     private void Position(object? sender, EventArgs e)
     {
-        hint.Text = session.ViewModel.SizeText + (session.Editing ? " · 选区内标注 · 对勾复制完成" : " · 拖动选区 · 单击选择窗口 · 方向键微调");
+        hint.Text = session.ViewModel.SizeText + (session.Editing ? " · 选区内标注 · Enter或对勾复制完成" : " · Enter复制 · 拖动重新选择 · 单击进入标注");
         var r = session.ViewModel.Selection;
         var selectedDisplay = session.ViewModel.Frame.Displays.OrderByDescending(d => { var i = r.Intersect(d.Bounds); return i.Width * i.Height; }).First();
         bool visible = session.Editing && selectedDisplay.Name == Display.Name;
@@ -115,12 +115,12 @@ internal sealed class SelectionSurface : FrameworkElement
     private readonly IDesktopCaptureService capture;
     private readonly DisplayInfo display;
     private readonly BitmapSource image;
-    private PixelRect hovered;
     private PixelPoint dragStart, cursor;
     private bool newSelection;
     public SelectionSurface(SelectionSession session, IDesktopCaptureService capture, DisplayInfo display)
     {
         this.session = session; vm = session.ViewModel; this.capture = capture; this.display = display; ClipToBounds = true; Focusable = true;
+        cursor = capture.CursorPosition;
         var b = display.Bounds; var desktop = vm.Frame.Bounds;
         image = new CroppedBitmap(vm.Frame.Image, new Int32Rect((int)(b.X - desktop.X), (int)(b.Y - desktop.Y), (int)b.Width, (int)b.Height)); image.Freeze();
         vm.Changed += OnChanged; session.EditorChanged += OnChanged;
@@ -132,7 +132,7 @@ internal sealed class SelectionSurface : FrameworkElement
         if (ActualWidth <= 0 || ActualHeight <= 0) return;
         var bounds = new Rect(0, 0, ActualWidth, ActualHeight); dc.DrawImage(image, bounds);
         double sx = ActualWidth / display.Bounds.Width, sy = ActualHeight / display.Bounds.Height;
-        var r = vm.Selection.IsEmpty && !hovered.IsEmpty ? hovered : vm.Selection;
+        var r = vm.DisplayedSelection;
         var local = new Rect((r.X - display.Bounds.X) * sx, (r.Y - display.Bounds.Y) * sy, r.Width * sx, r.Height * sy);
         dc.DrawGeometry(new SolidColorBrush(Color.FromArgb(135, 0, 0, 0)), null,
             new CombinedGeometry(GeometryCombineMode.Exclude, new RectangleGeometry(bounds), new RectangleGeometry(local)));
@@ -163,7 +163,7 @@ internal sealed class SelectionSurface : FrameworkElement
         if (session.Editing) return;
         cursor = capture.CursorPosition;
         if (IsMouseCaptured) vm.Move(cursor);
-        else hovered = session.Targets.FirstOrDefault(w => w.Bounds.Contains(cursor))?.Bounds.Intersect(vm.Frame.Bounds) ?? default;
+        else session.UpdateHoveredTarget(cursor);
         Cursor = SelectionGeometry.HitTest(vm.Selection, cursor) switch
         {
             SelectionHandle.Move => Cursors.SizeAll,
@@ -178,7 +178,7 @@ internal sealed class SelectionSurface : FrameworkElement
     {
         if (!IsMouseCaptured) return;
         var p = capture.CursorPosition; vm.End(p); ReleaseMouseCapture();
-        if (newSelection && Math.Abs(p.X - dragStart.X) + Math.Abs(p.Y - dragStart.Y) < 3 && !hovered.IsEmpty) vm.SetSelection(hovered);
+        if (newSelection && Math.Abs(p.X - dragStart.X) + Math.Abs(p.Y - dragStart.Y) < 3 && !vm.HoveredSelection.IsEmpty) vm.SetSelection(vm.HoveredSelection);
         session.BeginEditing(); e.Handled = true;
     }
     protected override void OnLostMouseCapture(MouseEventArgs e) { vm.CancelDrag(); base.OnLostMouseCapture(e); }

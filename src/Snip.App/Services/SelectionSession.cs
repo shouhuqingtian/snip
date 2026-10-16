@@ -14,7 +14,7 @@ public sealed class SelectionSession : IDisposable
     private readonly List<SelectionWindow> windows = [];
     private readonly TaskCompletionSource<SelectionResult?> completion = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly DispatcherTimer timer = new() { Interval = TimeSpan.FromMilliseconds(800) };
-    private bool closed;
+    private bool closed, confirming;
     public SelectionViewModel ViewModel { get; }
     public Task<SelectionResult?> Completion => completion.Task;
     public EditorViewModel? Editor { get; private set; }
@@ -33,6 +33,7 @@ public sealed class SelectionSession : IDisposable
     {
         try
         {
+            UpdateHoveredTarget(capture.CursorPosition);
             foreach (var display in ViewModel.Frame.Displays)
             {
                 var window = new SelectionWindow(this, capture, display);
@@ -42,6 +43,11 @@ public sealed class SelectionSession : IDisposable
             active.Activate(); active.Focus(); timer.Start();
         }
         catch { Dispose(); throw; }
+    }
+    public void UpdateHoveredTarget(PixelPoint point)
+    {
+        if (closed || Editing || ViewModel.IsDragging) return;
+        ViewModel.SetHoveredSelection(Targets.FirstOrDefault(w => w.Bounds.Contains(point))?.Bounds ?? default);
     }
     public void BeginEditing()
     {
@@ -56,14 +62,19 @@ public sealed class SelectionSession : IDisposable
     }
     public async void Confirm()
     {
-        if (closed || !ViewModel.CanConfirm) return;
-        if (Editor is null) { BeginEditing(); return; }
+        if (closed || confirming || ViewModel.IsDragging) return;
+        if (ViewModel.Selection.IsEmpty) ViewModel.SetSelection(ViewModel.HoveredSelection);
+        if (!ViewModel.CanConfirm) return;
+        confirming = true;
         try
         {
             if (!LayoutMatches()) { Cancel("显示器布局已变化，请重新截图。"); return; }
+            if (Editor is null) BeginEditing();
+            if (Editor is null) return;
             if (await Editor.CopyAndMarkAsync()) Finish(null);
         }
         catch (Exception e) { MessageBox.Show(e.Message, "复制失败", MessageBoxButton.OK, MessageBoxImage.Warning); }
+        finally { confirming = false; }
     }
     public void Request(SelectionAction action, BrowserCaptureMode browserMode = BrowserCaptureMode.EntirePage)
     {
