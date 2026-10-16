@@ -106,7 +106,7 @@ internal static class ChromeCaptureCheck
             try
             {
                 var renderer = new AnnotationRenderer(); using var pins = new PinManager(export);
-                var features = new FeatureHub(renderer, export, desktop, pins, diagnostics);
+                var features = new FeatureHub(renderer, export, desktop, pins, diagnostics, captureFailure: System.Runtime.ExceptionServices.ExceptionDispatchInfo.Throw);
                 EditorViewModel Original() => new(desktop.CaptureRegion(region), renderer, export, new EditorDialogs(() => null));
                 var entryClock = Stopwatch.StartNew();
                 var task = features.HandleAsync(new(Original(), region, SelectionAction.Scroll, BrowserCaptureMode.ManualScroll));
@@ -202,7 +202,7 @@ internal static class ChromeCaptureCheck
             try
             {
                 var renderer = new AnnotationRenderer(); using var pins = new PinManager(export);
-                var features = new FeatureHub(renderer, export, desktop, pins, diagnostics);
+                var features = new FeatureHub(renderer, export, desktop, pins, diagnostics, captureFailure: System.Runtime.ExceptionServices.ExceptionDispatchInfo.Throw);
                 var selectedRegion = new PixelRect(selectedWindow.Bounds.X + 80, selectedWindow.Bounds.Y + 180, 400, 280);
                 var original = new EditorViewModel(desktop.CaptureRegion(selectedRegion), renderer, export, new EditorDialogs(() => null));
                 var captureTask = features.HandleAsync(new(original, selectedRegion, SelectionAction.Scroll, BrowserCaptureMode.ManualScroll));
@@ -237,6 +237,10 @@ internal static class ChromeCaptureCheck
                 TextWindowChecks.PumpUntil(() => captureTask.IsCompleted || settlePause.IsCompleted, TimeSpan.FromSeconds(4));
                 if (captureTask.IsCompleted) { captureTask.GetAwaiter().GetResult(); throw new InvalidOperationException("Moving upward ended the drag instead of pausing."); }
                 int pausedOffset = drag.ScrollOffset;
+                var fixtureTitle = Title(selectedWindow.Handle);
+                int pageOffset = int.Parse(fixtureTitle[(fixtureTitle.LastIndexOf("|offset=", StringComparison.Ordinal) + 8)..], System.Globalization.CultureInfo.InvariantCulture);
+                Console.WriteLine($"::notice title=Native selected fixture paused position::stitched={pausedOffset}; document={pageOffset}");
+                if (Math.Abs(pausedOffset - pageOffset) > 2) throw new InvalidOperationException($"Matched displacement differs from public fixture document: stitched={pausedOffset}; document={pageOffset}.");
                 var holdPause = Task.Delay(350);
                 TextWindowChecks.PumpUntil(() => holdPause.IsCompleted, TimeSpan.FromSeconds(2));
                 if (drag.ScrollOffset != pausedOffset) throw new InvalidOperationException("Manual screenshot kept scrolling while held above the activation zone.");

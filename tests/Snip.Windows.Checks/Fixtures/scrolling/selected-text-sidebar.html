@@ -17,5 +17,9 @@ for(let i=0;i<10;i++){
  } article.append(section);
 }
 const range=document.createRange();range.selectNodeContents(article);getSelection().removeAllRanges();getSelection().addRange(range);
-document.addEventListener('mousedown',e=>{if(e.isTrusted && e.clientY>100)document.title='Snip selected drag fixture leaked mouse input';});
+let leaked=false;
+function titlePosition(){document.title='Snip selected drag fixture'+(leaked?' leaked mouse input':'')+'|offset='+Math.round(scrollY);}
+addEventListener('scroll',titlePosition,{passive:true});
+document.addEventListener('mousedown',e=>{if(e.isTrusted && e.clientY>100){leaked=true;titlePosition();}});
+titlePosition();
 </script>

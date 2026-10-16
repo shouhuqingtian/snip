@@ -29,9 +29,11 @@ public sealed class FeatureHub
     private readonly ITextReadingPreferencesStore readingPreferences = new TextReadingPreferencesStore();
     private readonly DiagnosticJournal? diagnostics;
     private readonly Func<IntPtr, IWindowsShareSession>? shareFactory;
+    private readonly Action<Exception>? captureFailure;
     public FeatureHub(AnnotationRenderer renderer, IImageExportService export, IDesktopCaptureService capture, PinManager pins, DiagnosticJournal? diagnostics = null,
-        IOcrService? ocr = null, ITranslationService? translator = null, ModelStore? models = null, Func<IntPtr, IWindowsShareSession>? shareFactory = null, IOnlineTranslationSettingsStore? onlineSettings = null, ITranslationService? onlineTranslator = null, ITranslationPreferencesStore? translationPreferences = null)
+        IOcrService? ocr = null, ITranslationService? translator = null, ModelStore? models = null, Func<IntPtr, IWindowsShareSession>? shareFactory = null, IOnlineTranslationSettingsStore? onlineSettings = null, ITranslationService? onlineTranslator = null, ITranslationPreferencesStore? translationPreferences = null, Action<Exception>? captureFailure = null)
     {
+        this.captureFailure = captureFailure;
         this.renderer = renderer; this.export = export; this.capture = capture; this.pins = pins; this.diagnostics = diagnostics;
         this.ocr = ocr ?? new EnhancedOcrService(systemOcr, new OcrModelStore(System.IO.Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SelfSnip", "Ocr", "PP-OCRv6-small")), WorkerHost, diagnostics);
@@ -205,7 +207,11 @@ public sealed class FeatureHub
         catch (OperationCanceledException) { operation?.Cancel("requested"); }
         catch (Exception e) { failure = e; operation?.Fail(e); }
         finally { manual?.Dispose(); browserCancellation = null; CaptureStatus?.Invoke(null); }
-        if (failure is not null) MessageBox.Show(failure.Message, "长截图未完成", MessageBoxButton.OK, MessageBoxImage.Warning);
+        if (failure is not null)
+        {
+            if (captureFailure is not null) captureFailure(failure);
+            else MessageBox.Show(failure.Message, "长截图未完成", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
         if (image is not null) OpenEditor(new EditorViewModel(image, renderer, export, new EditorDialogs(() => null)));
         else OpenEditor(result.Editor);
     }
