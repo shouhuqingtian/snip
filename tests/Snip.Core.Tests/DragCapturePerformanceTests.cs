@@ -5,6 +5,53 @@ namespace Snip.Core.Tests;
 
 public sealed class DragCapturePerformanceTests
 {
+    [Theory]
+    [InlineData(200, .5)]
+    [InlineData(600, .5)]
+    [InlineData(1200, 1)]
+    [InlineData(600, 2)]
+    public async Task SustainedEdgeDragCapturesSeveralViewportsWithFewerInputsAndExactPixels(int height, double pixelsPerUnit)
+    {
+        using var control = new DragCaptureControl();
+        var source = new LongPage(control, height, pixelsPerUnit);
+        using var cancel = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        var result = await new DragScrollCaptureSession().CaptureAsync(source, control, null, cancel.Token);
+        Assert.InRange(source.Inputs, 2, 9);
+        Assert.Equal(110, result.Width);
+        Assert.Equal(source.Offset + height / 2 - 20, result.Height);
+        for (int y = 0; y < result.Height; y++)
+            Assert.True(result.Bgra.AsSpan(y * result.Width * 4, result.Width * 4)
+                .SequenceEqual(source.Page.AsSpan(((y + 20) * LongPage.Width + 10) * 4, result.Width * 4)));
+    }
+
+    private sealed class LongPage : IScrollCaptureSource
+    {
+        public const int Width = 160;
+        private readonly DragCaptureControl control;
+        private readonly int height;
+        private readonly double pixelsPerUnit;
+        public byte[] Page { get; }
+        public int Inputs { get; private set; }
+        public int Offset { get; private set; }
+        public LongPage(DragCaptureControl control, int height, double pixelsPerUnit)
+        {
+            this.control = control; this.height = height; this.pixelsPerUnit = pixelsPerUnit;
+            Page = new byte[Width * height * 8 * 4]; new Random(173).NextBytes(Page);
+        }
+        public Task<PixelFrame> ReadAsync(CancellationToken token)
+        {
+            if (!control.Started)
+            { control.Configure(Width, height); control.Begin(new(10, 20)); control.Move(new(120, height - 1)); }
+            return Task.FromResult(new PixelFrame(Width, height, Page.AsSpan(Offset * Width * 4, height * Width * 4).ToArray()));
+        }
+        public Task<PixelFrame> ScrollAsync(int wheelUnits, CancellationToken token)
+        {
+            Inputs++; Offset += (int)Math.Round(wheelUnits * pixelsPerUnit);
+            if (Offset >= height * 3) control.Release(new(120, height / 2));
+            return ReadAsync(token);
+        }
+    }
+
     [Fact]
     public async Task OrdinaryPointerMotionDoesNotWakeTheCaptureLoopButEdgesAndReleaseDo()
     {

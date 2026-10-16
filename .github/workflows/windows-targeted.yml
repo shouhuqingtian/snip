@@ -4,7 +4,7 @@ on:
     inputs:
       check:
         type: choice
-        options: [clipboard, chrome, enhanced-ocr, editor-zoom, manual-preview, text-ui, ui-gallery]
+        options: [clipboard, chrome, enhanced-ocr, editor-zoom, manual-preview, window-placement, text-ui, ui-gallery]
         default: clipboard
         required: true
       rounds:
@@ -38,7 +38,7 @@ jobs:
           CHECK: ${{ inputs.check }}
           ROUNDS: ${{ inputs.rounds }}
         run: |
-          $flag = switch ($env:CHECK) { 'clipboard' { '--clipboard-ui' }; 'chrome' { '--chrome' }; 'enhanced-ocr' { '--enhanced-ocr' }; 'editor-zoom' { '--editor-zoom' }; 'manual-preview' { '--manual-preview' }; 'text-ui' { '--text-ui' }; 'ui-gallery' { '--ui-gallery' }; default { throw 'Unsupported check.' } }
+          $flag = switch ($env:CHECK) { 'clipboard' { '--clipboard-ui' }; 'chrome' { '--chrome' }; 'enhanced-ocr' { '--enhanced-ocr' }; 'editor-zoom' { '--editor-zoom' }; 'manual-preview' { '--manual-preview' }; 'window-placement' { '--window-placement' }; 'text-ui' { '--text-ui' }; 'ui-gallery' { '--ui-gallery' }; default { throw 'Unsupported check.' } }
           $rounds = [Math]::Clamp([int]$env:ROUNDS,1,5)
           New-Item -ItemType Directory -Path artifacts/validation -Force | Out-Null
           foreach ($round in 1..$rounds) {
@@ -52,7 +52,7 @@ jobs:
                 $metricPath = "artifacts/validation/$metric.json"
                 if (Test-Path $metricPath) {
                   $summary = (Get-Content $metricPath -Raw | ConvertFrom-Json | ConvertTo-Json -Compress).Replace('%','%25').Replace("`r",'%0D').Replace("`n",'%0A')
-                  Write-Output "::notice title=$metric round $round::$summary"
+                  Write-Output "::notice title=$metric round $($round)::$summary"
                 }
               }
             }

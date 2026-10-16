@@ -3,7 +3,7 @@
  <Grid Margin="22">
   <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
   <StackPanel Margin="0,0,0,14">
-   <DockPanel><Button DockPanel.Dock="Right" Content="关闭 Esc" Click="CloseClick"/><TextBlock Text="原文阅读" Style="{StaticResource PageTitle}"/></DockPanel>
+   <TextBlock Text="原文阅读" Style="{StaticResource PageTitle}"/>
    <TextBlock Text="放大查看和修正识别文字，修改会同步回文字工作台。" Style="{StaticResource Subtitle}" TextWrapping="Wrap"/>
    <WrapPanel Margin="0,8,0,0">
     <Button x:Name="ReadingSourceSpeakButton" Command="{Binding SpeakSourceCommand}"><StackPanel Orientation="Horizontal"><local:UiIcon Kind="speaker" Width="18" Height="18"/><TextBlock Text="{Binding SourceSpeechActionText}" Margin="6,0,0,0"/></StackPanel></Button>
@@ -21,6 +21,6 @@
     </Style></TextBox.Style>
    </TextBox>
   </Border>
-  <StackPanel Grid.Row="2" Margin="3,10,3,0"><TextBlock Text="{Binding CopyStatus}" Style="{StaticResource TranslationStatus}"/><TextBlock Text="{Binding SpeechStatus}" Style="{StaticResource TranslationStatus}"/></StackPanel>
+  <DockPanel Grid.Row="2" Margin="0,12,0,0"><Button x:Name="CloseReadingButton" DockPanel.Dock="Right" Style="{StaticResource FooterCloseButton}" Click="CloseClick"/><StackPanel VerticalAlignment="Center" Margin="3,0,12,0"><TextBlock Text="{Binding CopyStatus}" Style="{StaticResource TranslationStatus}"/><TextBlock Text="{Binding SpeechStatus}" Style="{StaticResource TranslationStatus}"/></StackPanel></DockPanel>
  </Grid>
 </Window>

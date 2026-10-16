@@ -2,7 +2,7 @@
  Title="自用截图 · 译文阅读" Width="1100" Height="820" MinWidth="600" MinHeight="420" WindowStartupLocation="CenterOwner">
  <Window.Resources><BooleanToVisibilityConverter x:Key="BoolVisibility"/></Window.Resources>
  <Grid Margin="22"><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-  <StackPanel Margin="0,0,0,14"><DockPanel><Button DockPanel.Dock="Right" Content="关闭 Esc" Click="CloseClick"/><TextBlock Text="译文阅读" Style="{StaticResource PageTitle}"/></DockPanel><WrapPanel>
+  <StackPanel Margin="0,0,0,14"><TextBlock Text="译文阅读" Style="{StaticResource PageTitle}"/><WrapPanel>
    <TextBlock Text="{Binding ResultDirection}" Foreground="{StaticResource AccentBrush}" VerticalAlignment="Center" Margin="0,0,16,0"/>
    <Button x:Name="ReadingSpeakButton" Command="{Binding SpeakTranslationCommand}" Visibility="{Binding ShowSpeechButton,Converter={StaticResource BoolVisibility}}"><StackPanel Orientation="Horizontal"><local:UiIcon Kind="speaker" Width="18" Height="18"/><TextBlock Text="{Binding SpeechActionText}" Margin="6,0,0,0"/></StackPanel></Button>
    <Button x:Name="ReadingCopyButton" Content="复制译文" Command="{Binding CopyTranslationCommand}"/>
@@ -12,6 +12,6 @@
    <TabItem Header="完整译文" Style="{StaticResource TranslationTab}"><TextBox x:Name="ReadingTranslation" Text="{Binding Translated,Mode=OneWay}" IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" VerticalContentAlignment="Top" Padding="16" FontSize="{Binding SelectedValue,ElementName=ReadingFontSizeBox}"/></TabItem>
    <TabItem Header="读音与词汇" Style="{StaticResource TranslationTab}" IsEnabled="{Binding HasLanguageNotes}"><TextBox x:Name="ReadingNotes" Text="{Binding LanguageNotes,Mode=OneWay}" IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" VerticalContentAlignment="Top" Padding="16" FontSize="16" Background="#F0F7F4"/></TabItem>
   </TabControl></Border>
-  <StackPanel Grid.Row="2" Margin="3,10,3,0"><TextBlock Text="{Binding CopyStatus}" Style="{StaticResource TranslationStatus}"/><TextBlock Text="{Binding SpeechStatus}" Style="{StaticResource TranslationStatus}"/></StackPanel>
+  <DockPanel Grid.Row="2" Margin="0,12,0,0"><Button x:Name="CloseReadingButton" DockPanel.Dock="Right" Style="{StaticResource FooterCloseButton}" Click="CloseClick"/><StackPanel VerticalAlignment="Center" Margin="3,0,12,0"><TextBlock Text="{Binding CopyStatus}" Style="{StaticResource TranslationStatus}"/><TextBlock Text="{Binding SpeechStatus}" Style="{StaticResource TranslationStatus}"/></StackPanel></DockPanel>
  </Grid>
 </Window>

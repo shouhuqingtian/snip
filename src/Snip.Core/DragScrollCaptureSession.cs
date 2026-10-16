@@ -62,6 +62,7 @@ public sealed class DragScrollCaptureSession
         control.Configure(initial.Width, initial.Height);
         using var frames = new ScrollFrameAccumulator(initial);
         int viewportHeight = initial.Height;
+        int initialWheel = viewportHeight < 320 ? 30 : 120, wheel = initialWheel;
         int unchangedSteps = 0;
         bool bottom = false, positionReliable = true;
         void Report() => progress?.Report(new(frames.FrameCount, frames.Height,
@@ -71,15 +72,16 @@ public sealed class DragScrollCaptureSession
         {
             token.ThrowIfCancellationRequested();
             if (!control.AtLowerEdge || bottom)
-            { await control.WaitAsync(Timeout.Infinite, token).ConfigureAwait(false); Report(); continue; }
-            // Small controlled steps avoid losing overlap or photographing smooth-scroll intermediates.
+            { wheel = initialWheel; await control.WaitAsync(Timeout.Infinite, token).ConfigureAwait(false); Report(); continue; }
+            // Learn pixels per wheel unit from confirmed matches. Growing the step (rather than
+            // removing frame settling) speeds up a long drag without capturing smooth-scroll animation.
             // A low-level hook observes a move before Windows has updated the physical cursor.
             // Allow the input callback to return before choosing the native wheel target.
             await Task.Delay(40, token).ConfigureAwait(false);
             if (control.FinishRequested || !control.AtLowerEdge) continue;
             var before = source.Position;
-            diagnostics?.Stage("drag-step", new { before?.Offset, before?.AtBottom, control.ScrollOffset, control.Dragging, control.AtLowerEdge });
-            var next = await source.ScrollAsync(viewportHeight < 320 ? 30 : 120, token).ConfigureAwait(false);
+            diagnostics?.Stage("drag-step", new { before?.Offset, before?.AtBottom, control.ScrollOffset, control.Dragging, control.AtLowerEdge, WheelUnits = wheel });
+            var next = await source.ScrollAsync(wheel, token).ConfigureAwait(false);
             token.ThrowIfCancellationRequested();
             var after = source.Position;
             int? measured = positionReliable && before is not null && after is not null ? (int)Math.Round(after.Offset - before.Offset) : null;
@@ -105,6 +107,10 @@ public sealed class DragScrollCaptureSession
             frames.Append(next, match); control.Advance(match.Offset);
             bottom = positionReliable && after?.AtBottom == true; Report();
             diagnostics?.Stage("drag-scroll-appended", new { frames.FrameCount, frames.Height, match.Offset, match.Error });
+            // Aim for half the moving viewport; keep the other half available for strict overlap
+            // matching. Account for fixed headers/footers and cap acceleration to 2x per frame.
+            int movingHeight = viewportHeight - match.Header - match.Footer;
+            wheel = Math.Clamp((int)Math.Round(wheel * (movingHeight * .5 / match.Offset)), 15, Math.Min(960, wheel * 2));
         }
         token.ThrowIfCancellationRequested();
         var selected = control.Selection.Intersect(new(0, 0, initial.Width, frames.Height)).RoundOut();
