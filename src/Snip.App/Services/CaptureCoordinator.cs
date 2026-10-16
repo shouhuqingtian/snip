@@ -1,5 +1,4 @@
 using System.Windows;
-using System.Windows.Media.Imaging;
 using Snip.App.ViewModels;
 using Snip.App.Views;
 using Snip.Infrastructure;
@@ -18,17 +17,14 @@ public sealed class CaptureCoordinator(IDesktopCaptureService capture, Annotatio
         busy = true;
         using var operation = diagnostics?.Begin("selection");
         var foreground = DesktopWindows.Foreground;
-        var visible = Application.Current.Windows.Cast<Window>().Where(w => w.IsVisible).ToArray();
         try
         {
-            foreach (var window in visible) window.Hide();
-            await Task.Delay(160); // Let the compositor present the desktop before capturing.
+            await Task.Delay(160); // Let the launcher click/tray menu settle before freezing the visible desktop.
             if (disposed) return;
             // The helper releases overlays and the full desktop before any optional long-running workflow.
             var (selection, cancellationReason) = await SelectAsync(operation);
             operation?.Stage("selection-ended", new { Action = selection?.Action.ToString(), Width = selection?.Region.Width, Height = selection?.Region.Height });
             if (disposed) return;
-            Restore(visible);
             if (cancellationReason is { } reason) MessageBox.Show(reason, "自用截图", MessageBoxButton.OK, MessageBoxImage.Information);
             if (selection is not null) await features.HandleAsync(selection);
             else DesktopWindows.Activate(foreground);
@@ -38,7 +34,6 @@ public sealed class CaptureCoordinator(IDesktopCaptureService capture, Annotatio
         finally
         {
             session?.Dispose(); session = null; busy = false;
-            if (!disposed) Restore(visible);
         }
     }
     private async Task<(SelectionResult? Selection, string? Reason)> SelectAsync(DiagnosticOperation? operation)
@@ -46,7 +41,7 @@ public sealed class CaptureCoordinator(IDesktopCaptureService capture, Annotatio
         var frame = await Task.Run(capture.Capture);
         if (disposed) return (null, null);
         operation?.Stage("desktop-captured", new { frame.Image.PixelWidth, frame.Image.PixelHeight, DisplayCount = frame.Displays.Count });
-        using var active = new SelectionSession(frame, capture, renderer, export, DesktopWindows.Snapshot());
+        using var active = new SelectionSession(frame, capture, renderer, export, DesktopWindows.Snapshot(includeCurrentProcess: true));
         session = active;
         try
         {
@@ -55,11 +50,6 @@ public sealed class CaptureCoordinator(IDesktopCaptureService capture, Annotatio
             return (selection, active.CancellationReason);
         }
         finally { session = null; }
-    }
-    private static void Restore(IEnumerable<Window> windows)
-    {
-        var alive = Application.Current.Windows.Cast<Window>().ToHashSet();
-        foreach (var window in windows) if (alive.Contains(window) && !window.IsVisible) window.Show();
     }
     public void Dispose() { disposed = true; session?.Dispose(); }
 }

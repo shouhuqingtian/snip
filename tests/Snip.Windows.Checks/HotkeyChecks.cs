@@ -68,6 +68,7 @@ internal static class HotkeyChecks
             Require(invalid, "Damaged shortcut configuration was silently accepted.");
             Console.WriteLine("PASS invalid saved configuration is reported for default fallback.");
             SelectionChecks.Verify(service);
+            SelfCaptureChecks.Verify(service);
             return 0;
         }
         catch (Exception error) { Console.Error.WriteLine(error); return 1; }
