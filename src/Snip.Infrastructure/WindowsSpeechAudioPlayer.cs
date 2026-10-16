@@ -16,13 +16,13 @@ public sealed class WindowsSpeechAudioPlayer : ISpeechAudioPlayer
         token.ThrowIfCancellationRequested();
         using var stream = await CreateStreamAsync(audio, token).ConfigureAwait(false);
         using var source = MediaSource.CreateFromStream(stream, audio.ContentType);
-        using var player = new MediaPlayer { AutoPlay = false, Source = source };
+        using var player = new MediaPlayer { AutoPlay = false };
         var ended = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         void OnEnded(MediaPlayer sender, object args) => ended.TrySetResult();
         void OnOpened(MediaPlayer sender, object args) { try { sender.PlaybackSession.PlaybackRate = speed; } catch { } }
         void OnFailed(MediaPlayer sender, MediaPlayerFailedEventArgs args) => ended.TrySetException(new SpeechServiceException("在线语音音频无法播放，请检查音频格式和输出设备。"));
         player.MediaEnded += OnEnded; player.MediaFailed += OnFailed; player.MediaOpened += OnOpened;
-        try { player.Play(); await ended.Task.WaitAsync(TimeSpan.FromMinutes(3), token).ConfigureAwait(false); }
+        try { player.Source = source; player.Play(); await ended.Task.WaitAsync(TimeSpan.FromMinutes(3), token).ConfigureAwait(false); }
         finally
         {
             player.MediaEnded -= OnEnded; player.MediaFailed -= OnFailed; player.MediaOpened -= OnOpened;

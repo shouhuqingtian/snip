@@ -9,7 +9,7 @@ namespace Snip.Translation;
 public sealed class OnlineSpeechSynthesizer(OnlineSpeechCredentials credentials, HttpClient? client = null) : IOnlineSpeechSynthesizer
 {
     private const int MaximumAudio = 12 * 1024 * 1024, MaximumJson = 32 * 1024 * 1024;
-    private static readonly HttpClient Shared = new(new SocketsHttpHandler { AllowAutoRedirect = false }) { Timeout = Timeout.InfiniteTimeSpan };
+    private static readonly HttpClient Shared = new(new SocketsHttpHandler { AllowAutoRedirect = false, UseCookies = false }) { Timeout = Timeout.InfiniteTimeSpan };
     private readonly HttpClient http = client ?? Shared;
     public async Task<SpeechAudio> SynthesizeAsync(string text, string language, CancellationToken token)
     {

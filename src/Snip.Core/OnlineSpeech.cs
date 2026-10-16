@@ -50,7 +50,7 @@ public static class SpeechProviders
     public static string[] Models(string provider) => provider switch
     {
         "OpenAI" => ["gpt-4o-mini-tts", "tts-1", "tts-1-hd"],
-        "硅基流动" => ["FunAudioLLM/CosyVoice2-0.5B", "FunAudioLLM/CosyVoice2-0.5B-2512"],
+        "硅基流动" => ["FunAudioLLM/CosyVoice2-0.5B"],
         "通义千问 TTS" => ["qwen3-tts-flash", "qwen-tts"],
         "MiniMax" => ["speech-2.8-hd", "speech-2.8-turbo", "speech-2.6-hd", "speech-2.6-turbo", "speech-02-hd", "speech-02-turbo"],
         _ => []
