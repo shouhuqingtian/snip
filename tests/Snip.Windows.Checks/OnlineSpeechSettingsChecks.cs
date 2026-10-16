@@ -54,20 +54,34 @@ internal static class OnlineSpeechSettingsChecks
         synth.Block = true; calls = synth.Calls; Click(window, "SpeechPreviewButton"); Wait(() => synth.Calls > calls);
         window.Close(); Wait(() => synth.Token.IsCancellationRequested);
         store.SaveMode(SpeechMode.System);
+        void SyncModes()
+        {
+            foreach (var shown in Application.Current.Windows.OfType<TextResultWindow>())
+                if (shown.DataContext is TextResultViewModel text) text.ReloadVoicePreferences();
+        }
+        using var second = new TextResultViewModel(image, new TextWindowChecks.FakeOcr(), new ModelStore(Path.Combine(folder, "speech-no-models-second")),
+            new TextWindowChecks.FakeTranslation(), speech: new ConfiguredTextSpeechService(store, new SystemSpeech(), _ => synth, player), voiceModeSaved: SyncModes);
+        var secondWindow = new TextResultWindow(second); secondWindow.Show(); Wait(() => !second.Busy && second.Source.Length > 0);
         using var result = new TextResultViewModel(image, new TextWindowChecks.FakeOcr(), new ModelStore(Path.Combine(folder, "speech-no-models")),
-            new TextWindowChecks.FakeTranslation(), speech: new ConfiguredTextSpeechService(store, new SystemSpeech(), _ => synth, player), configureSpeech: () => { });
+            new TextWindowChecks.FakeTranslation(), speech: new ConfiguredTextSpeechService(store, new SystemSpeech(), _ => synth, player), configureSpeech: () => { }, voiceModeSaved: SyncModes);
         var resultWindow = new TextResultWindow(result); resultWindow.Show(); Wait(() => !result.Busy && result.Source.Length > 0);
         Require(result.SupportsSpeechModes && result.VoiceMode == SpeechMode.System, "Workbench has no configurable voice mode.");
         result.VoiceMode = SpeechMode.Online;
-        Require(new OnlineSpeechSettingsStore(translation, path).ReadMode() == SpeechMode.Online, "Workbench voice selection did not persist.");
+        Require(second.VoiceMode == SpeechMode.Online && new OnlineSpeechSettingsStore(translation, path).ReadMode() == SpeechMode.Online, "Workbench voice selection did not persist.");
+        synth.Block = true; calls = synth.Calls;
+        var otherPlaying = second.ToggleSpeechAsync(original: true); Wait(() => synth.Calls > calls && second.Speaking);
+        var otherToken = synth.Token;
+        result.VoiceMode = SpeechMode.System; Await(otherPlaying);
+        Require(otherToken.IsCancellationRequested && !second.Speaking && second.VoiceMode == SpeechMode.System, "Changing shared mode did not cancel another workbench's old playback.");
+        result.VoiceMode = SpeechMode.Online;
         synth.Block = false; synth.Fail = true; Await(result.ToggleSpeechAsync(original: true));
         Require(resultWindow.IsVisible && result.Source == "Hello world" && result.SpeechStatus.Contains("PUBLIC-CONTROLLED"), "Online voice failure hid content or lost controlled guidance.");
-        result.VoiceMode = SpeechMode.System; Await(result.ToggleSpeechAsync(original: true));
+        result.VoiceMode = SpeechMode.System; Require(second.VoiceMode == SpeechMode.System, "Other workbench still displays the previous speech mode."); Await(result.ToggleSpeechAsync(original: true));
         Require(result.SpeechStatus.Contains("完成"), "Explicit manual system fallback failed.");
-        resultWindow.Close();
+        resultWindow.Close(); secondWindow.Close();
         NativeMemoryAudio();
         Require(!File.ReadAllText(path).Contains("PUBLIC-SOURCE") && !File.ReadAllText(path).Contains("PUBLIC-CUSTOM-KEY"), "Speech settings retain user text or plaintext key.");
-        Console.WriteLine("PASS actual AI speech settings: four presets/custom fields, DPAPI, default mode, shared key origin gate, preview/no autosave/cancel, independent translation settings, workbench manual fallback and real WinRT memory audio roundtrip.");
+        Console.WriteLine("PASS actual AI speech settings: four presets/custom fields, DPAPI, default mode, shared key origin gate, preview/no autosave/cancel, independent translation settings, workbench/multiple-window mode sync, manual fallback and real WinRT memory audio roundtrip.");
     }
     private static void NativeMemoryAudio()
     {

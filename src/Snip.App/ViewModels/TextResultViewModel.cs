@@ -26,6 +26,7 @@ public sealed class TextResultViewModel : ObservableObject, IDisposable
     private bool runtimeHelpRequested;
     private readonly ITextClipboardService clipboard;
     private readonly ITextSpeechService speech;
+    private readonly Action? voiceModeSaved;
     private readonly ITextReadingPreferencesStore? readingPreferences;
     private bool? savedSourceExpanded;
     private bool speakingOriginal;
@@ -55,7 +56,7 @@ public sealed class TextResultViewModel : ObservableObject, IDisposable
     private double progress;
     private TranslationComputeMode computeMode;
     private string computeStatus = "本地计算：尚未运行";
-    public TextResultViewModel(BitmapSource image, IOcrService ocr, ModelStore models, ITranslationService translator, DiagnosticJournal? diagnostics = null, ITextClipboardService? clipboard = null, ITranslationService? onlineTranslator = null, Action? configureOnline = null, bool defaultOnline = false, ITranslationPreferencesStore? preferences = null, TranslationPreferences? initialPreferences = null, ITranslationService? basicTranslator = null, ITextSpeechService? speech = null, IOcrPreferencesStore? ocrPreferences = null, ITextReadingPreferencesStore? readingPreferences = null, Action? configureSpeech = null)
+    public TextResultViewModel(BitmapSource image, IOcrService ocr, ModelStore models, ITranslationService translator, DiagnosticJournal? diagnostics = null, ITextClipboardService? clipboard = null, ITranslationService? onlineTranslator = null, Action? configureOnline = null, bool defaultOnline = false, ITranslationPreferencesStore? preferences = null, TranslationPreferences? initialPreferences = null, ITranslationService? basicTranslator = null, ITextSpeechService? speech = null, IOcrPreferencesStore? ocrPreferences = null, ITextReadingPreferencesStore? readingPreferences = null, Action? configureSpeech = null, Action? voiceModeSaved = null)
     {
         snapshot = image.IsFrozen ? image : image.Clone(); snapshot.Freeze();
         this.ocr = ocr; this.ocrPreferences = ocrPreferences; this.models = models; this.translator = translator;
@@ -68,6 +69,7 @@ public sealed class TextResultViewModel : ObservableObject, IDisposable
         catch (InvalidOperationException error) { computeMode = TranslationComputeMode.Auto; diagnostics?.Record("translation-compute", "invalid-configuration", error: error); }
         this.clipboard = clipboard ?? new TextClipboardService();
         this.speech = speech ?? new WindowsTextSpeechService();
+        this.voiceModeSaved = voiceModeSaved;
         this.readingPreferences = readingPreferences;
         try { savedSourceExpanded = readingPreferences?.ReadSourceExpanded(); sourceExpanded = savedSourceExpanded ?? true; }
         catch (InvalidOperationException error)
@@ -270,7 +272,7 @@ public sealed class TextResultViewModel : ObservableObject, IDisposable
         {
             if (!CanChangeVoiceMode || !Enum.IsDefined(value) || value == voiceMode) return;
             StopSpeech(clearStatus: true);
-            try { ((IConfigurableTextSpeechService)speech).Mode = value; Set(ref voiceMode, value); SpeechStatus = value == SpeechMode.Online ? "已保存默认：在线 AI 语音；点击喇叭时发送对应文字。" : "已保存默认：Windows 系统语音。"; }
+            try { ((IConfigurableTextSpeechService)speech).Mode = value; Set(ref voiceMode, value); voiceModeSaved?.Invoke(); SpeechStatus = value == SpeechMode.Online ? "已保存默认：在线 AI 语音；点击喇叭时发送对应文字。" : "已保存默认：Windows 系统语音。"; }
             catch (Exception error) { diagnostics?.Record("speech-settings", "save-failed", error: error); SpeechStatus = "语音方式保存失败，请先打开 AI 语音设置保存服务和密钥。"; Notify(); }
         }
     }

@@ -75,7 +75,7 @@ public sealed class FeatureHub
                 configureOnline: () => ShowOnlineSettings(),
                 defaultOnline: DefaultOnline(), preferences: translationPreferences, initialPreferences: ReadSavedTranslationPreferences(), ocrPreferences: ocrPreferences, readingPreferences: readingPreferences,
                 speech: new ConfiguredTextSpeechService(speechSettings, new WindowsTextSpeechService(), credentials => new OnlineSpeechSynthesizer(credentials), new WindowsSpeechAudioPlayer()),
-                configureSpeech: () => ShowSpeechSettings()) { AutoTranslate = translate };
+                configureSpeech: () => ShowSpeechSettings(), voiceModeSaved: RefreshVoiceModes) { AutoTranslate = translate };
             operation?.Stage("view-model-created");
             // A result must outlive the screenshot overlay. Do not give it the overlay as owner.
             window = new TextResultWindow(text) { WindowStartupLocation = WindowStartupLocation.CenterScreen };
@@ -114,16 +114,17 @@ public sealed class FeatureHub
         if (saved is not null) vm.Saved += (_, _) => saved();
         var window = new OnlineTranslationSettingsWindow(vm); window.Show(); window.Activate(); return window;
     }
+    private void RefreshVoiceModes()
+    {
+        foreach (var result in Application.Current.Windows.OfType<TextResultWindow>())
+            if (result.DataContext is TextResultViewModel text) text.ReloadVoicePreferences();
+    }
     public OnlineSpeechSettingsWindow ShowSpeechSettings()
     {
         var existing = Application.Current.Windows.OfType<OnlineSpeechSettingsWindow>().FirstOrDefault();
         if (existing is not null) { existing.Show(); existing.Activate(); return existing; }
         var vm = new OnlineSpeechSettingsViewModel(speechSettings, onlineSettings, credentials => new OnlineSpeechSynthesizer(credentials), new WindowsSpeechAudioPlayer());
-        vm.Saved += (_, _) =>
-        {
-            foreach (var result in Application.Current.Windows.OfType<TextResultWindow>())
-                if (result.DataContext is TextResultViewModel text) text.ReloadVoicePreferences();
-        };
+        vm.Saved += (_, _) => RefreshVoiceModes();
         var window = new OnlineSpeechSettingsWindow(vm); window.Show(); window.Activate(); return window;
     }
     public EditorWindow OpenEditor(EditorViewModel vm)
