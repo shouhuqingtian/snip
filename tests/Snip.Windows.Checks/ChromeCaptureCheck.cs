@@ -238,7 +238,7 @@ internal static class ChromeCaptureCheck
                 if (captureTask.IsCompleted) { captureTask.GetAwaiter().GetResult(); throw new InvalidOperationException("Moving upward ended the drag instead of pausing."); }
                 int pausedOffset = drag.ScrollOffset;
                 var fixtureTitle = Title(selectedWindow.Handle);
-                int pageOffset = int.Parse(fixtureTitle[(fixtureTitle.LastIndexOf("|offset=", StringComparison.Ordinal) + 8)..], System.Globalization.CultureInfo.InvariantCulture);
+                int pageOffset = int.Parse(new string(fixtureTitle[(fixtureTitle.LastIndexOf("|offset=", StringComparison.Ordinal) + 8)..].TakeWhile(char.IsAsciiDigit).ToArray()), System.Globalization.CultureInfo.InvariantCulture);
                 Console.WriteLine($"::notice title=Native selected fixture paused position::stitched={pausedOffset}; document={pageOffset}");
                 if (Math.Abs(pausedOffset - pageOffset) > 2) throw new InvalidOperationException($"Matched displacement differs from public fixture document: stitched={pausedOffset}; document={pageOffset}.");
                 var holdPause = Task.Delay(350);
