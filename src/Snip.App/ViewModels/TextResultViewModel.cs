@@ -26,11 +26,15 @@ public sealed class TextResultViewModel : ObservableObject, IDisposable
     private bool runtimeHelpRequested;
     private readonly ITextClipboardService clipboard;
     private readonly ITextSpeechService speech;
+    private readonly ITextReadingPreferencesStore? readingPreferences;
+    private bool? savedSourceExpanded;
+    private bool speakingOriginal;
+    private string readingLayoutStatus = "展开或收起原文时自动保存，新截图和重启后沿用。";
     private CancellationTokenSource? speechOperation;
     private int speechGeneration;
     private bool speaking, sourceExpanded = true, showOptions;
     private int resultTab;
-    private string speechStatus = "", translatedLanguage = "";
+    private string speechStatus = "";
     private CancellationTokenSource? copying;
     private string copyStatus = "";
     private CancellationTokenSource? operation;
@@ -50,7 +54,7 @@ public sealed class TextResultViewModel : ObservableObject, IDisposable
     private double progress;
     private TranslationComputeMode computeMode;
     private string computeStatus = "本地计算：尚未运行";
-    public TextResultViewModel(BitmapSource image, IOcrService ocr, ModelStore models, ITranslationService translator, DiagnosticJournal? diagnostics = null, ITextClipboardService? clipboard = null, ITranslationService? onlineTranslator = null, Action? configureOnline = null, bool defaultOnline = false, ITranslationPreferencesStore? preferences = null, TranslationPreferences? initialPreferences = null, ITranslationService? basicTranslator = null, ITextSpeechService? speech = null, IOcrPreferencesStore? ocrPreferences = null)
+    public TextResultViewModel(BitmapSource image, IOcrService ocr, ModelStore models, ITranslationService translator, DiagnosticJournal? diagnostics = null, ITextClipboardService? clipboard = null, ITranslationService? onlineTranslator = null, Action? configureOnline = null, bool defaultOnline = false, ITranslationPreferencesStore? preferences = null, TranslationPreferences? initialPreferences = null, ITranslationService? basicTranslator = null, ITextSpeechService? speech = null, IOcrPreferencesStore? ocrPreferences = null, ITextReadingPreferencesStore? readingPreferences = null)
     {
         snapshot = image.IsFrozen ? image : image.Clone(); snapshot.Freeze();
         this.ocr = ocr; this.ocrPreferences = ocrPreferences; this.models = models; this.translator = translator;
@@ -63,6 +67,10 @@ public sealed class TextResultViewModel : ObservableObject, IDisposable
         catch (InvalidOperationException error) { computeMode = TranslationComputeMode.Auto; diagnostics?.Record("translation-compute", "invalid-configuration", error: error); }
         this.clipboard = clipboard ?? new TextClipboardService();
         this.speech = speech ?? new WindowsTextSpeechService();
+        this.readingPreferences = readingPreferences;
+        try { savedSourceExpanded = readingPreferences?.ReadSourceExpanded(); sourceExpanded = savedSourceExpanded ?? true; }
+        catch (InvalidOperationException error)
+        { diagnostics?.Record("text-reading-preferences", "read-failed", error: error); readingLayoutStatus = "原文展开设置读取失败；重新展开或收起可保存。"; }
         // No codec, WinRT or model calls in the constructor: first paint must not wait on native work.
         heartbeat.Tick += (_, _) => ShowStage();
         OcrCommand = new(() => Run("文字识别", TimeSpan.FromSeconds(75), Recognize), Report, () => !Busy);
@@ -120,9 +128,10 @@ public sealed class TextResultViewModel : ObservableObject, IDisposable
         ConfigureOnlineCommand = new(configureOnline ?? (() => { }), () => configureOnline is not null && !Busy);
         SaveTranslationSettingsCommand = new(SaveTranslationSettings, () => !Busy && preferences is not null);
         SaveOcrSettingsCommand = new(SaveOcrSettings, () => !Busy && SupportsOcrModes && ocrPreferences is not null);
-        ToggleSourceCommand = new(() => SourceExpanded = !SourceExpanded);
+        ToggleSourceCommand = new(ToggleSource, () => !disposed && ShowTranslation);
         ToggleOptionsCommand = new(() => ShowOptions = !ShowOptions);
-        SpeakTranslationCommand = new(() => _ = ToggleSpeechAsync(), () => !disposed && (Speaking || !Busy && ShowSpeechButton));
+        SpeakSourceCommand = new(() => _ = ToggleSpeechAsync(original: true), () => !disposed && (Speaking && speakingOriginal || !Busy && ShowSourceSpeechButton));
+        SpeakTranslationCommand = new(() => _ = ToggleSpeechAsync(), () => !disposed && (Speaking && !speakingOriginal || !Busy && ShowSpeechButton));
         CancelCommand = new(() => { userCancelled = true; if (operation is { } current) _ = current.CancelAsync(); }, () => Busy);
     }
     public Task InitializeAsync()
@@ -221,7 +230,7 @@ public sealed class TextResultViewModel : ObservableObject, IDisposable
     public IReadOnlyList<string> Languages { get => languages; private set => Set(ref languages, value); }
     public bool AutoTranslate { get => autoTranslate; init { autoTranslate = value; ShowTranslation = value; } }
     public BitmapSource PreviewImage => snapshot;
-    public bool ShowTranslation { get => showTranslation; private set { if (Set(ref showTranslation, value)) { if (!value) SourceExpanded = true; Notify(nameof(WindowTitle)); } } }
+    public bool ShowTranslation { get => showTranslation; private set { if (Set(ref showTranslation, value)) { Notify(nameof(SourceExpanded)); Notify(nameof(SourceToggleText)); Notify(nameof(WindowTitle)); ToggleSourceCommand.Refresh(); } } }
     public string WindowTitle => ShowTranslation ? Mode == TranslationMode.Basic ? "自用截图 · 文字识别与基础词典" : UseOnlineTranslation ? "自用截图 · 文字识别与在线翻译" : "自用截图 · 文字识别与离线翻译" : "自用截图 · 文字识别";
     public string? Language { get => language; set { if (value is not null) Set(ref language, value); } }
     public string Direction { get => direction; set { if (!Busy && (value is "auto" or "en-zh" or "zh-en") && Set(ref direction, value)) Notify(nameof(DirectionHint)); } }
@@ -229,27 +238,49 @@ public sealed class TextResultViewModel : ObservableObject, IDisposable
         (Direction == "auto" ? "自动判断：" : "手动指定：") + (TranslationDirection.Resolve(Source, Direction) == "zh-en" ? "中文 → 英文" : "英文 → 中文");
     public string ResultDirection { get => resultDirection; private set => Set(ref resultDirection, value); }
     public string LanguageNotes { get => languageNotes; private set { if (Set(ref languageNotes, value)) { Notify(nameof(HasLanguageNotes)); if (value.Length == 0) ResultTab = 0; } } }
-    public bool SourceExpanded { get => sourceExpanded; set { if (Set(ref sourceExpanded, value)) Notify(nameof(SourceToggleText)); } }
+    public bool SourceExpanded
+    {
+        get => !ShowTranslation || sourceExpanded;
+        set { if (Set(ref sourceExpanded, value)) Notify(nameof(SourceToggleText)); }
+    }
+    public string ReadingLayoutStatus { get => readingLayoutStatus; private set => Set(ref readingLayoutStatus, value); }
+    private void ToggleSource()
+    {
+        SourceExpanded = !SourceExpanded;
+        savedSourceExpanded = sourceExpanded;
+        try { readingPreferences?.SaveSourceExpanded(sourceExpanded); ReadingLayoutStatus = "已记住：原文" + (sourceExpanded ? "展开" : "收起") + "，新截图和重启后沿用。"; }
+        catch (Exception error)
+        { diagnostics?.Record("text-reading-preferences", "save-failed", error: error); ReadingLayoutStatus = "原文展开状态保存失败；本窗口仍可使用，请检查设置目录权限。"; Status = ReadingLayoutStatus; }
+    }
     public string SourceToggleText => SourceExpanded ? "收起原文" : "展开原文";
     public bool ShowOptions { get => showOptions; set => Set(ref showOptions, value); }
     public int ResultTab { get => resultTab; set { if (value is 0 or 1) Set(ref resultTab, value); } }
     public bool ShowLocalCompute => Mode == TranslationMode.Offline;
     public string SourceSummary => "识别文字 · " + sourceCharacterCount + " 字";
     public string SpeechStatus { get => speechStatus; private set => Set(ref speechStatus, value); }
-    public bool Speaking { get => speaking; private set { if (Set(ref speaking, value)) { Notify(nameof(SpeechActionText)); SpeakTranslationCommand.Refresh(); } } }
-    public string SpeechActionText => Speaking ? "停止朗读" : "朗读英文";
-    public bool ShowSpeechButton => translatedMode == TranslationMode.Online && translatedLanguage == "en" && Translated.Length > 0;
+    public bool Speaking { get => speaking; private set { if (Set(ref speaking, value)) RefreshSpeechActions(); } }
+    public string SpeechActionText => Speaking && !speakingOriginal ? "停止朗读" : "朗读译文";
+    public string SourceSpeechActionText => Speaking && speakingOriginal ? "停止朗读" : "朗读原文";
+    public bool ShowSpeechButton => !string.IsNullOrWhiteSpace(Translated);
+    public bool ShowSourceSpeechButton => !string.IsNullOrWhiteSpace(Source);
+    private void RefreshSpeechActions()
+    {
+        Notify(nameof(SpeechActionText)); Notify(nameof(SourceSpeechActionText));
+        Notify(nameof(ShowSpeechButton)); Notify(nameof(ShowSourceSpeechButton));
+        SpeakSourceCommand.Refresh(); SpeakTranslationCommand.Refresh();
+    }
     public RelayCommand ToggleSourceCommand { get; }
     public RelayCommand ToggleOptionsCommand { get; }
+    public RelayCommand SpeakSourceCommand { get; }
     public RelayCommand SpeakTranslationCommand { get; }
     public bool HasLanguageNotes => LanguageNotes.Length > 0;
-    public string Source { get => source; set { if (Set(ref source, value)) { sourceRevision++; sourceCharacterCount = TextContent.CountCharacters(value); TranslateCommand.Refresh(); CopySourceCommand.Refresh(); Notify(nameof(DirectionHint)); Notify(nameof(SourceSummary)); } } }
+    public string Source { get => source; set { if (Set(ref source, value)) { if (Speaking && speakingOriginal) StopSpeech(clearStatus: true); RefreshSpeechActions(); sourceRevision++; sourceCharacterCount = TextContent.CountCharacters(value); TranslateCommand.Refresh(); CopySourceCommand.Refresh(); Notify(nameof(DirectionHint)); Notify(nameof(SourceSummary)); } } }
     public bool HasTranslation => Translated.Length > 0;
     public bool HasSourceLayout { get => hasSourceLayout; private set => Set(ref hasSourceLayout, value); }
-    public string Translated { get => translated; private set { if (Set(ref translated, value)) { CopyTranslationCommand.Refresh(); Notify(nameof(HasTranslation)); } } }
+    public string Translated { get => translated; private set { if (Set(ref translated, value)) { CopyTranslationCommand.Refresh(); Notify(nameof(HasTranslation)); RefreshSpeechActions(); } } }
     public string Status { get => status; private set => Set(ref status, value); }
     public string CopyStatus { get => copyStatus; private set => Set(ref copyStatus, value); }
-    public bool Busy { get => busy; private set { Set(ref busy, value); Notify(nameof(Indeterminate)); Notify(nameof(CanChangeTranslationMode)); Notify(nameof(CanUseLocalCompute)); Notify(nameof(CanSwitchOcr)); Notify(nameof(CanChangeOcrMode)); Notify(nameof(CanSelectOcrLanguage)); SaveOcrSettingsCommand.Refresh(); OcrCommand.Refresh(); DownloadOcrCommand.Refresh(); TranslateCommand.Refresh(); DownloadCommand.Refresh(); DownloadGpuCommand.Refresh(); CancelCommand.Refresh(); ConfigureOnlineCommand.Refresh(); SaveTranslationSettingsCommand.Refresh(); SpeakTranslationCommand.Refresh(); } }
+    public bool Busy { get => busy; private set { Set(ref busy, value); Notify(nameof(Indeterminate)); Notify(nameof(CanChangeTranslationMode)); Notify(nameof(CanUseLocalCompute)); Notify(nameof(CanSwitchOcr)); Notify(nameof(CanChangeOcrMode)); Notify(nameof(CanSelectOcrLanguage)); SaveOcrSettingsCommand.Refresh(); OcrCommand.Refresh(); DownloadOcrCommand.Refresh(); TranslateCommand.Refresh(); DownloadCommand.Refresh(); DownloadGpuCommand.Refresh(); CancelCommand.Refresh(); ConfigureOnlineCommand.Refresh(); SaveTranslationSettingsCommand.Refresh(); SpeakSourceCommand.Refresh(); SpeakTranslationCommand.Refresh(); } }
     public bool Indeterminate => Busy && !downloading;
     public double Progress { get => progress; private set => Set(ref progress, value); }
     public AsyncCommand OcrCommand { get; }
@@ -263,7 +294,7 @@ public sealed class TextResultViewModel : ObservableObject, IDisposable
     public void WindowFailed(Exception error) => Report(error);
     private async Task Recognize(CancellationToken token)
     {
-        SourceExpanded = true;
+        SourceExpanded = savedSourceExpanded ?? true;
         if (Languages.Count == 0)
         {
             SetStage(RecognitionMode == OcrMode.System ? "正在加载 Windows 识别语言" : "正在准备中英自动识别");
@@ -373,9 +404,7 @@ public sealed class TextResultViewModel : ObservableObject, IDisposable
         translatedMode = selectedMode; Notify(nameof(TranslationResultTitle));
         bool firstTranslation = Translated.Length == 0;
         Translated = result.Translation;
-        translatedLanguage = selectedDirection == "zh-en" ? "en" : "zh";
-        Notify(nameof(ShowSpeechButton)); SpeakTranslationCommand.Refresh();
-        if (firstTranslation) SourceExpanded = false;
+        if (firstTranslation) SourceExpanded = savedSourceExpanded ?? false;
         ResultTab = 0;
         ResultDirection = selectedDirection == "zh-en" ? "本次：中文 → 英文" : "本次：英文 → 中文";
         LanguageNotes = online ? FormatNotes(result) : "";
@@ -457,20 +486,24 @@ public sealed class TextResultViewModel : ObservableObject, IDisposable
         }
         finally { copying = null; CopySourceCommand.Refresh(); CopyTranslationCommand.Refresh(); }
     }
-    public async Task ToggleSpeechAsync()
+    public async Task ToggleSpeechAsync(bool original = false)
     {
         if (disposed) return;
-        if (Speaking) { StopSpeech(); return; }
-        if (Busy || !ShowSpeechButton) return;
+        if (Speaking && speakingOriginal == original) { StopSpeech(); return; }
+        if (Busy || !(original ? ShowSourceSpeechButton : ShowSpeechButton)) return;
+        StopSpeech(clearStatus: true);
         using var current = new CancellationTokenSource(TimeSpan.FromMinutes(20));
         speechOperation = current;
         int generation = ++speechGeneration;
-        string text = Translated;
-        Speaking = true; SpeechStatus = "正在朗读英文（Windows 系统语音）；再次点击喇叭可停止。";
-        using var log = diagnostics?.Begin("text-speech", new { CharacterCount = text.Length, Language = "en" });
+        string text = original ? Source : Translated;
+        string speechLanguage = SpeechText.Language(text);
+        speakingOriginal = original;
+        Speaking = true; RefreshSpeechActions();
+        SpeechStatus = "正在朗读" + (original ? "原文" : "译文") + "（Windows " + (speechLanguage == "zh" ? "中文" : "英语") + "语音）；再次点击喇叭可停止。";
+        using var log = diagnostics?.Begin("text-speech", new { CharacterCount = text.Length, Language = speechLanguage, Original = original });
         try
         {
-            await speech.SpeakEnglishAsync(text, current.Token).WaitAsync(current.Token);
+            await speech.SpeakAsync(text, speechLanguage, current.Token).WaitAsync(current.Token);
             current.Token.ThrowIfCancellationRequested();
             log?.Complete();
             if (!disposed && generation == speechGeneration) SpeechStatus = "朗读完成。";
@@ -484,14 +517,17 @@ public sealed class TextResultViewModel : ObservableObject, IDisposable
         {
             log?.Fail(error);
             if (!disposed && generation == speechGeneration)
-                SpeechStatus = error is SpeechUnavailableException ? "未安装 Windows 英语语音，请在系统“时间和语言 → 语音”中添加英语语音后重试。"
-                    : "无法朗读，请检查 Windows 英语语音组件和音频输出设备；译文已保留。";
+                SpeechStatus = error is SpeechUnavailableException
+                    ? "未安装 Windows " + (speechLanguage == "zh" ? "中文" : "英语") + "语音，请在系统“时间和语言 → 语音”中添加对应语音后重试。"
+                    : "无法朗读，请检查 Windows 语音组件和音频输出设备；原文和译文已保留。";
         }
         finally
         {
             if (speechOperation == current) { speechOperation = null; Speaking = false; }
         }
     }
+    public void StopSpeechFor(bool original)
+    { if (Speaking && speakingOriginal == original) StopSpeech(); }
     public void StopSpeech(bool clearStatus = false)
     {
         speechGeneration++;
@@ -503,7 +539,7 @@ public sealed class TextResultViewModel : ObservableObject, IDisposable
     {
         if (disposed) return;
         StopSpeech(clearStatus: true);
-        disposed = true; SpeakTranslationCommand.Refresh(); diagnostics?.Record("text-window", "closed", new { Busy });
+        disposed = true; SpeakSourceCommand.Refresh(); SpeakTranslationCommand.Refresh(); ToggleSourceCommand.Refresh(); diagnostics?.Record("text-window", "closed", new { Busy });
         heartbeat.Stop(); if (operation is { } current) _ = current.CancelAsync();
         copying?.Cancel(); CopySourceCommand.Refresh(); CopyTranslationCommand.Refresh();
     }

@@ -1,4 +1,4 @@
-<Window x:Class="Snip.App.Views.SourceReadingWindow" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+<Window x:Class="Snip.App.Views.SourceReadingWindow" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:local="clr-namespace:Snip.App.Views"
  Title="自用截图 · 原文阅读" Width="1100" Height="820" MinWidth="600" MinHeight="420" WindowStartupLocation="CenterOwner">
  <Grid Margin="22">
   <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
@@ -6,6 +6,7 @@
    <DockPanel><Button DockPanel.Dock="Right" Content="关闭 Esc" Click="CloseClick"/><TextBlock Text="原文阅读" Style="{StaticResource PageTitle}"/></DockPanel>
    <TextBlock Text="放大查看和修正识别文字，修改会同步回文字工作台。" Style="{StaticResource Subtitle}" TextWrapping="Wrap"/>
    <WrapPanel Margin="0,8,0,0">
+    <Button x:Name="ReadingSourceSpeakButton" Command="{Binding SpeakSourceCommand}"><StackPanel Orientation="Horizontal"><local:UiIcon Kind="speaker" Width="18" Height="18"/><TextBlock Text="{Binding SourceSpeechActionText}" Margin="6,0,0,0"/></StackPanel></Button>
     <Button x:Name="ReadingCopySourceButton" Content="复制原文" Command="{Binding CopySourceCommand}"/>
     <TextBlock Text="字号" VerticalAlignment="Center" Margin="14,0,6,0"/>
     <ComboBox x:Name="SourceReadingFontSizeBox" Width="80" SelectedValuePath="Tag" SelectedValue="20"><ComboBoxItem Content="16" Tag="16"/><ComboBoxItem Content="18" Tag="18"/><ComboBoxItem Content="20" Tag="20"/><ComboBoxItem Content="24" Tag="24"/><ComboBoxItem Content="28" Tag="28"/></ComboBox>
@@ -20,6 +21,6 @@
     </Style></TextBox.Style>
    </TextBox>
   </Border>
-  <TextBlock Grid.Row="2" Text="{Binding CopyStatus}" Style="{StaticResource TranslationStatus}" Margin="3,10,3,0"/>
+  <StackPanel Grid.Row="2" Margin="3,10,3,0"><TextBlock Text="{Binding CopyStatus}" Style="{StaticResource TranslationStatus}"/><TextBlock Text="{Binding SpeechStatus}" Style="{StaticResource TranslationStatus}"/></StackPanel>
  </Grid>
 </Window>

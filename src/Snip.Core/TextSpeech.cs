@@ -2,16 +2,19 @@ namespace Snip.Core;
 
 public interface ITextSpeechService
 {
-    Task SpeakEnglishAsync(string text, CancellationToken cancellationToken);
+    Task SpeakAsync(string text, string language, CancellationToken cancellationToken);
 }
 
 public sealed class SpeechUnavailableException : InvalidOperationException
 {
-    public SpeechUnavailableException() : base("未安装 Windows 英语语音，请在系统“时间和语言 → 语音”中添加英语语音后重试。") { }
+    public SpeechUnavailableException(string language = "en") : base(language == "zh"
+        ? "未安装 Windows 中文语音，请在系统“时间和语言 → 语音”中添加中文语音后重试。"
+        : "未安装 Windows 英语语音，请在系统“时间和语言 → 语音”中添加英语语音后重试。") { }
 }
 
 public static class SpeechText
 {
+    public static string Language(string text) => TranslationDirection.Resolve(text) == "zh-en" ? "zh" : "en";
     /// <summary>Bound audio buffers and first-play latency without dropping words or splitting surrogate pairs.</summary>
     public static IReadOnlyList<string> Chunks(string text, int maximumLength = 600)
     {

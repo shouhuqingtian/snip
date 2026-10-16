@@ -25,6 +25,7 @@ public sealed class FeatureHub
     private readonly IOnlineTranslationSettingsStore onlineSettings;
     private readonly ITranslationService onlineTranslator;
     private readonly ITranslationPreferencesStore translationPreferences;
+    private readonly ITextReadingPreferencesStore readingPreferences = new TextReadingPreferencesStore();
     private readonly DiagnosticJournal? diagnostics;
     private readonly Func<IntPtr, IWindowsShareSession>? shareFactory;
     public FeatureHub(AnnotationRenderer renderer, IImageExportService export, IDesktopCaptureService capture, PinManager pins, DiagnosticJournal? diagnostics = null,
@@ -70,7 +71,7 @@ public sealed class FeatureHub
             }
             text = new TextResultViewModel(image, selectedOcr, models, translator, diagnostics, onlineTranslator: onlineTranslator,
                 configureOnline: () => ShowOnlineSettings(),
-                defaultOnline: DefaultOnline(), preferences: translationPreferences, initialPreferences: ReadSavedTranslationPreferences(), ocrPreferences: ocrPreferences) { AutoTranslate = translate };
+                defaultOnline: DefaultOnline(), preferences: translationPreferences, initialPreferences: ReadSavedTranslationPreferences(), ocrPreferences: ocrPreferences, readingPreferences: readingPreferences) { AutoTranslate = translate };
             operation?.Stage("view-model-created");
             // A result must outlive the screenshot overlay. Do not give it the overlay as owner.
             window = new TextResultWindow(text) { WindowStartupLocation = WindowStartupLocation.CenterScreen };

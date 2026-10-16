@@ -3,6 +3,14 @@ using Xunit;
 namespace Snip.Core.Tests;
 public sealed class SpeechTextTests
 {
+    [Theory]
+    [InlineData("Hello world.", "en")]
+    [InlineData("你好，欢迎使用截图。", "zh")]
+    [InlineData("這是中文翻譯。", "zh")]
+    [InlineData("Windows 应用程序支持保存截图。", "zh")]
+    [InlineData("A sentence in English with 中文 notes.", "en")]
+    public void VoiceLanguageFollowsActualContent(string text, string language)
+        => Assert.Equal(language, SpeechText.Language(text));
     [Fact] public void LongTextIsBoundedWithoutLosingWords()
     {
         string text=string.Join(" ",Enumerable.Range(0,2000).Select(i=>$"word{i}."));

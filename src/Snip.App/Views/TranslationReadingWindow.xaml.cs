@@ -10,7 +10,7 @@ public partial class TranslationReadingWindow : Window
     {
         Ui.ApplyWindow(this); InitializeComponent(); DataContext = vm;
         PreviewKeyDown += (_, args) => { if (args.Key == Key.Escape) { args.Handled = true; Close(); } };
-        Closed += (_, _) => vm.StopSpeech();
+        Closed += (_, _) => vm.StopSpeechFor(original: false);
     }
     private void CloseClick(object sender, RoutedEventArgs args) => Close();
 }

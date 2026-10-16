@@ -85,6 +85,7 @@ internal static class TextReadingChecks
         journal.FlushAsync().GetAwaiter().GetResult();
         string log=File.ReadAllText(Path.Combine(folder,"reading-diagnostics","events.jsonl"));
         Require(log.Contains("text-speech") && !log.Contains("PUBLIC-READING") && !log.Contains("PUBLIC-SOURCE") && !log.Contains("中文长文示例") && !log.Contains("VOICE-PRIVATE"),"Speech/source text or native error leaked into diagnostics.");
+        BilingualReadingChecks.Run(folder, image);
         Console.WriteLine("PASS actual long-result layout, original expansion, separate notes tab, shared reading window/font/copy; English speaker click/stop/missing voice/reading close/result close and log privacy.");
     }
     private static void Click(Window window,string name)
@@ -101,8 +102,8 @@ internal static class TextReadingChecks
     {
         public int Calls;public string Text="";public CancellationToken Token;public bool Fail;
         public TaskCompletionSource Pending=new(TaskCreationOptions.RunContinuationsAsynchronously);
-        public Task SpeakEnglishAsync(string text,CancellationToken token)
-        {Calls++;Text=text;Token=token;if(Fail)throw new SpeechUnavailableException();return Pending.Task.WaitAsync(token);}
+        public Task SpeakAsync(string text,string language,CancellationToken token)
+        {Calls++;Text=text;Token=token;if(Fail)throw new SpeechUnavailableException(language);return Pending.Task.WaitAsync(token);}
     }
     private sealed class Translation : IAnnotatedTranslationService
     {
