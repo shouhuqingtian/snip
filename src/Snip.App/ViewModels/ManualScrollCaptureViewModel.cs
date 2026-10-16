@@ -31,7 +31,8 @@ public sealed class ManualScrollCaptureViewModel : ObservableObject
     {
         if (!Ready || Drag?.Started != true) return;
         var selection = Drag.Selection;
-        Status = $"已选 {selection.Width:0}×{selection.Height:0} 像素 · 松开鼠标完成";
+        var action = Drag.ScrollZoneActive ? "滚动中，上移暂停" : "下拉过中线稍下方滚动";
+        Status = $"已选 {selection.Width:0}×{selection.Height:0} 像素 · {action} · 松开完成";
         CanFinish = !selection.IsEmpty;
     }
 }

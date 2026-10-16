@@ -122,7 +122,7 @@ internal static class ChromeCaptureCheck
                     throw new InvalidOperationException("Manual controls overlap the captured rectangle.");
                 var viewport = toolbar.Viewport;
                 var startPoint = new Point(viewport.X + 80, viewport.Y + 80);
-                var edgePoint = new Point(viewport.X + 400, viewport.Bottom - 10);
+                var edgePoint = new Point(viewport.X + 400, viewport.Y + viewport.Height * .62);
                 Move(startPoint);
                 Send([new() { Type = 0, Data = new() { Mouse = new() { Flags = 2 } } }]);
                 var vm = (ManualScrollCaptureViewModel)toolbar.DataContext;
@@ -146,8 +146,8 @@ internal static class ChromeCaptureCheck
                 Console.WriteLine("PASS real manual Chrome entry and 80 native pointer moves with responsive dispatcher: " + System.Text.Json.JsonSerializer.Serialize(responsiveness));
                 var scrollClock = Stopwatch.StartNew();
                 Move(edgePoint);
-                TextWindowChecks.PumpUntil(() => vm.Drag!.AtLowerEdge, TimeSpan.FromSeconds(3));
-                Console.WriteLine("PASS native drag down and move reach lower edge before scrolling.");
+                TextWindowChecks.PumpUntil(() => vm.Drag!.ScrollZoneActive, TimeSpan.FromSeconds(3));
+                Console.WriteLine("PASS native drag at 62 percent of viewport starts scrolling without reaching bottom.");
                 const int scrollGoal = 1200;
                 TextWindowChecks.PumpUntil(() => task.IsCompleted || vm.Drag!.ScrollOffset >= scrollGoal, TimeSpan.FromSeconds(20));
                 if (task.IsCompleted) { task.GetAwaiter().GetResult(); throw new InvalidOperationException("Drag capture stopped before release."); }
@@ -156,7 +156,7 @@ internal static class ChromeCaptureCheck
                 Send([new() { Type = 0, Data = new() { Mouse = new() { Flags = 4 } } }]);
                 TextWindowChecks.PumpUntil(() => task.IsCompleted, TimeSpan.FromSeconds(12)); task.GetAwaiter().GetResult();
                 scrollClock.Stop();
-                var speed = new { GoalPixels = scrollGoal, CapturedOffset = vm.Drag!.ScrollOffset, Frames = vm.Frames,
+                var speed = new { TriggerViewportFraction = .62, GoalPixels = scrollGoal, CapturedOffset = vm.Drag!.ScrollOffset, Frames = vm.Frames,
                     ElapsedMilliseconds = Math.Round(scrollClock.Elapsed.TotalMilliseconds, 2),
                     PixelsPerSecond = Math.Round(vm.Drag.ScrollOffset / scrollClock.Elapsed.TotalSeconds, 2) };
                 File.WriteAllText("artifacts/validation/manual-chrome-scroll-speed.json", System.Text.Json.JsonSerializer.Serialize(speed, new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
@@ -228,6 +228,22 @@ internal static class ChromeCaptureCheck
                 Move(new(viewport.X + 385, viewport.Bottom + 8));
                 TextWindowChecks.PumpUntil(() => captureTask.IsCompleted || ((ManualScrollCaptureViewModel)bar.DataContext).Frames >= 4, TimeSpan.FromSeconds(12));
                 if (captureTask.IsCompleted) throw new InvalidOperationException("Selected text fixture failed while dragging.");
+                var drag = ((ManualScrollCaptureViewModel)bar.DataContext).Drag!;
+                Move(new(viewport.X + 385, viewport.Y + viewport.Height * .45));
+                TextWindowChecks.PumpUntil(() => !drag.ScrollZoneActive, TimeSpan.FromSeconds(3));
+                // An already injected wheel step is allowed to finish; then staying above the
+                // trigger must not enqueue another step while the left button remains held.
+                var settlePause = Task.Delay(2000);
+                TextWindowChecks.PumpUntil(() => captureTask.IsCompleted || settlePause.IsCompleted, TimeSpan.FromSeconds(4));
+                if (captureTask.IsCompleted) { captureTask.GetAwaiter().GetResult(); throw new InvalidOperationException("Moving upward ended the drag instead of pausing."); }
+                int pausedOffset = drag.ScrollOffset;
+                var holdPause = Task.Delay(350);
+                TextWindowChecks.PumpUntil(() => holdPause.IsCompleted, TimeSpan.FromSeconds(2));
+                if (drag.ScrollOffset != pausedOffset) throw new InvalidOperationException("Manual screenshot kept scrolling while held above the activation zone.");
+                Move(new(viewport.X + 385, viewport.Y + viewport.Height * .62));
+                TextWindowChecks.PumpUntil(() => captureTask.IsCompleted || drag.ScrollOffset > pausedOffset, TimeSpan.FromSeconds(8));
+                if (captureTask.IsCompleted) { captureTask.GetAwaiter().GetResult(); throw new InvalidOperationException("Manual screenshot could not resume at 62 percent of viewport."); }
+                Console.WriteLine("PASS native held drag: moving to 45 percent pauses, remaining there stays paused, returning to 62 percent resumes.");
                 Move(new(viewport.X + 385, viewport.Y + 250));
                 Send([new() { Type = 0, Data = new() { Mouse = new() { Flags = 4 } } }]);
                 TextWindowChecks.PumpUntil(() => captureTask.IsCompleted, TimeSpan.FromSeconds(12)); captureTask.GetAwaiter().GetResult();
@@ -303,7 +319,7 @@ internal static class ChromeCaptureCheck
             foreach (var bar in app.Windows.OfType<ManualScrollCaptureWindow>())
             {
                 var vm = (ManualScrollCaptureViewModel)bar.DataContext;
-                Console.WriteLine($"::notice title=Browser drag state::frames={vm.Frames}; started={vm.Drag?.Started}; dragging={vm.Drag?.Dragging}; edge={vm.Drag?.AtLowerEdge}; offset={vm.Drag?.ScrollOffset}; viewport={bar.Viewport}");
+                Console.WriteLine($"::notice title=Browser drag state::frames={vm.Frames}; started={vm.Drag?.Started}; dragging={vm.Drag?.Dragging}; edge={vm.Drag?.ScrollZoneActive}; offset={vm.Drag?.ScrollOffset}; viewport={bar.Viewport}");
             }
             diagnostics.FlushAsync().GetAwaiter().GetResult();
             var journal = Path.Combine(diagnostics.DirectoryPath, "events.jsonl");

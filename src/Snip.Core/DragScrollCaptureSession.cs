@@ -6,14 +6,14 @@ public sealed class DragCaptureControl : IDisposable
     private readonly object gate = new();
     private readonly SemaphoreSlim input = new(0, 1);
     private PixelPoint start, pointer;
-    private bool started, dragging, finished, disposed;
+    private bool started, dragging, finished, disposed, scrolling;
     private int width, height, offset;
     public void Configure(int viewportWidth, int viewportHeight)
     { lock (gate) { width = viewportWidth; height = viewportHeight; } }
     public bool Started { get { lock (gate) return started; } }
     public bool Dragging { get { lock (gate) return dragging; } }
     public bool FinishRequested { get { lock (gate) return finished; } }
-    public bool AtLowerEdge { get { lock (gate) return dragging && pointer.Y >= height - 24; } }
+    public bool ScrollZoneActive { get { lock (gate) return dragging && scrolling; } }
     public int ScrollOffset { get { lock (gate) return offset; } }
     public PixelRect Selection { get { lock (gate) return started ? PixelRect.FromPoints(start, new(pointer.X, pointer.Y + offset)).RoundOut() : default; } }
     public PixelRect VisibleSelection { get { lock (gate) return started ? PixelRect.FromPoints(new(start.X, start.Y - offset), pointer).Intersect(new(0, 0, width, height)) : default; } }
@@ -29,16 +29,21 @@ public sealed class DragCaptureControl : IDisposable
     }
     public void Move(PixelPoint point)
     {
-        bool edgeChanged;
+        bool zoneChanged;
         lock (gate)
         {
             if (!dragging) return;
-            bool atEdge = pointer.Y >= height - 24;
-            pointer = Clamp(point); edgeChanged = atEdge != (pointer.Y >= height - 24);
+            bool previous = scrolling;
+            pointer = Clamp(point);
+            // Start just below the middle of the visible webpage, with a small hysteresis band
+            // so pointer jitter cannot repeatedly start/stop scrolling. A click alone must not scroll.
+            scrolling = scrolling ? pointer.Y >= height * .55
+                : pointer.Y >= height * .60 && (offset > 0 || point.Y - start.Y >= 8);
+            zoneChanged = previous != scrolling;
         }
-        // Position is always current, but only an edge transition affects the capture loop.
+        // Position is always current, but only a scroll-zone transition affects the capture loop.
         // Hundreds of ordinary pointer events must not enqueue progress/UI work.
-        if (edgeChanged) Wake();
+        if (zoneChanged) Wake();
     }
     public void Release(PixelPoint point) { lock (gate) { if (!dragging) return; pointer = Clamp(point); dragging = false; finished = true; } Wake(); }
     public void RequestFinish() { lock (gate) { if (!started) return; dragging = false; finished = true; } Wake(); }
@@ -52,7 +57,7 @@ public sealed class DragCaptureControl : IDisposable
     public void Dispose() { lock (gate) disposed = true; input.Dispose(); }
 }
 
-/// <summary>Scroll only while dragging at the lower edge. Each injected step settles before it is stitched.</summary>
+/// <summary>Scroll while a downward drag is in the lower portion of the viewport. Each injected step settles before it is stitched.</summary>
 public sealed class DragScrollCaptureSession
 {
     public async Task<PixelFrame> CaptureAsync(IScrollCaptureSource source, DragCaptureControl control,
@@ -66,21 +71,21 @@ public sealed class DragScrollCaptureSession
         int unchangedSteps = 0;
         bool bottom = false, positionReliable = true;
         void Report() => progress?.Report(new(frames.FrameCount, frames.Height,
-            control.Started ? $"已选 {control.Selection.Width:0}×{control.Selection.Height:0} 像素 · 松开鼠标完成" : "按住左键拖选 · 拖到网页下沿自动滚动 · Esc 取消", control.Started && !control.Selection.IsEmpty));
+            control.Started ? $"已选 {control.Selection.Width:0}×{control.Selection.Height:0} 像素 · {(control.ScrollZoneActive ? "滚动中，上移暂停" : "下拉过中线稍下方滚动")} · 松开完成" : "按住左键拖选 · 下拉过网页 60% 处滚动 · Esc 取消", control.Started && !control.Selection.IsEmpty));
         Report(); diagnostics?.Stage("drag-ready", new { initial.Width, initial.Height });
         while (!control.FinishRequested)
         {
             token.ThrowIfCancellationRequested();
-            if (!control.AtLowerEdge || bottom)
+            if (!control.ScrollZoneActive || bottom)
             { wheel = initialWheel; await control.WaitAsync(Timeout.Infinite, token).ConfigureAwait(false); Report(); continue; }
             // Learn pixels per wheel unit from confirmed matches. Growing the step (rather than
             // removing frame settling) speeds up a long drag without capturing smooth-scroll animation.
             // A low-level hook observes a move before Windows has updated the physical cursor.
             // Allow the input callback to return before choosing the native wheel target.
             await Task.Delay(40, token).ConfigureAwait(false);
-            if (control.FinishRequested || !control.AtLowerEdge) continue;
+            if (control.FinishRequested || !control.ScrollZoneActive) continue;
             var before = source.Position;
-            diagnostics?.Stage("drag-step", new { before?.Offset, before?.AtBottom, control.ScrollOffset, control.Dragging, control.AtLowerEdge, WheelUnits = wheel });
+            diagnostics?.Stage("drag-step", new { before?.Offset, before?.AtBottom, control.ScrollOffset, control.Dragging, control.ScrollZoneActive, WheelUnits = wheel });
             var next = await source.ScrollAsync(wheel, token).ConfigureAwait(false);
             token.ThrowIfCancellationRequested();
             var after = source.Position;

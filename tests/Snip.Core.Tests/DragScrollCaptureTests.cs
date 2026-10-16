@@ -5,6 +5,39 @@ namespace Snip.Core.Tests;
 
 public sealed class DragScrollCaptureTests
 {
+    [Theory]
+    [InlineData(200)]
+    [InlineData(600)]
+    [InlineData(1200)]
+    [InlineData(2160)]
+    public async Task DragJustBelowMiddleStartsScrollingAndUpwardMovementPausesWithoutJitter(int height)
+    {
+        using var control = new DragCaptureControl(); control.Configure(1000, height);
+        control.Begin(new(10, height * .1)); await control.WaitAsync(0, CancellationToken.None);
+        control.Move(new(300, height * .5)); Assert.False(control.ScrollZoneActive);
+        Assert.False(await control.WaitAsync(0, CancellationToken.None));
+        control.Move(new(300, height * .62)); Assert.True(control.ScrollZoneActive);
+        Assert.True(await control.WaitAsync(0, CancellationToken.None));
+        control.Move(new(300, height * .58)); Assert.True(control.ScrollZoneActive);
+        Assert.False(await control.WaitAsync(0, CancellationToken.None));
+        control.Move(new(300, height * .54)); Assert.False(control.ScrollZoneActive);
+        Assert.True(await control.WaitAsync(0, CancellationToken.None));
+        control.Move(new(300, height * .58)); Assert.False(control.ScrollZoneActive);
+        control.Move(new(300, height * .62)); Assert.True(control.ScrollZoneActive);
+        control.Release(new(300, height * .62)); Assert.False(control.ScrollZoneActive);
+    }
+
+    [Fact]
+    public void PressingInLowerHalfDoesNotScrollUntilDownwardDragAndResumeWorksAboveOriginalAnchor()
+    {
+        using var control = new DragCaptureControl(); control.Configure(1000, 1000);
+        control.Begin(new(10, 700)); Assert.False(control.ScrollZoneActive);
+        control.Move(new(300, 700)); Assert.False(control.ScrollZoneActive);
+        control.Move(new(300, 710)); Assert.True(control.ScrollZoneActive);
+        control.Advance(200); control.Move(new(300, 500)); Assert.False(control.ScrollZoneActive);
+        control.Move(new(300, 620)); Assert.True(control.ScrollZoneActive);
+    }
+
     [Fact]
     public async Task ReleaseCropsOnlyDraggedDocumentCoordinatesIncludingFinalInFlightScroll()
     {
@@ -38,7 +71,7 @@ public sealed class DragScrollCaptureTests
         Assert.True(control.Begin(new(15, 50))); control.Move(new(90, 199));
         control.Advance(100); Assert.Equal(new PixelRect(15, 50, 75, 249), control.Selection);
         Assert.Equal(new PixelRect(15, 0, 75, 199), control.VisibleSelection);
-        control.Release(new(90, 120)); Assert.False(control.AtLowerEdge); Assert.True(control.FinishRequested);
+        control.Release(new(90, 120)); Assert.False(control.ScrollZoneActive); Assert.True(control.FinishRequested);
         Assert.Equal(new PixelRect(15, 50, 75, 170), control.Selection);
     }
     [Fact]

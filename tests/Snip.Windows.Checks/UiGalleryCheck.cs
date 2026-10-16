@@ -116,7 +116,8 @@ internal static class UiGalleryCheck
             using var manualControl = new DragCaptureControl();
             manualControl.Configure(900, 600); manualControl.Begin(new(50, 50)); manualControl.Move(new(450, 580));
             var manualVm = new ManualScrollCaptureViewModel(manualControl, () => { });
-            manualVm.Update(new(4, 950, "已选 400×950 像素 · 松开鼠标完成", true));
+            manualVm.Update(new(4, 950, "按住拖选 · 下拉过网页 60% 处滚动 · Esc 取消", true));
+            manualVm.RefreshSelection();
             var manualWindow = new ManualScrollCaptureWindow(manualVm);
             Capture(manualWindow, "15-manual-scroll", () =>
             {
