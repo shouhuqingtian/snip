@@ -144,19 +144,27 @@ internal static class ChromeCaptureCheck
                 var responsiveness = new { ReadyMilliseconds = Math.Round(readyMs, 2), NativeMoves = 80, MoveMilliseconds = Math.Round(moveClock.Elapsed.TotalMilliseconds, 2), UiPulses = pulses, MaxUiPulseGapMilliseconds = Math.Round(maxGap, 2) };
                 Directory.CreateDirectory("artifacts/validation"); File.WriteAllText("artifacts/validation/manual-chrome-responsiveness.json", System.Text.Json.JsonSerializer.Serialize(responsiveness, new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
                 Console.WriteLine("PASS real manual Chrome entry and 80 native pointer moves with responsive dispatcher: " + System.Text.Json.JsonSerializer.Serialize(responsiveness));
+                var scrollClock = Stopwatch.StartNew();
                 Move(edgePoint);
                 TextWindowChecks.PumpUntil(() => vm.Drag!.AtLowerEdge, TimeSpan.FromSeconds(3));
                 Console.WriteLine("PASS native drag down and move reach lower edge before scrolling.");
-                TextWindowChecks.PumpUntil(() => task.IsCompleted || vm.Frames >= 3, TimeSpan.FromSeconds(12));
+                const int scrollGoal = 1200;
+                TextWindowChecks.PumpUntil(() => task.IsCompleted || vm.Drag!.ScrollOffset >= scrollGoal, TimeSpan.FromSeconds(20));
                 if (task.IsCompleted) { task.GetAwaiter().GetResult(); throw new InvalidOperationException("Drag capture stopped before release."); }
                 var releasePoint = new Point(edgePoint.X, viewport.Y + 200);
                 Move(releasePoint);
                 Send([new() { Type = 0, Data = new() { Mouse = new() { Flags = 4 } } }]);
                 TextWindowChecks.PumpUntil(() => task.IsCompleted, TimeSpan.FromSeconds(12)); task.GetAwaiter().GetResult();
+                scrollClock.Stop();
+                var speed = new { GoalPixels = scrollGoal, CapturedOffset = vm.Drag!.ScrollOffset, Frames = vm.Frames,
+                    ElapsedMilliseconds = Math.Round(scrollClock.Elapsed.TotalMilliseconds, 2),
+                    PixelsPerSecond = Math.Round(vm.Drag.ScrollOffset / scrollClock.Elapsed.TotalSeconds, 2) };
+                File.WriteAllText("artifacts/validation/manual-chrome-scroll-speed.json", System.Text.Json.JsonSerializer.Serialize(speed, new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
+                Console.WriteLine("PASS real manual Chrome sustained edge-scroll speed: " + System.Text.Json.JsonSerializer.Serialize(speed));
                 if (app.Windows.OfType<ManualScrollCaptureWindow>().Any()) throw new InvalidOperationException("Drag controls were not closed after release.");
                 var editor = app.Windows.OfType<EditorWindow>().Single();
                 var manual = ((EditorViewModel)editor.DataContext).Compose(); export.SavePng(manual, Path.Combine(output, "manual-region.png"));
-                if (manual.PixelWidth != 320 || manual.PixelHeight <= 200 || manual.PixelHeight >= 2000)
+                if (manual.PixelWidth != 320 || manual.PixelHeight <= scrollGoal || manual.PixelHeight >= entire.PixelHeight)
                     throw new InvalidOperationException("Drag selection ignored the selected coordinates or captured the whole document.");
                 if (ContainsMagenta(manual)) throw new InvalidOperationException("Drag controls were photographed into the result.");
                 BitmapSource finalStrip;
