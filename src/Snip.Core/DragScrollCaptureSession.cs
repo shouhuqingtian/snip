@@ -112,10 +112,11 @@ public sealed class DragScrollCaptureSession
             frames.Append(next, match); control.Advance(match.Offset);
             bottom = positionReliable && after?.AtBottom == true; Report();
             diagnostics?.Stage("drag-scroll-appended", new { frames.FrameCount, frames.Height, match.Offset, match.Error });
-            // Aim for half the moving viewport; keep the other half available for strict overlap
-            // matching. Account for fixed headers/footers and cap acceleration to 2x per frame.
+            // Retain a larger overlap reserve: Chromium/Windows may accelerate a wheel burst,
+            // so a half-viewport target can become a full-page jump on repeated content.
+            // Account for fixed bands and keep acceleration bounded to 2x per frame.
             int movingHeight = viewportHeight - match.Header - match.Footer;
-            wheel = Math.Clamp((int)Math.Round(wheel * (movingHeight * .5 / match.Offset)), 15, Math.Min(960, wheel * 2));
+            wheel = Math.Clamp((int)Math.Round(wheel * (movingHeight * .3 / match.Offset)), 15, Math.Min(960, wheel * 2));
         }
         token.ThrowIfCancellationRequested();
         var selected = control.Selection.Intersect(new(0, 0, initial.Width, frames.Height)).RoundOut();

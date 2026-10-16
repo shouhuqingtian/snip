@@ -23,17 +23,18 @@ public sealed class DragCapturePerformanceTests
     }
 
     [Theory]
-    [InlineData(200, .5)]
-    [InlineData(600, .5)]
-    [InlineData(1200, 1)]
-    [InlineData(600, 2)]
-    public async Task SustainedEdgeDragCapturesSeveralViewportsWithFewerInputsAndExactPixels(int height, double pixelsPerUnit)
+    [InlineData(200, .5, false)]
+    [InlineData(600, .5, false)]
+    [InlineData(1200, 1, false)]
+    [InlineData(600, 2, false)]
+    [InlineData(1200, 1, true)]
+    public async Task SustainedEdgeDragCapturesSeveralViewportsWithFewerInputsAndExactPixels(int height, double pixelsPerUnit, bool accelerateLargeBursts)
     {
         using var control = new DragCaptureControl();
-        var source = new LongPage(control, height, pixelsPerUnit);
+        var source = new LongPage(control, height, pixelsPerUnit, accelerateLargeBursts);
         using var cancel = new CancellationTokenSource(TimeSpan.FromSeconds(10));
         var result = await new DragScrollCaptureSession().CaptureAsync(source, control, null, cancel.Token);
-        Assert.InRange(source.Inputs, 2, 9);
+        Assert.InRange(source.Inputs, 2, 14);
         Assert.Equal(110, result.Width);
         Assert.Equal(source.Offset + height / 2 - 20, result.Height);
         for (int y = 0; y < result.Height; y++)
@@ -47,12 +48,13 @@ public sealed class DragCapturePerformanceTests
         private readonly DragCaptureControl control;
         private readonly int height;
         private readonly double pixelsPerUnit;
+        private readonly bool accelerateLargeBursts;
         public byte[] Page { get; }
         public int Inputs { get; private set; }
         public int Offset { get; private set; }
-        public LongPage(DragCaptureControl control, int height, double pixelsPerUnit)
+        public LongPage(DragCaptureControl control, int height, double pixelsPerUnit, bool accelerateLargeBursts)
         {
-            this.control = control; this.height = height; this.pixelsPerUnit = pixelsPerUnit;
+            this.control = control; this.height = height; this.pixelsPerUnit = pixelsPerUnit; this.accelerateLargeBursts = accelerateLargeBursts;
             Page = new byte[Width * height * 8 * 4]; new Random(173).NextBytes(Page);
         }
         public Task<PixelFrame> ReadAsync(CancellationToken token)
@@ -63,7 +65,7 @@ public sealed class DragCapturePerformanceTests
         }
         public Task<PixelFrame> ScrollAsync(int wheelUnits, CancellationToken token)
         {
-            Inputs++; Offset += (int)Math.Round(wheelUnits * pixelsPerUnit);
+            Inputs++; Offset += (int)Math.Round(wheelUnits * pixelsPerUnit * (accelerateLargeBursts && wheelUnits > 240 ? 2 : 1));
             if (Offset >= height * 3) control.Release(new(120, height / 2));
             return ReadAsync(token);
         }

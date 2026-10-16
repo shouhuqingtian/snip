@@ -209,6 +209,12 @@ internal static class ChromeCaptureCheck
                 TextWindowChecks.PumpUntil(() => captureTask.IsCompleted || app.Windows.OfType<ManualScrollCaptureWindow>().Any(w => ((ManualScrollCaptureViewModel)w.DataContext).Ready), TimeSpan.FromSeconds(12));
                 if (captureTask.IsCompleted) throw new InvalidOperationException("Selected fixture capture stopped before dragging.");
                 var bar = app.Windows.OfType<ManualScrollCaptureWindow>().Single(); var viewport = bar.Viewport;
+                int ReadFixtureOffset()
+                {
+                    var caption = Title(selectedWindow.Handle);
+                    return int.Parse(new string(caption[(caption.LastIndexOf("|offset=", StringComparison.Ordinal) + 8)..].TakeWhile(char.IsAsciiDigit).ToArray()), System.Globalization.CultureInfo.InvariantCulture);
+                }
+                int initialDocumentOffset = ReadFixtureOffset();
                 int Hit(double x, double y)
                 {
                     var previousDpi = SetThreadDpiAwarenessContext(new(-4));
@@ -237,10 +243,9 @@ internal static class ChromeCaptureCheck
                 TextWindowChecks.PumpUntil(() => captureTask.IsCompleted || settlePause.IsCompleted, TimeSpan.FromSeconds(4));
                 if (captureTask.IsCompleted) { captureTask.GetAwaiter().GetResult(); throw new InvalidOperationException("Moving upward ended the drag instead of pausing."); }
                 int pausedOffset = drag.ScrollOffset;
-                var fixtureTitle = Title(selectedWindow.Handle);
-                int pageOffset = int.Parse(new string(fixtureTitle[(fixtureTitle.LastIndexOf("|offset=", StringComparison.Ordinal) + 8)..].TakeWhile(char.IsAsciiDigit).ToArray()), System.Globalization.CultureInfo.InvariantCulture);
-                Console.WriteLine($"::notice title=Native selected fixture paused position::stitched={pausedOffset}; document={pageOffset}");
-                if (Math.Abs(pausedOffset - pageOffset) > 2) throw new InvalidOperationException($"Matched displacement differs from public fixture document: stitched={pausedOffset}; document={pageOffset}.");
+                int pageOffset = ReadFixtureOffset(), actualDisplacement = pageOffset - initialDocumentOffset;
+                Console.WriteLine($"::notice title=Native selected fixture paused position::initial={initialDocumentOffset}; stitched={pausedOffset}; document={pageOffset}; displacement={actualDisplacement}");
+                if (Math.Abs(pausedOffset - actualDisplacement) > 2) throw new InvalidOperationException($"Matched displacement differs from public fixture document: initial={initialDocumentOffset}; stitched={pausedOffset}; document={pageOffset}; displacement={actualDisplacement}.");
                 var holdPause = Task.Delay(350);
                 TextWindowChecks.PumpUntil(() => holdPause.IsCompleted, TimeSpan.FromSeconds(2));
                 if (drag.ScrollOffset != pausedOffset) throw new InvalidOperationException("Manual screenshot kept scrolling while held above the activation zone.");
