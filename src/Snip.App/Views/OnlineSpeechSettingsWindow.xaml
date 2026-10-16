@@ -1,0 +1,27 @@
+<Window x:Class="Snip.App.Views.OnlineSpeechSettingsWindow" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:core="clr-namespace:Snip.Core;assembly=Snip.Core"
+ Title="自用截图 · AI 语音设置" Width="760" Height="820" MinWidth="540" MinHeight="440" WindowStartupLocation="CenterScreen">
+ <DockPanel Margin="24">
+  <DockPanel DockPanel.Dock="Top" Margin="0,0,0,14"><Button Content="关闭 Esc" Click="CloseClick" DockPanel.Dock="Right"/><TextBlock Text="AI 语音" Style="{StaticResource PageTitle}"/></DockPanel>
+  <StackPanel DockPanel.Dock="Bottom" Margin="0,12,0,0"><TextBlock x:Name="SpeechSettingsStatus" Text="{Binding Status}" Style="{StaticResource Subtitle}" TextWrapping="Wrap" FontSize="12"/><WrapPanel HorizontalAlignment="Right" Margin="0,8,0,0"><Button Content="清除独立密钥" Command="{Binding ClearKeyCommand}"/><Button x:Name="StopSpeechPreviewButton" Content="停止试听" Command="{Binding StopCommand}"/><Button x:Name="SpeechPreviewButton" Content="中英试听" Command="{Binding PreviewCommand}"/><Button x:Name="SaveSpeechButton" Content="保存并使用" Command="{Binding SaveCommand}" Style="{StaticResource PrimaryButton}"/></WrapPanel></StackPanel>
+  <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"><StackPanel>
+   <TextBlock Text="点击试听或喇叭时，文字会发送给选定语音服务，按服务商规则计费；不发送截图。不会自动切换其他服务或回退系统语音。" Style="{StaticResource Subtitle}" TextWrapping="Wrap" Margin="0,0,0,14"/>
+   <Border Style="{StaticResource Card}" Padding="18"><StackPanel IsEnabled="{Binding CanEdit}">
+    <TextBlock Text="默认发音方式" Style="{StaticResource SectionTitle}"/>
+    <ComboBox x:Name="SpeechDefaultModeBox" SelectedValue="{Binding DefaultMode}" SelectedValuePath="Tag" Margin="0,6,0,14"><ComboBoxItem Content="Windows 系统语音（本机）" Tag="{x:Static core:SpeechMode.System}"/><ComboBoxItem Content="在线 AI 语音" Tag="{x:Static core:SpeechMode.Online}"/></ComboBox>
+    <TextBlock Text="服务 / 已保存配置" Style="{StaticResource SectionTitle}"/><ComboBox x:Name="SpeechProviderBox" ItemsSource="{Binding Providers}" SelectedItem="{Binding Provider}" Margin="0,6,0,8"/>
+    <Grid Margin="0,0,0,8"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><TextBox x:Name="SpeechCustomNameBox" Text="{Binding CustomName,UpdateSourceTrigger=PropertyChanged}" ToolTip="自定义配置名称"/><Button Grid.Column="1" Content="新增自定义" Command="{Binding AddCommand}"/></Grid>
+    <Button Content="删除当前自定义" Command="{Binding DeleteCommand}" HorizontalAlignment="Left" Margin="0,0,0,12"/>
+    <TextBlock Text="接口协议" Style="{StaticResource SectionTitle}"/><ComboBox x:Name="SpeechProtocolBox" SelectedValue="{Binding Protocol}" SelectedValuePath="Tag" Margin="0,6,0,12"><ComboBoxItem Content="OpenAI Audio Speech 兼容" Tag="{x:Static core:SpeechProtocol.OpenAi}"/><ComboBoxItem Content="通义千问 Qwen TTS（非流式）" Tag="{x:Static core:SpeechProtocol.Qwen}"/><ComboBoxItem Content="MiniMax T2A v2（非流式）" Tag="{x:Static core:SpeechProtocol.MiniMax}"/></ComboBox>
+    <TextBlock Text="完整语音 API 地址" Style="{StaticResource SectionTitle}"/><TextBox x:Name="SpeechEndpointBox" Text="{Binding Endpoint,UpdateSourceTrigger=PropertyChanged}" Margin="0,6,0,4"/>
+    <TextBlock Text="例如 https://api.openai.com/v1/audio/speech；自定义接口必须兼容所选协议，不能填写聊天接口地址。通义地域须与密钥一致。" Style="{StaticResource Subtitle}" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,12"/>
+    <TextBlock Text="语音模型（可自定义）" Style="{StaticResource SectionTitle}"/><ComboBox x:Name="SpeechModelBox" IsEditable="True" IsTextSearchEnabled="False" ItemsSource="{Binding SuggestedModels}" Text="{Binding Model,UpdateSourceTrigger=PropertyChanged}" Margin="0,6,0,12"/>
+    <TextBlock Text="音色 / Voice ID（可自定义）" Style="{StaticResource SectionTitle}"/><ComboBox x:Name="SpeechVoiceBox" IsEditable="True" IsTextSearchEnabled="False" ItemsSource="{Binding SuggestedVoices}" Text="{Binding Voice,UpdateSourceTrigger=PropertyChanged}" Margin="0,6,0,4"/>
+    <TextBlock Text="候选模型和音色仅供参考，请以服务商控制台为准；部分音色需要与模型配套。" Style="{StaticResource Subtitle}" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,12"/>
+    <TextBlock Text="播放速度（0.5–2 倍）" Style="{StaticResource SectionTitle}"/><Slider Minimum="0.5" Maximum="2" TickFrequency="0.25" IsSnapToTickEnabled="True" Value="{Binding Speed}" Margin="0,8,0,4"/><TextBlock Text="{Binding Speed,StringFormat={}{0:0.##} 倍}" Style="{StaticResource Subtitle}" Margin="0,0,0,12"/>
+    <TextBlock Text="密钥来源" Style="{StaticResource SectionTitle}"/><ComboBox x:Name="SpeechTranslationKeyBox" ItemsSource="{Binding TranslationProfiles}" SelectedItem="{Binding TranslationProfile}" Margin="0,6,0,4"/>
+    <TextBlock Text="可选择已保存的同服务翻译配置复用密钥；需要相同域名和地域，不会修改翻译服务或默认翻译方式。" Style="{StaticResource Subtitle}" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,12"/>
+    <TextBlock Text="独立 API Key" Style="{StaticResource SectionTitle}"/><PasswordBox x:Name="SpeechApiKeyBox" PasswordChanged="KeyChanged" IsEnabled="{Binding UsesOwnKey}" Padding="10,8" Margin="0,6,0,4"/><TextBlock Text="{Binding KeyHint}" Style="{StaticResource Subtitle}" FontSize="11" TextWrapping="Wrap"/>
+   </StackPanel></Border>
+  </StackPanel></ScrollViewer>
+ </DockPanel>
+</Window>

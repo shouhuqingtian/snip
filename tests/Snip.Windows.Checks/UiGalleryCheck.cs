@@ -153,7 +153,13 @@ internal static class UiGalleryCheck
             var expandedVm=new TextResultViewModel(image,new GalleryOcr(true),new ModelStore("unused-models"),new GalleryTranslation(),onlineTranslator:new GalleryLong(),initialPreferences:new(TranslationMode.Online)){AutoTranslate=true};
             var expanded=new TextResultWindow(expandedVm);expanded.Width=expanded.MinWidth;expanded.Height=expanded.MinHeight;
             Capture(expanded,"23-compact-expanded-source",()=>{TextWindowChecks.PumpUntil(()=>!expandedVm.Busy && expandedVm.Translated.Length>0,TimeSpan.FromSeconds(5));expandedVm.SourceExpanded=true;});
-            Console.WriteLine("PASS 27 themed UI previews including original/translation reading at normal and compact sizes; three browser menu actions; no share target invoked or user screenshot used."); return 0;
+            var voiceTranslation = new OnlineTranslationSettingsStore(Path.Combine(output, "unused-speech-translation.json"));
+            var voiceStore = new OnlineSpeechSettingsStore(voiceTranslation, Path.Combine(output, "unused-speech.json"));
+            OnlineSpeechSettingsWindow VoiceWindow() => new(new OnlineSpeechSettingsViewModel(voiceStore, voiceTranslation, credentials => new OnlineSpeechSynthesizer(credentials), new WindowsSpeechAudioPlayer()));
+            Capture(VoiceWindow(), "34-ai-speech-settings");
+            var narrowVoice = VoiceWindow(); narrowVoice.Width = narrowVoice.MinWidth;
+            Capture(narrowVoice, "35-ai-speech-settings-narrow");
+            Console.WriteLine("PASS 35 themed UI previews including original/translation reading at normal and compact sizes; three browser menu actions; no share target invoked or user screenshot used."); return 0;
         }
         catch (Exception error)
         {

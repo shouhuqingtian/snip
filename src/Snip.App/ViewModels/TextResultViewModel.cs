@@ -29,6 +29,7 @@ public sealed class TextResultViewModel : ObservableObject, IDisposable
     private readonly ITextReadingPreferencesStore? readingPreferences;
     private bool? savedSourceExpanded;
     private bool speakingOriginal;
+    private SpeechMode voiceMode;
     private string readingLayoutStatus = "展开或收起原文时自动保存，新截图和重启后沿用。";
     private CancellationTokenSource? speechOperation;
     private int speechGeneration;
@@ -54,7 +55,7 @@ public sealed class TextResultViewModel : ObservableObject, IDisposable
     private double progress;
     private TranslationComputeMode computeMode;
     private string computeStatus = "本地计算：尚未运行";
-    public TextResultViewModel(BitmapSource image, IOcrService ocr, ModelStore models, ITranslationService translator, DiagnosticJournal? diagnostics = null, ITextClipboardService? clipboard = null, ITranslationService? onlineTranslator = null, Action? configureOnline = null, bool defaultOnline = false, ITranslationPreferencesStore? preferences = null, TranslationPreferences? initialPreferences = null, ITranslationService? basicTranslator = null, ITextSpeechService? speech = null, IOcrPreferencesStore? ocrPreferences = null, ITextReadingPreferencesStore? readingPreferences = null)
+    public TextResultViewModel(BitmapSource image, IOcrService ocr, ModelStore models, ITranslationService translator, DiagnosticJournal? diagnostics = null, ITextClipboardService? clipboard = null, ITranslationService? onlineTranslator = null, Action? configureOnline = null, bool defaultOnline = false, ITranslationPreferencesStore? preferences = null, TranslationPreferences? initialPreferences = null, ITranslationService? basicTranslator = null, ITextSpeechService? speech = null, IOcrPreferencesStore? ocrPreferences = null, ITextReadingPreferencesStore? readingPreferences = null, Action? configureSpeech = null)
     {
         snapshot = image.IsFrozen ? image : image.Clone(); snapshot.Freeze();
         this.ocr = ocr; this.ocrPreferences = ocrPreferences; this.models = models; this.translator = translator;
@@ -126,6 +127,7 @@ public sealed class TextResultViewModel : ObservableObject, IDisposable
         CopySourceCommand = new(() => CopyAsync(Source, false), Report, () => !disposed && copying is null && Source.Length > 0);
         CopyTranslationCommand = new(() => CopyAsync(Translated, true), Report, () => !disposed && copying is null && Translated.Length > 0);
         ConfigureOnlineCommand = new(configureOnline ?? (() => { }), () => configureOnline is not null && !Busy);
+        ConfigureSpeechCommand = new(configureSpeech ?? (() => { }), () => configureSpeech is not null && !Busy);
         SaveTranslationSettingsCommand = new(SaveTranslationSettings, () => !Busy && preferences is not null);
         SaveOcrSettingsCommand = new(SaveOcrSettings, () => !Busy && SupportsOcrModes && ocrPreferences is not null);
         ToggleSourceCommand = new(ToggleSource, () => !disposed && ShowTranslation);
@@ -133,6 +135,7 @@ public sealed class TextResultViewModel : ObservableObject, IDisposable
         SpeakSourceCommand = new(() => _ = ToggleSpeechAsync(original: true), () => !disposed && (Speaking && speakingOriginal || !Busy && ShowSourceSpeechButton));
         SpeakTranslationCommand = new(() => _ = ToggleSpeechAsync(), () => !disposed && (Speaking && !speakingOriginal || !Busy && ShowSpeechButton));
         CancelCommand = new(() => { userCancelled = true; if (operation is { } current) _ = current.CancelAsync(); }, () => Busy);
+        ReloadVoicePreferences(stopPlayback: false);
     }
     public Task InitializeAsync()
     {
@@ -257,6 +260,26 @@ public sealed class TextResultViewModel : ObservableObject, IDisposable
     public int ResultTab { get => resultTab; set { if (value is 0 or 1) Set(ref resultTab, value); } }
     public bool ShowLocalCompute => Mode == TranslationMode.Offline;
     public string SourceSummary => "识别文字 · " + sourceCharacterCount + " 字";
+    public bool SupportsSpeechModes => speech is IConfigurableTextSpeechService;
+    public bool CanChangeVoiceMode => SupportsSpeechModes && !Busy;
+    public RelayCommand ConfigureSpeechCommand { get; }
+    public SpeechMode VoiceMode
+    {
+        get => voiceMode;
+        set
+        {
+            if (!CanChangeVoiceMode || !Enum.IsDefined(value) || value == voiceMode) return;
+            StopSpeech(clearStatus: true);
+            try { ((IConfigurableTextSpeechService)speech).Mode = value; Set(ref voiceMode, value); SpeechStatus = value == SpeechMode.Online ? "已保存默认：在线 AI 语音；点击喇叭时发送对应文字。" : "已保存默认：Windows 系统语音。"; }
+            catch (Exception error) { diagnostics?.Record("speech-settings", "save-failed", error: error); SpeechStatus = "语音方式保存失败，请先打开 AI 语音设置保存服务和密钥。"; Notify(); }
+        }
+    }
+    public void ReloadVoicePreferences(bool stopPlayback = true)
+    {
+        if (stopPlayback) StopSpeech(clearStatus: true);
+        try { if (speech is IConfigurableTextSpeechService options) { voiceMode = options.Mode; Notify(nameof(VoiceMode)); } }
+        catch (Exception error) { diagnostics?.Record("speech-settings", "read-failed", error: error); SpeechStatus = "语音设置无法读取，请在 AI 语音设置中重新保存。"; }
+    }
     public string SpeechStatus { get => speechStatus; private set => Set(ref speechStatus, value); }
     public bool Speaking { get => speaking; private set { if (Set(ref speaking, value)) RefreshSpeechActions(); } }
     public string SpeechActionText => Speaking && !speakingOriginal ? "停止朗读" : "朗读译文";
@@ -280,7 +303,7 @@ public sealed class TextResultViewModel : ObservableObject, IDisposable
     public string Translated { get => translated; private set { if (Set(ref translated, value)) { CopyTranslationCommand.Refresh(); Notify(nameof(HasTranslation)); RefreshSpeechActions(); } } }
     public string Status { get => status; private set => Set(ref status, value); }
     public string CopyStatus { get => copyStatus; private set => Set(ref copyStatus, value); }
-    public bool Busy { get => busy; private set { Set(ref busy, value); Notify(nameof(Indeterminate)); Notify(nameof(CanChangeTranslationMode)); Notify(nameof(CanUseLocalCompute)); Notify(nameof(CanSwitchOcr)); Notify(nameof(CanChangeOcrMode)); Notify(nameof(CanSelectOcrLanguage)); SaveOcrSettingsCommand.Refresh(); OcrCommand.Refresh(); DownloadOcrCommand.Refresh(); TranslateCommand.Refresh(); DownloadCommand.Refresh(); DownloadGpuCommand.Refresh(); CancelCommand.Refresh(); ConfigureOnlineCommand.Refresh(); SaveTranslationSettingsCommand.Refresh(); SpeakSourceCommand.Refresh(); SpeakTranslationCommand.Refresh(); } }
+    public bool Busy { get => busy; private set { Set(ref busy, value); Notify(nameof(Indeterminate)); Notify(nameof(CanChangeTranslationMode)); Notify(nameof(CanUseLocalCompute)); Notify(nameof(CanSwitchOcr)); Notify(nameof(CanChangeOcrMode)); Notify(nameof(CanSelectOcrLanguage)); SaveOcrSettingsCommand.Refresh(); OcrCommand.Refresh(); DownloadOcrCommand.Refresh(); TranslateCommand.Refresh(); DownloadCommand.Refresh(); DownloadGpuCommand.Refresh(); CancelCommand.Refresh(); ConfigureOnlineCommand.Refresh(); ConfigureSpeechCommand.Refresh(); Notify(nameof(CanChangeVoiceMode)); SaveTranslationSettingsCommand.Refresh(); SpeakSourceCommand.Refresh(); SpeakTranslationCommand.Refresh(); } }
     public bool Indeterminate => Busy && !downloading;
     public double Progress { get => progress; private set => Set(ref progress, value); }
     public AsyncCommand OcrCommand { get; }
@@ -499,8 +522,8 @@ public sealed class TextResultViewModel : ObservableObject, IDisposable
         string speechLanguage = SpeechText.Language(text);
         speakingOriginal = original;
         Speaking = true; RefreshSpeechActions();
-        SpeechStatus = "正在朗读" + (original ? "原文" : "译文") + "（Windows " + (speechLanguage == "zh" ? "中文" : "英语") + "语音）；再次点击喇叭可停止。";
-        using var log = diagnostics?.Begin("text-speech", new { CharacterCount = text.Length, Language = speechLanguage, Original = original });
+        SpeechStatus = "正在朗读" + (original ? "原文" : "译文") + (VoiceMode == SpeechMode.Online ? "（在线 AI 语音，将发送对应文字）" : "（Windows " + (speechLanguage == "zh" ? "中文" : "英语") + "语音）") + "；再次点击喇叭可停止。";
+        using var log = diagnostics?.Begin("text-speech", new { CharacterCount = text.Length, Language = speechLanguage, Original = original, VoiceMode = VoiceMode.ToString() });
         try
         {
             await speech.SpeakAsync(text, speechLanguage, current.Token).WaitAsync(current.Token);
@@ -519,7 +542,9 @@ public sealed class TextResultViewModel : ObservableObject, IDisposable
             if (!disposed && generation == speechGeneration)
                 SpeechStatus = error is SpeechUnavailableException
                     ? "未安装 Windows " + (speechLanguage == "zh" ? "中文" : "英语") + "语音，请在系统“时间和语言 → 语音”中添加对应语音后重试。"
-                    : "无法朗读，请检查 Windows 语音组件和音频输出设备；原文和译文已保留。";
+                    : error is SpeechServiceException ? error.Message : VoiceMode == SpeechMode.Online
+                        ? "在线语音未完成，请检查 AI 语音配置和音频设备，或手动切回系统语音；文字已保留。"
+                        : "无法朗读，请检查 Windows 语音组件和音频输出设备；原文和译文已保留。";
         }
         finally
         {

@@ -7,6 +7,7 @@
   </StackPanel>
   <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"><StackPanel>
    <TextBlock Text="在线翻译只发送文字；在线 OCR 会发送当前截图。系统和增强离线 OCR 不上传截图。两项共用当前服务地址与密钥，费用由服务商收取；测试连接仅测试固定短句翻译。" Style="{StaticResource Subtitle}" Margin="0,0,0,16"/>
+   <Border Style="{StaticResource Card}" Padding="14" Margin="0,0,0,14"><StackPanel><TextBlock Text="AI 发音" Style="{StaticResource SectionTitle}"/><TextBlock Text="原文和译文可使用在线 AI 语音；独立保存服务、音色和默认方式，也可复用同平台翻译密钥。" Style="{StaticResource Subtitle}" TextWrapping="Wrap" FontSize="12" Margin="0,5,0,8"/><Button x:Name="ConfigureAiSpeechButton" Content="AI 语音设置 / 试听" Command="{Binding ConfigureSpeechCommand}" HorizontalAlignment="Left"/></StackPanel></Border>
    <Border Style="{StaticResource Card}" Padding="18"><StackPanel IsEnabled="{Binding CanEdit}">
     <TextBlock Text="服务 / 已保存配置" Style="{StaticResource SectionTitle}"/><ComboBox x:Name="ProviderChoice" ItemsSource="{Binding Providers}" SelectedItem="{Binding Provider}" Margin="0,6,0,8"/>
     <TextBlock Text="服务不可用时，选择另一组配置并保存，再返回原文重试。切换会放弃尚未保存的修改。" Style="{StaticResource Subtitle}" FontSize="11" Margin="0,0,0,12"/>

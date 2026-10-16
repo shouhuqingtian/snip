@@ -25,6 +25,7 @@ public sealed class FeatureHub
     private readonly IOnlineTranslationSettingsStore onlineSettings;
     private readonly ITranslationService onlineTranslator;
     private readonly ITranslationPreferencesStore translationPreferences;
+    private readonly ISpeechSettingsStore speechSettings;
     private readonly ITextReadingPreferencesStore readingPreferences = new TextReadingPreferencesStore();
     private readonly DiagnosticJournal? diagnostics;
     private readonly Func<IntPtr, IWindowsShareSession>? shareFactory;
@@ -41,6 +42,7 @@ public sealed class FeatureHub
             { Engine = ModelStore.Model.Name, metrics.ProcessId, metrics.PeakWorkingSetBytes, metrics.PeakCombinedWorkingSetBytes, metrics.ElapsedSeconds, metrics.ProcessExited, metrics.ExitCode, Backend = metrics.Backend.ToString(), metrics.OffloadedLayers, metrics.LayerSignalObserved, metrics.ProcessorSeconds, metrics.Threads, metrics.BatchThreads, metrics.Repack });
         this.translationPreferences = translationPreferences ?? new TranslationPreferencesStore();
         this.onlineSettings = onlineSettings ?? new OnlineTranslationSettingsStore();
+        speechSettings = new OnlineSpeechSettingsStore(this.onlineSettings);
         this.onlineTranslator = onlineTranslator ?? new OnlineTranslator(() => this.onlineSettings.ReadCredentials());
     }
     private static ProcessStartInfo WorkerHost()
@@ -71,7 +73,9 @@ public sealed class FeatureHub
             }
             text = new TextResultViewModel(image, selectedOcr, models, translator, diagnostics, onlineTranslator: onlineTranslator,
                 configureOnline: () => ShowOnlineSettings(),
-                defaultOnline: DefaultOnline(), preferences: translationPreferences, initialPreferences: ReadSavedTranslationPreferences(), ocrPreferences: ocrPreferences, readingPreferences: readingPreferences) { AutoTranslate = translate };
+                defaultOnline: DefaultOnline(), preferences: translationPreferences, initialPreferences: ReadSavedTranslationPreferences(), ocrPreferences: ocrPreferences, readingPreferences: readingPreferences,
+                speech: new ConfiguredTextSpeechService(speechSettings, new WindowsTextSpeechService(), credentials => new OnlineSpeechSynthesizer(credentials), new WindowsSpeechAudioPlayer()),
+                configureSpeech: () => ShowSpeechSettings()) { AutoTranslate = translate };
             operation?.Stage("view-model-created");
             // A result must outlive the screenshot overlay. Do not give it the overlay as owner.
             window = new TextResultWindow(text) { WindowStartupLocation = WindowStartupLocation.CenterScreen };
@@ -106,9 +110,21 @@ public sealed class FeatureHub
     {
         var existing = Application.Current.Windows.OfType<OnlineTranslationSettingsWindow>().FirstOrDefault();
         if (existing is not null) { existing.Show(); existing.Activate(); return existing; }
-        var vm = new OnlineTranslationSettingsViewModel(onlineSettings);
+        var vm = new OnlineTranslationSettingsViewModel(onlineSettings, configureSpeech: () => ShowSpeechSettings());
         if (saved is not null) vm.Saved += (_, _) => saved();
         var window = new OnlineTranslationSettingsWindow(vm); window.Show(); window.Activate(); return window;
+    }
+    public OnlineSpeechSettingsWindow ShowSpeechSettings()
+    {
+        var existing = Application.Current.Windows.OfType<OnlineSpeechSettingsWindow>().FirstOrDefault();
+        if (existing is not null) { existing.Show(); existing.Activate(); return existing; }
+        var vm = new OnlineSpeechSettingsViewModel(speechSettings, onlineSettings, credentials => new OnlineSpeechSynthesizer(credentials), new WindowsSpeechAudioPlayer());
+        vm.Saved += (_, _) =>
+        {
+            foreach (var result in Application.Current.Windows.OfType<TextResultWindow>())
+                if (result.DataContext is TextResultViewModel text) text.ReloadVoicePreferences();
+        };
+        var window = new OnlineSpeechSettingsWindow(vm); window.Show(); window.Activate(); return window;
     }
     public EditorWindow OpenEditor(EditorViewModel vm)
     {

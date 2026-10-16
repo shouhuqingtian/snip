@@ -86,6 +86,7 @@ internal static class TextReadingChecks
         string log=File.ReadAllText(Path.Combine(folder,"reading-diagnostics","events.jsonl"));
         Require(log.Contains("text-speech") && !log.Contains("PUBLIC-READING") && !log.Contains("PUBLIC-SOURCE") && !log.Contains("中文长文示例") && !log.Contains("VOICE-PRIVATE"),"Speech/source text or native error leaked into diagnostics.");
         BilingualReadingChecks.Run(folder, image);
+        OnlineSpeechSettingsChecks.Run(folder, image);
         Console.WriteLine("PASS actual long-result layout, original expansion, separate notes tab, shared reading window/font/copy; English speaker click/stop/missing voice/reading close/result close and log privacy.");
     }
     private static void Click(Window window,string name)

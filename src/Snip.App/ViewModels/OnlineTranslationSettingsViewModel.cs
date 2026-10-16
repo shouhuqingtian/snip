@@ -13,9 +13,10 @@ public sealed class OnlineTranslationSettingsViewModel : ObservableObject, IDisp
     private string provider=OnlineTranslationProviders.DeepSeek,endpoint="",model="",apiKey="",status="密钥仅加密保存在当前 Windows 用户下。";
     private string customProfileName="", visionModel="";
     private bool defaultOnline,hasSavedKey,busy,disposed;
-    public OnlineTranslationSettingsViewModel(IOnlineTranslationSettingsStore store,Func<OnlineTranslationCredentials,ITranslationService>? factory=null)
+    public OnlineTranslationSettingsViewModel(IOnlineTranslationSettingsStore store,Func<OnlineTranslationCredentials,ITranslationService>? factory=null,Action? configureSpeech=null)
     {
         this.store=store;this.factory=factory ?? (credentials=>new OnlineTranslator(()=>credentials));
+        ConfigureSpeechCommand = new(configureSpeech ?? (() => { }), () => configureSpeech is not null && !busy && !disposed);
         SaveCommand=new(Save,()=>!busy && !disposed);
         TestCommand=new(TestAsync,error=>Status=error.Message,()=>!busy && !disposed);
         ClearKeyCommand=new(ClearKey,()=>!busy && !disposed && hasSavedKey);
@@ -49,6 +50,7 @@ public sealed class OnlineTranslationSettingsViewModel : ObservableObject, IDisp
     public string KeyHint=>HasSavedKey ? "已保存加密密钥；留空保留，填写新值则替换。" : "请填写 API Key，不要带 Bearer 前缀。";
     public string Status{get=>status;private set=>Set(ref status,value);}
     public bool CanEdit=>!busy;
+    public RelayCommand ConfigureSpeechCommand { get; }
     public RelayCommand SaveCommand{get;}
     public AsyncCommand TestCommand{get;}
     public RelayCommand ClearKeyCommand{get;}
@@ -110,7 +112,7 @@ public sealed class OnlineTranslationSettingsViewModel : ObservableObject, IDisp
     }
     private async Task TestAsync()
     {
-        busy=true;Notify(nameof(CanEdit));SaveCommand.Refresh();ClearKeyCommand.Refresh();AddProfileCommand.Refresh();DeleteProfileCommand.Refresh();
+        busy=true;Notify(nameof(CanEdit));ConfigureSpeechCommand.Refresh();SaveCommand.Refresh();ClearKeyCommand.Refresh();AddProfileCommand.Refresh();DeleteProfileCommand.Refresh();
         using var current=new CancellationTokenSource(TimeSpan.FromSeconds(65));cancellation=current;
         try
         {
@@ -129,7 +131,7 @@ public sealed class OnlineTranslationSettingsViewModel : ObservableObject, IDisp
         }
         catch(OperationCanceledException){if(!disposed)Status="测试已取消或超时。";}
         catch(Exception error){if(!disposed)Status=error.Message;}
-        finally{cancellation=null;busy=false;if(!disposed){Notify(nameof(CanEdit));SaveCommand.Refresh();ClearKeyCommand.Refresh();AddProfileCommand.Refresh();DeleteProfileCommand.Refresh();}}
+        finally{cancellation=null;busy=false;if(!disposed){Notify(nameof(CanEdit));ConfigureSpeechCommand.Refresh();SaveCommand.Refresh();ClearKeyCommand.Refresh();AddProfileCommand.Refresh();DeleteProfileCommand.Refresh();}}
     }
     public void Dispose(){disposed=true;apiKey="";cancellation?.Cancel();}
 }
