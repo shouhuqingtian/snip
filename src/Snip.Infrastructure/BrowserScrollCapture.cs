@@ -254,7 +254,9 @@ public sealed class BrowserScrollCapture(IDesktopCaptureService capture)
             {
                 await Task.Delay(100, token).ConfigureAwait(false);
                 var next = await ReadAsync(token).ConfigureAwait(false);
-                stable = ScrollMatching.Difference(previous, next) < .2 ? stable + 1 : 0;
+                // A global mean can hide moving text on a mostly blank page (or miss it
+                // entirely on the coarse sample grid). Require local content to settle too.
+                stable = ScrollMatching.Unchanged(previous, next) ? stable + 1 : 0;
                 if (stable >= 2) return next;
                 previous = next;
             }

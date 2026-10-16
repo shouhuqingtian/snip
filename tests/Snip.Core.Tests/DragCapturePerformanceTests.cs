@@ -5,6 +5,23 @@ namespace Snip.Core.Tests;
 
 public sealed class DragCapturePerformanceTests
 {
+    [Fact]
+    public void SparseTextStillMovingOnWhitePageIsNotASettledFrame()
+    {
+        const int width = 900, height = 600;
+        PixelFrame Frame(int left)
+        {
+            var pixels = Enumerable.Repeat((byte)255, width * height * 4).ToArray();
+            for (int y = 100; y < 112; y++) for (int x = left; x < left + 12; x++)
+                for (int channel = 0; channel < 3; channel++) pixels[(y * width + x) * 4 + channel] = 0;
+            return new(width, height, pixels);
+        }
+        var before = Frame(100); var moving = Frame(106);
+        Assert.True(ScrollMatching.Difference(before, moving) < .2);
+        Assert.False(ScrollMatching.Unchanged(before, moving));
+        Assert.True(ScrollMatching.Unchanged(moving, Frame(106)));
+    }
+
     [Theory]
     [InlineData(200, .5)]
     [InlineData(600, .5)]
