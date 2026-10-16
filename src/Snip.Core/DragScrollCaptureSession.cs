@@ -101,6 +101,7 @@ public sealed class DragScrollCaptureSession
             }
             unchangedSteps = 0;
             var match = ScrollMatching.Match(frames.Last, next);
+            diagnostics?.Stage("drag-overlap-match", new { Matched = match is not null, match?.Offset, match?.Header, match?.Footer, match?.Error, WheelUnits = wheel });
             if (match is not null && measured is { } known && Math.Abs(match.Offset - known) > 2)
             { positionReliable = false; measured = null; }
             if (match is null && measured is > 0 && measured < viewportHeight * .8)

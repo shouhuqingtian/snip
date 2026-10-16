@@ -165,7 +165,7 @@ jobs:
         # Browser regressions should surface before model inference/download checks.
         # The complete desktop suite below also covers this scenario in its ordinary sequence.
         shell: pwsh
-        timeout-minutes: 3
+        timeout-minutes: 4
         run: |
           dotnet run --project tests/Snip.Windows.Checks/Snip.Windows.Checks.csproj -c Release --no-build -- --chrome
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

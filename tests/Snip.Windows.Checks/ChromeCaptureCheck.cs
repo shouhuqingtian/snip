@@ -207,7 +207,7 @@ internal static class ChromeCaptureCheck
                 var original = new EditorViewModel(desktop.CaptureRegion(selectedRegion), renderer, export, new EditorDialogs(() => null));
                 var captureTask = features.HandleAsync(new(original, selectedRegion, SelectionAction.Scroll, BrowserCaptureMode.ManualScroll));
                 TextWindowChecks.PumpUntil(() => captureTask.IsCompleted || app.Windows.OfType<ManualScrollCaptureWindow>().Any(w => ((ManualScrollCaptureViewModel)w.DataContext).Ready), TimeSpan.FromSeconds(12));
-                if (captureTask.IsCompleted) throw new InvalidOperationException("Selected fixture capture stopped before dragging.");
+                if (captureTask.IsCompleted) { captureTask.GetAwaiter().GetResult(); throw new InvalidOperationException("Selected fixture capture stopped before dragging."); }
                 var bar = app.Windows.OfType<ManualScrollCaptureWindow>().Single(); var viewport = bar.Viewport;
                 int ReadFixtureOffset()
                 {
@@ -233,7 +233,7 @@ internal static class ChromeCaptureCheck
                 TextWindowChecks.PumpUntil(() => ((ManualScrollCaptureViewModel)bar.DataContext).Drag!.Started, TimeSpan.FromSeconds(3));
                 Move(new(viewport.X + 385, viewport.Bottom + 8));
                 TextWindowChecks.PumpUntil(() => captureTask.IsCompleted || ((ManualScrollCaptureViewModel)bar.DataContext).Frames >= 4, TimeSpan.FromSeconds(12));
-                if (captureTask.IsCompleted) throw new InvalidOperationException("Selected text fixture failed while dragging.");
+                if (captureTask.IsCompleted) { captureTask.GetAwaiter().GetResult(); throw new InvalidOperationException("Selected text fixture failed while dragging."); }
                 var drag = ((ManualScrollCaptureViewModel)bar.DataContext).Drag!;
                 Move(new(viewport.X + 385, viewport.Y + viewport.Height * .45));
                 TextWindowChecks.PumpUntil(() => !drag.ScrollZoneActive, TimeSpan.FromSeconds(3));
