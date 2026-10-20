@@ -46,13 +46,21 @@ internal static class SmartBrowserChecks
         try
         {
             var clock = Stopwatch.StartNew();
-            while (browser is null && clock.Elapsed < TimeSpan.FromSeconds(15))
+            // Match the existing full Chrome check's 30-second cold-start allowance.
+            // This waits for our public page to load; selection/pixel deadlines stay unchanged.
+            while (browser is null && clock.Elapsed < TimeSpan.FromSeconds(30))
             {
                 browser = DesktopWindows.Snapshot(includeCurrentProcess: true).FirstOrDefault(w =>
                 {
                     var title = new StringBuilder(128); GetWindowText(w.Handle, title, title.Capacity); return title.ToString().Contains("Snip smart region fixture", StringComparison.Ordinal);
                 });
                 Pause(50);
+            }
+            if (browser is null)
+            {
+                int visibleChromium = DesktopWindows.Snapshot().Count(w =>
+                { var name=new StringBuilder(64); GetClassName(w.Handle,name,name.Capacity); return name.ToString().StartsWith("Chrome_WidgetWin_",StringComparison.Ordinal); });
+                Console.Error.WriteLine($"Public Chrome readiness: elapsed={clock.ElapsedMilliseconds}ms; launcherExited={launcher.HasExited}; visibleChromiumWindows={visibleChromium}; fixtureExists={File.Exists(file)}.");
             }
             Require(browser is not null, "Chrome did not open the public smart-selection fixture.");
             DesktopWindows.Activate(browser!.Handle);
