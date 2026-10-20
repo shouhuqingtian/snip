@@ -145,7 +145,9 @@ internal static class InteractionPerformanceCheck
         var renderer=new AnnotationRenderer();bool legacy=mode=="previous-algorithm";
         var image=Image(workload=="tile" ? 1537 : 320,workload=="tile" ? 8305 : 240);
         _=renderer.Render(Image(40,30),[Shape(AnnotationTool.Rectangle)]);
-        var editor=workload=="pen" && !legacy ? Editor(image) : null;if(editor is not null)editor.Tool=AnnotationTool.Pen;
+        var editor=workload=="pen" && !legacy ? Editor(image) : null;
+        // Compare the same four-pixel historical fixture, independently of the app's default width.
+        if(editor is not null){editor.Tool=AnnotationTool.Pen;editor.StrokeWidth=4;}
         byte[]? png=workload=="sticker" ? Png(1024,768,123) : null;
         DrawingGroup? drawing=null;BitmapSource? output=null;Annotation? stroke=null;
         if(workload=="tile")drawing=renderer.BuildDrawing(image,[Shape(AnnotationTool.Rectangle)]);
