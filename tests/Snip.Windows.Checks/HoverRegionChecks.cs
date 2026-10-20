@@ -88,6 +88,8 @@ internal static class HoverRegionChecks
             Wait(() => session!.ViewModel.DisplayedSelection == panelBounds, "Panel background was not recognized.");
             Hover(button);
             SavePreview(Application.Current.Windows.OfType<SelectionWindow>().Single(w => w.IsActive));
+            using var liveWorker = Process.GetProcessById(workerPid);
+            double workerMiB = liveWorker.WorkingSet64 / (1024.0 * 1024.0);
             var expected = Bounds(button); int releasedPid = workerPid;
             HotkeyChecks.Press(0x0D);
             Wait(() => session.Completion.IsCompleted && Clipboard.ContainsImage(), "Enter did not copy the hovered internal region.");
@@ -99,12 +101,14 @@ internal static class HoverRegionChecks
 
             VerifyStaleAndManual(desktop, window, button);
             VerifyTimeout(desktop, window);
+            SmartBrowserChecks.Verify();
             Directory.CreateDirectory("artifacts/validation");
             File.WriteAllText("artifacts/validation/smart-selection.json", JsonSerializer.Serialize(new {
                 ToolbarButton = true, TextInput = true, List = true, ListRow = true, Panel = true,
                 EnterCopiesFrozenRegion = true, WorkerReleased = true, StaleResultsIgnored = true,
                 ManualSelectionPreserved = true, EscapeResponsive = true, TimeoutFallsBack = true,
-                NoRestartStorm = true, WarmHoverMilliseconds = times
+                NoRestartStorm = true, ChromeButton = true, ChromePanel = true, ChromeEnterPixels = true,
+                WorkerWorkingSetMiB = workerMiB, WarmHoverMilliseconds = times
             }, new JsonSerializerOptions { WriteIndented = true }));
         }
         finally
@@ -117,6 +121,20 @@ internal static class HoverRegionChecks
     private static void VerifyStaleAndManual(DesktopCaptureService desktop, Window owner, FrameworkElement button)
     {
         var target = DesktopWindows.Snapshot(includeCurrentProcess: true).Single(w => w.Handle == new WindowInteropHelper(owner).Handle);
+        var stale = new DelayedProbe();
+        using (var hover = new SelectionSession(desktop.Capture(), desktop, new AnnotationRenderer(), new RecordingExport(), [target], () => stale))
+        {
+            hover.Show();
+            Wait(() => stale.Started, "Stale-result fixture did not start.");
+            for (int i = 0; i < 1000; i++) hover.UpdateHoveredTarget(new(target.Bounds.X + 30 + i % 20, target.Bounds.Y + 30));
+            Require(stale.Calls == 1, "Mouse motion queued concurrent accessibility work.");
+            var outside = new PixelPoint(target.Bounds.Right + 25, target.Bounds.Y + 30);
+            SetPhysicalCursorPos((int)outside.X, (int)outside.Y); hover.UpdateHoveredTarget(outside);
+            stale.Result.SetResult(target.Bounds); Pause(150);
+            Require(hover.ViewModel.DisplayedSelection.IsEmpty, "An old hover result selected a window after the pointer left it.");
+        }
+        var originalPoint = button.PointToScreen(new(20, 20));
+        SetPhysicalCursorPos((int)originalPoint.X, (int)originalPoint.Y);
         var delayed = new DelayedProbe();
         using var selection = new SelectionSession(desktop.Capture(), desktop, new AnnotationRenderer(), new RecordingExport(), [target], () => delayed);
         selection.Show();
@@ -143,12 +161,18 @@ internal static class HoverRegionChecks
             });
             probe.WorkerStarted += value => { pid = value; launches++; };
             var point = new PixelPoint(target.Bounds.X + 25, target.Bounds.Y + 25);
-            var watch = Stopwatch.StartNew(); var task = probe.FindAsync(target, point, default);
-            Wait(() => task.IsCompleted, "Stalled provider did not time out.");
-            Require(task.GetAwaiter().GetResult() is null && ticks >= 15 && watch.Elapsed < TimeSpan.FromSeconds(5), "Provider timeout blocked the UI or returned an invented region.");
+            SetPhysicalCursorPos((int)point.X, (int)point.Y);
+            var frame = desktop.Capture();
+            using var selection = new SelectionSession(frame, desktop, new AnnotationRenderer(), new RecordingExport(), [target], () => probe);
+            var watch = Stopwatch.StartNew(); selection.Show();
+            Wait(() => pid != 0, "Stalled provider did not start.");
             Wait(() => Exited(pid), "Timed out worker was not terminated.");
-            var retry = probe.FindAsync(target, point, default); Wait(() => retry.IsCompleted, "Disabled provider did not complete.");
-            Require(retry.GetAwaiter().GetResult() is null && launches == 1, "Moving after a provider failure restarted helpers repeatedly.");
+            Pause(100);
+            Require(selection.ViewModel.DisplayedSelection == target.Bounds.Intersect(frame.Bounds) && ticks >= 15 && watch.Elapsed < TimeSpan.FromSeconds(5), "Provider timeout blocked the UI or lost the complete-window fallback.");
+            for (int i = 0; i < 100; i++) selection.UpdateHoveredTarget(new(point.X + i % 10, point.Y));
+            Pause(150);
+            Require(launches == 1, "Moving after a provider failure restarted helpers repeatedly.");
+            HotkeyChecks.Press(0x1B); Wait(() => selection.Completion.IsCompleted, "Escape failed after provider timeout.");
             Console.WriteLine($"PASS actual stalled helper timeout {watch.ElapsedMilliseconds} ms; UI heartbeat {ticks}; process terminated; no restart storm.");
         }
         finally { timer.Stop(); }
@@ -177,8 +201,9 @@ internal static class HoverRegionChecks
     private sealed class DelayedProbe : IHoverRegionProbe
     {
         public bool Started, Disposed;
+        public int Calls;
         public TaskCompletionSource<PixelRect?> Result = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        public Task<PixelRect?> FindAsync(WindowCaptureInfo target, PixelPoint point, CancellationToken token) { Started = true; return Result.Task; }
+        public Task<PixelRect?> FindAsync(WindowCaptureInfo target, PixelPoint point, CancellationToken token) { Calls++; Started = true; return Result.Task; }
         public void Dispose() => Disposed = true;
     }
 }

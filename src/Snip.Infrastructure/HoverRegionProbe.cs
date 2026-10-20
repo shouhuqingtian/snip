@@ -64,10 +64,11 @@ public sealed class HoverRegionProbe(Func<ProcessStartInfo> host, DiagnosticJour
             }
             catch (Exception error) when (error is IOException or InvalidOperationException or OperationCanceledException or System.ComponentModel.Win32Exception)
             {
-                diagnostics?.Record("selection", "hover-fallback", new { TimedOut = error is OperationCanceledException && !token.IsCancellationRequested }, error: error);
                 // A failed provider is not retried on every mouse move during this screenshot.
                 unavailable = true; Stop();
+                if (disposed) return null;
                 if (token.IsCancellationRequested) throw new OperationCanceledException(token);
+                diagnostics?.Record("selection", "hover-fallback", new { TimedOut = error is OperationCanceledException }, error: error);
                 return null;
             }
         }
