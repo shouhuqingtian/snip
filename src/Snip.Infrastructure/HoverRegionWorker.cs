@@ -76,9 +76,6 @@ public static class HoverRegionWorker
             return true;
         };
         EnumChildWindows(handle, callback, IntPtr.Zero);
-        // Area alone cannot establish visibility: CSS dialogs and embedded pages leave
-        // smaller background controls in the accessibility tree. Fail safely to the native
-        // viewport/window if Chromium cannot expose a hit, rather than choose a hidden row.
         try
         {
             var request = new CacheRequest { TreeScope = TreeScope.Element };
