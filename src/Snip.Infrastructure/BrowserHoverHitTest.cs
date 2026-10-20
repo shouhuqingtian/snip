@@ -22,6 +22,7 @@ internal static class BrowserHoverHitTest
 
     public static PixelRect? Find(IntPtr window, PixelRect bounds, PixelPoint point, double scale)
     {
+        PixelRect? candidate = null;
         try
         {
             var iid = typeof(IAccessible).GUID;
@@ -47,13 +48,21 @@ internal static class BrowserHoverHitTest
                 // A label belongs to its button/list item/panel. Never turn a glyph fragment
                 // into a region, or search other branches after the topmost path was found.
                 bool container = role is 9 or 10 or 15 or 16 or 18 or 20 or 22 or 24 or 33 or 35 or 38;
-                if (container && (state & 0x18000) == 0 && HoverRegionWorker.IsUsefulRegion(rect, scale) && rect.Contains(point)) return rect;
+                if (container && (state & 0x18000) == 0 && HoverRegionWorker.IsUsefulRegion(rect, scale) && rect.Contains(point))
+                {
+                    // A visible web dialog is the intended screenshot window, including its
+                    // embedded document. Prefer it over controls/panels inside that dialog.
+                    if (role == 18) return rect; // ROLE_SYSTEM_DIALOG
+                    candidate ??= rect;
+                }
+                if (ReferenceEquals(current, root) && childId is int rootId && rootId == 0) break;
                 if (childId is int index && index != 0) childId = 0;
                 else if (current.accParent is IAccessible parent && !ReferenceEquals(parent, current)) current = parent;
                 else break;
             }
+            return candidate;
         }
         catch (Exception error) when (error is COMException or InvalidOperationException or UnauthorizedAccessException or NotImplementedException or ArgumentException) { }
-        return null;
+        return candidate;
     }
 }

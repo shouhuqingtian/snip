@@ -33,10 +33,14 @@ internal static class SmartBrowserChecks
             <style>*{box-sizing:border-box}body{margin:0;min-height:100vh;background:#eef7f4}button{position:fixed;left:80px;top:60px;width:220px;height:80px;background:#087f65;color:white;border:0;font-size:20px}section{position:fixed;left:80px;top:180px;width:420px;height:200px;background:white;border:2px solid #087f65}</style>
             <button>Public capture action</button><section role="region" aria-label="Public browser panel"><h2>Public panel</h2><ul><li>Public row one</li><li>Public row two</li></ul></section>
             """);
-        var start = new ProcessStartInfo(chrome) { UseShellExecute = false };
-        foreach (string argument in new[] { "--new-window", "--no-first-run", "--disable-background-mode", "--force-renderer-accessibility", "--force-device-scale-factor=1", "--disable-gpu",
+        var start = new ProcessStartInfo(chrome) { UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true };
+        foreach (string argument in new[] { "--new-window", "--no-first-run", "--disable-background-mode", "--disable-background-networking", "--force-renderer-accessibility", "--force-device-scale-factor=1", "--disable-gpu",
             "--user-data-dir=" + Path.Combine(directory, "profile"), "--window-size=850,650", "--window-position=40,40", new Uri(file).AbsoluteUri }) start.ArgumentList.Add(argument);
         using var launcher = Process.Start(start)!;
+        // Chrome descendants must not inherit the check runner's output pipe and hold
+        // PowerShell open after an early startup failure. Drain only this public fixture.
+        _ = launcher.StandardOutput.BaseStream.CopyToAsync(Stream.Null);
+        _ = launcher.StandardError.BaseStream.CopyToAsync(Stream.Null);
         WindowCaptureInfo? browser = null;
         SelectionSession? session = null;
         try
@@ -107,6 +111,8 @@ internal static class SmartBrowserChecks
                 if (process is { HasExited: false }) { process.Kill(entireProcessTree: true); process.WaitForExit(3000); }
             }
             catch (Exception error) when (error is ArgumentException or InvalidOperationException or System.ComponentModel.Win32Exception) { }
+            try { if (!launcher.HasExited) { launcher.Kill(entireProcessTree: true); launcher.WaitForExit(3000); } }
+            catch (Exception error) when (error is InvalidOperationException or System.ComponentModel.Win32Exception) { }
             try { Directory.Delete(directory, true); } catch (IOException) { }
         }
     }
@@ -139,8 +145,8 @@ internal static class SmartBrowserChecks
         // Iframe outer left/top is 70/90 after the dialog's two-pixel border.
         var cases = new[] {
             ("dialog over original row", new PixelPoint(650,260), new PixelRect(40,40,680,400)),
-            ("iframe panel over original row", new PixelPoint(250,170), new PixelRect(95,120,250,100)),
-            ("iframe background over original row", new PixelPoint(470,260), new PixelRect(70,90,450,280)),
+            ("iframe panel uses current dialog", new PixelPoint(250,170), new PixelRect(40,40,680,400)),
+            ("iframe background uses current dialog", new PixelPoint(470,260), new PixelRect(40,40,680,400)),
             ("front dialog over another dialog and row", new PixelPoint(620,360), new PixelRect(430,280,280,150))
         };
         foreach (var (name, localPoint, localRegion) in cases)
@@ -171,7 +177,7 @@ internal static class SmartBrowserChecks
             Require(actual.PixelWidth==wanted.PixelWidth && actual.PixelHeight==wanted.PixelHeight && a.SequenceEqual(b) && export.Copies==1,"Layered page Enter copied a hidden/background region: " + name);
             Console.WriteLine("PASS actual layered Chrome " + name + ": " + expected + "; Enter copies exact visible frozen pixels.");
         }
-        File.WriteAllText("artifacts/validation/browser-layered-selection.json", JsonSerializer.Serialize(new { ChromeDialog=true, ChromeIframePanel=true, ChromeIframeBackground=true, OverlappingDialogs=true, EnterCopiesTopLayer=true }));
+        File.WriteAllText("artifacts/validation/browser-layered-selection.json", JsonSerializer.Serialize(new { ChromeDialog=true, IframePanelUsesCurrentDialog=true, IframeBackgroundUsesCurrentDialog=true, OverlappingDialogs=true, EnterCopiesTopLayer=true }));
     }
     private static void Pause(int milliseconds) { var task = Task.Delay(milliseconds); TextWindowChecks.PumpUntil(() => task.IsCompleted, TimeSpan.FromSeconds(2)); }
     private static void Require(bool value, string message) { if (!value) throw new InvalidOperationException(message); }
