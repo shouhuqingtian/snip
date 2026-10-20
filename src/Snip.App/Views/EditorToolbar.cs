@@ -14,6 +14,7 @@ public sealed class EditorToolbar : UserControl
     public event EventHandler? CompleteRequested, CancelRequested, WindowRequested, SelectionRequested;
     public event EventHandler? StickerRequested, PinRequested, OcrRequested, TranslateRequested, ShareRequested;
     public event Action<BrowserCaptureMode>? ScrollRequested;
+    public void RequestComplete() => CompleteRequested?.Invoke(this, EventArgs.Empty);
     public EditorToolbar()
     {
         Ui.EnsureTheme();
@@ -62,7 +63,7 @@ public sealed class EditorToolbar : UserControl
         Add("adjust", "重新调整选区（清除当前标注）", () => SelectionRequested?.Invoke(this, EventArgs.Empty));
         Divider();
         Add("close", "取消截图", () => CancelRequested?.Invoke(this, EventArgs.Empty)).Foreground = Ui.Brush("DangerBrush");
-        var complete = Add("check", "复制并完成 Enter", () => CompleteRequested?.Invoke(this, EventArgs.Empty));
+        var complete = Add("check", "复制并完成 Enter / 中键", RequestComplete);
         complete.Background = Ui.Brush("AccentBrush"); complete.Foreground = Brushes.White;
         var options = new WrapPanel { Margin = new Thickness(3, 12, 3, 0) };
         panel.Children.Add(options);

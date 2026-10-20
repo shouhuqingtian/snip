@@ -40,10 +40,11 @@ public sealed class SelectionWindow : Window
         toolbar.OcrRequested += (_, _) => session.Request(SelectionAction.Ocr);
         toolbar.TranslateRequested += (_, _) => session.Request(SelectionAction.Translate);
         overlay.Children.Add(toolbar);
-        hint = new TextBlock { Text = "悬停自动选择区域 · Enter复制 · 拖动重新选择 · Esc取消", Foreground = Brushes.White, FontSize = 12, Padding = new Thickness(12, 8, 12, 8), TextWrapping = TextWrapping.Wrap, IsHitTestVisible = false };
+        hint = new TextBlock { Text = "悬停自动选择区域 · Enter / 中键复制 · 拖动重新选择 · Esc取消", Foreground = Brushes.White, FontSize = 12, Padding = new Thickness(12, 8, 12, 8), TextWrapping = TextWrapping.Wrap, IsHitTestVisible = false };
         hintFrame = new Border { Name = "SelectionHint", Child = hint, CornerRadius = new CornerRadius(8), Background = new SolidColorBrush(Color.FromArgb(225, 36, 50, 57)), IsHitTestVisible = false };
         overlay.Children.Add(hintFrame); Canvas.SetLeft(hintFrame, 16); Canvas.SetTop(hintFrame, 16); Content = root;
         SourceInitialized += (_, _) => capture.PlaceOverlay(this, display.Bounds);
+        PreviewMouseDown += (_, e) => { if (e.ChangedButton == MouseButton.Middle) { session.Confirm(); e.Handled=true; } };
         PreviewKeyDown += OnKey; session.EditorChanged += RefreshEditor; session.ViewModel.Changed += Position;
         SizeChanged += (_, _) => { Position(this, EventArgs.Empty); PositionEditor(); };
         Closed += (_, _) =>
@@ -77,7 +78,7 @@ public sealed class SelectionWindow : Window
     }
     private void Position(object? sender, EventArgs e)
     {
-        hint.Text = session.ViewModel.SizeText + (session.Editing ? " · 选区内标注 · Enter或对勾复制完成" : " · Enter复制 · 拖动重新选择 · 单击进入标注");
+        hint.Text = session.ViewModel.SizeText + (session.Editing ? " · 选区内标注 · Enter / 中键 / 对勾复制完成" : " · Enter / 中键复制 · 拖动重新选择 · 单击进入标注");
         var r = session.ViewModel.Selection;
         var selectedDisplay = session.ViewModel.Frame.Displays.OrderByDescending(d => { var i = r.Intersect(d.Bounds); return i.Width * i.Height; }).First();
         bool visible = session.Editing && selectedDisplay.Name == Display.Name;
@@ -179,7 +180,7 @@ internal sealed class SelectionSurface : FrameworkElement
         }
     }
     protected override void OnMouseLeftButtonDown(MouseButtonEventArgs e)
-    { if (session.Editing) return; Focus(); dragStart = capture.CursorPosition; newSelection = SelectionGeometry.HitTest(vm.Selection, dragStart) == SelectionHandle.New; vm.Begin(dragStart); CaptureMouse(); e.Handled = true; }
+    { if (session.Editing) return; session.LockHoveredSelection(); Focus(); dragStart = capture.CursorPosition; newSelection = SelectionGeometry.HitTest(vm.Selection, dragStart) == SelectionHandle.New; vm.Begin(dragStart); CaptureMouse(); e.Handled = true; }
     protected override void OnMouseMove(MouseEventArgs e)
     {
         if (session.Editing) return;

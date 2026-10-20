@@ -18,6 +18,7 @@ internal static class Program
         if (args.FirstOrDefault() == "--browser-transparent-overlay") return BrowserTargetChecks.HoldTransparentOverlay(args);
         if (args.Contains("--hover-stall")) return HoverRegionChecks.StallWorker();
         if (args.Contains("--smart-selection")) return HoverRegionChecks.Run();
+        if (args.Contains("--capture-feedback")) return CaptureFeedbackChecks.Run();
         if (args.Contains("--inline-text")) return InlineTextChecks.Run();
         if (args.FirstOrDefault() == "--ocr-lifetime-launcher") return EnhancedOcrChecks.LifetimeLauncher(args);
         if (args.FirstOrDefault() == "--clipboard-lock") return ClipboardWindowChecks.HoldClipboard(args[1], args[2]);
@@ -52,6 +53,7 @@ internal static class Program
             catch (Exception e) { failed++; Console.Error.WriteLine($"FAIL {name}: {e}"); }
         }
         Check("native direct annotation interaction", () => Require(AnnotationInteractionChecks.Run() == 0));
+        Check("native copy feedback and middle button", () => Require(CaptureFeedbackChecks.Run() == 0));
         Check("large inline text and simplified toolbar", () => Require(InlineTextChecks.Run() == 0));
         Check("image pixel dimensions", () =>
         {

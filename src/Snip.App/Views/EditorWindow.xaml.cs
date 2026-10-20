@@ -18,6 +18,14 @@ public partial class EditorWindow : Window
             if (e.ViewportWidthChange != 0 || e.ViewportHeightChange != 0) UpdateViewport();
         };
         Closing += (_, e) => { if (DataContext is EditorViewModel vm) e.Cancel = vm.IsExporting || (!discardRequested && !vm.CanClose()); };
+        PreviewMouseDown += (_, e) =>
+        {
+            if (e.ChangedButton == MouseButton.Middle)
+            {
+                if (DataContext is EditorViewModel { IsDrawing: false, IsExporting: false }) Toolbar.RequestComplete();
+                e.Handled=true;
+            }
+        };
         PreviewKeyDown += (_, e) => { if (e.Key == Key.Escape && DataContext is EditorViewModel vm) { vm.CancelCurrent(); e.Handled = true; } };
     }
     public void CancelScreenshot()

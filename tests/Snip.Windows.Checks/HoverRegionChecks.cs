@@ -131,7 +131,7 @@ internal static class HoverRegionChecks
             Stage("Chrome"); SmartBrowserChecks.Verify();
             Directory.CreateDirectory("artifacts/validation");
             File.WriteAllText("artifacts/validation/smart-selection.json", JsonSerializer.Serialize(new {
-                ToolbarRegion = true, InputPanel = true, List = true, ListRowsUseList = true, Panel = true,
+                StationaryInitialWindowStable = true, PointerMovementStartsRefinement = true, ToolbarRegion = true, InputPanel = true, List = true, ListRowsUseList = true, Panel = true,
                 EnterCopiesFrozenRegion = true, WorkerReleased = true, StaleResultsIgnored = true,
                 ManualSelectionPreserved = true, EscapeResponsive = true, TimeoutFallsBack = true,
                 NoRestartStorm = true, CoordinatorWorkerHost = true, CancelButtonNoPrompt = true, EscapeNoPrompt = true, EditorCancelNoPrompt = true,
@@ -198,6 +198,8 @@ internal static class HoverRegionChecks
             var a = region.PointToScreen(new()); var b = region.PointToScreen(new(region.ActualWidth, region.ActualHeight));
             var expected = new PixelRect(a.X, a.Y, b.X - a.X, b.Y - a.Y).RoundOut();
             SetPhysicalCursorPos((int)point.X, (int)point.Y); HotkeyChecks.Press(0x11, 0x12, 0x41);
+            Wait(() => Application.Current.Windows.OfType<SelectionWindow>().Any(w => w.IsActive), "Coordinator did not open screenshot overlay.");
+            Move(new(point.X+6,point.Y));
             Wait(() => Application.Current.Windows.OfType<SelectionWindow>().Any(w => TextWindowChecks.Descendants<Border>(w)
                 .Any(frame => frame.Name == "SelectionHint" && frame.Child is TextBlock hint && hint.Text.StartsWith($"{expected.Width:0} × {expected.Height:0} 像素", StringComparison.Ordinal))), "Real coordinator did not use Snip's internal-region worker.");
             HotkeyChecks.Press(0x0D); Wait(() => active?.IsCompleted == true, "Coordinator smart Enter did not finish."); active!.GetAwaiter().GetResult();
@@ -216,6 +218,7 @@ internal static class HoverRegionChecks
         using (var hover = new SelectionSession(desktop.Capture(), desktop, new AnnotationRenderer(), new RecordingExport(), [target], () => stale))
         {
             hover.Show();
+            var start = desktop.CursorPosition; Move(new(start.X+6,start.Y));
             Wait(() => stale.Started, "Stale-result fixture did not start.");
             for (int i = 0; i < 1000; i++) hover.UpdateHoveredTarget(new(target.Bounds.X + 30 + i % 20, target.Bounds.Y + 30));
             Require(stale.Calls == 1, "Mouse motion queued concurrent accessibility work.");
@@ -229,7 +232,7 @@ internal static class HoverRegionChecks
         var delayed = new DelayedProbe();
         using var selection = new SelectionSession(desktop.Capture(), desktop, new AnnotationRenderer(), new RecordingExport(), [target], () => delayed);
         selection.Show();
-        var p = button.PointToScreen(new(20, 20)); selection.UpdateHoveredTarget(new(p.X, p.Y));
+        var p = button.PointToScreen(new(20, 20)); selection.UpdateHoveredTarget(new(p.X+6, p.Y));
         Wait(() => delayed.Started, "Delayed provider did not start.");
         var manual = new PixelRect(target.Bounds.X + 15, target.Bounds.Y + 80, 120, 80);
         selection.ViewModel.SetSelection(manual); selection.BeginEditing();
@@ -255,7 +258,7 @@ internal static class HoverRegionChecks
             SetPhysicalCursorPos((int)point.X, (int)point.Y);
             var frame = desktop.Capture();
             using var selection = new SelectionSession(frame, desktop, new AnnotationRenderer(), new RecordingExport(), [target], () => probe);
-            var watch = Stopwatch.StartNew(); selection.Show();
+            var watch = Stopwatch.StartNew(); selection.Show(); Move(new(point.X+6,point.Y));
             Wait(() => pid != 0, "Stalled provider did not start.");
             Wait(() => Exited(pid), "Timed out worker was not terminated.");
             Pause(100);

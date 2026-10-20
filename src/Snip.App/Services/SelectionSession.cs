@@ -21,7 +21,8 @@ public sealed class SelectionSession : IDisposable
     private WindowCaptureInfo? hoveredTarget;
     private PixelPoint hoveredPoint;
     private long hoverRevision;
-    private bool probing;
+    private bool probing, pointerMoved, hoverLocked;
+    private PixelPoint entryPoint;
     private bool closed, confirming;
     public SelectionViewModel ViewModel { get; }
     public Task<SelectionResult?> Completion => completion.Task;
@@ -43,7 +44,8 @@ public sealed class SelectionSession : IDisposable
     {
         try
         {
-            UpdateHoveredTarget(capture.CursorPosition);
+            entryPoint = capture.CursorPosition;
+            UpdateHoveredTarget(entryPoint);
             foreach (var display in ViewModel.Frame.Displays)
             {
                 var window = new SelectionWindow(this, capture, display);
@@ -56,18 +58,20 @@ public sealed class SelectionSession : IDisposable
     }
     public void UpdateHoveredTarget(PixelPoint point)
     {
-        if (closed || Editing || ViewModel.IsDragging) return;
+        if (closed || Editing || hoverLocked || ViewModel.IsDragging || !ViewModel.Selection.IsEmpty) return;
         var target = Targets.FirstOrDefault(w => w.Bounds.Contains(point) && !DesktopWindows.IsInputTransparent(w.Handle));
         if (target == hoveredTarget && point == hoveredPoint) return;
+        double scale = target is null ? 1 : Math.Max(96,DesktopWindows.GetDpiForWindow(target.Handle))/96.0;
+        if (Math.Max(Math.Abs(point.X-entryPoint.X),Math.Abs(point.Y-entryPoint.Y)) >= 3*scale) pointerMoved=true;
         bool preserve = target == hoveredTarget && ViewModel.HoveredSelection.Contains(point);
         hoveredTarget = target; hoveredPoint = point; hoverRevision++;
         if (!preserve) ViewModel.SetHoveredSelection(target?.Bounds ?? default);
-        if (probeFactory is not null && target is not null && !probing) hoverTimer.Start();
+        if (pointerMoved && probeFactory is not null && target is not null && !probing) hoverTimer.Start();
     }
     private async void ProbeHoveredRegion(object? sender, EventArgs args)
     {
         hoverTimer.Stop();
-        if (closed || Editing || ViewModel.IsDragging || probing || hoveredTarget is not { } target || probeFactory is null) return;
+        if (closed || Editing || hoverLocked || !pointerMoved || ViewModel.IsDragging || probing || hoveredTarget is not { } target || probeFactory is null) return;
         long revision = hoverRevision; var point = hoveredPoint;
         probing = true;
         try
@@ -75,20 +79,24 @@ public sealed class SelectionSession : IDisposable
             var active = probe ??= probeFactory();
             var region = await active.FindAsync(target, point, hoverLifetime.Token);
             // The frame is frozen, but mouse position, editing and lifetime may have changed.
-            if (!closed && !Editing && !ViewModel.IsDragging && ViewModel.Selection.IsEmpty && target == hoveredTarget &&
+            if (!closed && !Editing && !hoverLocked && revision == hoverRevision && !ViewModel.IsDragging && ViewModel.Selection.IsEmpty && target == hoveredTarget &&
                 region is { } rect && rect.Contains(hoveredPoint)) ViewModel.SetHoveredSelection(rect);
         }
         catch (Exception error) when (error is OperationCanceledException or InvalidOperationException or System.ComponentModel.Win32Exception) { }
         finally
         {
             probing = false;
-            if (!closed && !Editing && !ViewModel.IsDragging && revision != hoverRevision && hoveredTarget is not null) hoverTimer.Start();
+            if (!closed && !Editing && !hoverLocked && !ViewModel.IsDragging && revision != hoverRevision && hoveredTarget is not null) hoverTimer.Start();
         }
+    }
+    public void LockHoveredSelection()
+    {
+        hoverLocked=true; hoverRevision++; hoverTimer.Stop(); probe?.Dispose(); probe=null;
     }
     public void BeginEditing()
     {
         if (closed || !ViewModel.CanConfirm) return;
-        hoverTimer.Stop(); probe?.Dispose(); probe = null;
+        LockHoveredSelection();
         var r = ViewModel.Selection.RoundOut();
         var image = new WriteableBitmap(new CroppedBitmap(ViewModel.Frame.Image,
             new Int32Rect((int)(r.X - ViewModel.Frame.Bounds.X), (int)(r.Y - ViewModel.Frame.Bounds.Y), (int)r.Width, (int)r.Height)));
@@ -99,7 +107,7 @@ public sealed class SelectionSession : IDisposable
     }
     public async void Confirm()
     {
-        if (closed || confirming || ViewModel.IsDragging) return;
+        if (closed || confirming || ViewModel.IsDragging || Editor?.IsDrawing == true) return;
         if (ViewModel.Selection.IsEmpty) ViewModel.SetSelection(ViewModel.HoveredSelection);
         if (!ViewModel.CanConfirm) return;
         confirming = true;

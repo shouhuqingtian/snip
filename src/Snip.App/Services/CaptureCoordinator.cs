@@ -7,7 +7,7 @@ using Snip.Core;
 namespace Snip.App.Services;
 
 /// <summary>Owns one selection session; editors can remain open independently.</summary>
-public sealed class CaptureCoordinator(IDesktopCaptureService capture, AnnotationRenderer renderer, IImageExportService export, FeatureHub features, DiagnosticJournal? diagnostics = null) : IDisposable
+public sealed class CaptureCoordinator(IDesktopCaptureService capture, AnnotationRenderer renderer, IImageExportService export, FeatureHub features, DiagnosticJournal? diagnostics = null, Action? beforeCapture = null) : IDisposable
 {
     private bool busy, disposed;
     private SelectionSession? session;
@@ -19,6 +19,7 @@ public sealed class CaptureCoordinator(IDesktopCaptureService capture, Annotatio
         var foreground = DesktopWindows.Foreground;
         try
         {
+            beforeCapture?.Invoke();
             await Task.Delay(160); // Let the launcher click/tray menu settle before freezing the visible desktop.
             if (disposed) return;
             // The helper releases overlays and the full desktop before any optional long-running workflow.

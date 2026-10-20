@@ -31,6 +31,7 @@ public partial class App : Application
     private ApplicationSettingsWindow? applicationSettings;
     private TranslationPreferencesStore? translationPreferences;
     private FeatureHub? features;
+    private CopyNotificationService? copyNotifications;
 
     protected override void OnStartup(StartupEventArgs e)
     {
@@ -66,11 +67,12 @@ public partial class App : Application
             desktop = capture;
             _ = Task.Run(() => diagnostics.Record("app", "environment", DesktopDiagnostics.EnvironmentInfo(capture)));
             var renderer = new AnnotationRenderer();
-            var export = new DiagnosticImageExport(new ImageExportService(), diagnostics);
+            copyNotifications = new CopyNotificationService(Dispatcher, diagnostics);
+            var export = new CopyFeedbackExport(new DiagnosticImageExport(new ImageExportService(), diagnostics), copyNotifications);
             pins = new PinManager(export, ShowPinHotkeySettings);
             translationPreferences = new TranslationPreferencesStore();
             features = new FeatureHub(renderer, export, capture, pins, diagnostics, translationPreferences:translationPreferences);
-            coordinator = new CaptureCoordinator(capture, renderer, export, features, diagnostics);
+            coordinator = new CaptureCoordinator(capture, renderer, export, features, diagnostics, copyNotifications.Hide);
             main = new MainWindow { Title = "自用截图 " + DesktopDiagnostics.Version.Split('+')[0], DataContext = new MainViewModel(coordinator.CaptureAsync, ShowError, ExportDiagnosticsAsync, () => features.ShowOnlineSettings(), ShowHotkeySettings, ShowApplicationSettings) };
             MainWindow = main;
             hotkey = new HotkeyService(); tray = new TrayService();
@@ -222,7 +224,7 @@ public partial class App : Application
     protected override void OnExit(ExitEventArgs e)
     {
         diagnostics?.Record("app", "exiting", new { e.ApplicationExitCode });
-        activationListener?.Unregister(null); coordinator?.Dispose(); pins?.Dispose(); pinHotkeys?.Dispose(); hotkey?.Dispose(); tray?.Dispose();
+        activationListener?.Unregister(null); copyNotifications?.Dispose(); coordinator?.Dispose(); pins?.Dispose(); pinHotkeys?.Dispose(); hotkey?.Dispose(); tray?.Dispose();
         if (ownsMutex) instance?.ReleaseMutex(); instance?.Dispose(); activation?.Dispose();
         diagnostics?.Dispose();
         base.OnExit(e);

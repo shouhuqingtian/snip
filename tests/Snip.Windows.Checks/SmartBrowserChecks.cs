@@ -82,7 +82,7 @@ internal static class SmartBrowserChecks
             var export = new Export();
             session = new SelectionSession(frame, desktop, new AnnotationRenderer(), export, [browser],
                 () => new HoverRegionProbe(() => new ProcessStartInfo(Path.GetFullPath("src/Snip.App/bin/Release/net8.0-windows10.0.19041.0/Snip.exe"))));
-            session.Show();
+            session.Show(); SetPhysicalCursorPos((int)buttonPoint.X+6,(int)buttonPoint.Y);
             session.ViewModel.Changed += (_, _) => Console.WriteLine("Public Chrome hover bounds: " + session.ViewModel.DisplayedSelection);
             var expectedButton = viewport;
             TextWindowChecks.PumpUntil(() => session.ViewModel.DisplayedSelection == expectedButton, TimeSpan.FromSeconds(7));
@@ -158,7 +158,7 @@ internal static class SmartBrowserChecks
             var frame = desktop.Capture(); var export = new Export();
             using var selection = new SelectionSession(frame, desktop, new AnnotationRenderer(), export, [browser],
                 () => new HoverRegionProbe(() => new ProcessStartInfo(Path.GetFullPath("src/Snip.App/bin/Release/net8.0-windows10.0.19041.0/Snip.exe"))));
-            selection.Show();
+            selection.Show(); SetPhysicalCursorPos((int)point.X+6,(int)point.Y);
             selection.ViewModel.Changed += (_, _) => Console.WriteLine("Public layered Chrome " + name + ": " + selection.ViewModel.DisplayedSelection);
             var expected = new PixelRect(viewport.X + localRegion.X, viewport.Y + localRegion.Y, localRegion.Width, localRegion.Height);
             TextWindowChecks.PumpUntil(() => selection.ViewModel.DisplayedSelection == expected, TimeSpan.FromSeconds(7));
