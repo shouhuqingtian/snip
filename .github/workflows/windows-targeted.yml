@@ -4,7 +4,7 @@ on:
     inputs:
       check:
         type: choice
-        options: [clipboard, chrome, enhanced-ocr, editor-zoom, manual-preview, window-placement, text-ui, ui-gallery, hotkey, annotation-ui]
+        options: [clipboard, chrome, enhanced-ocr, editor-zoom, manual-preview, window-placement, text-ui, ui-gallery, hotkey, annotation-ui, editor-interaction]
         default: clipboard
         required: true
       rounds:
@@ -38,7 +38,7 @@ jobs:
           CHECK: ${{ inputs.check }}
           ROUNDS: ${{ inputs.rounds }}
         run: |
-          $flag = switch ($env:CHECK) { 'clipboard' { '--clipboard-ui' }; 'chrome' { '--chrome' }; 'enhanced-ocr' { '--enhanced-ocr' }; 'editor-zoom' { '--editor-zoom' }; 'manual-preview' { '--manual-preview' }; 'window-placement' { '--window-placement' }; 'text-ui' { '--text-ui' }; 'ui-gallery' { '--ui-gallery' }; 'hotkey' { '--hotkey' }; 'annotation-ui' { '--annotation-ui' }; default { throw 'Unsupported check.' } }
+          $flag = switch ($env:CHECK) { 'clipboard' { '--clipboard-ui' }; 'chrome' { '--chrome' }; 'enhanced-ocr' { '--enhanced-ocr' }; 'editor-zoom' { '--editor-zoom' }; 'manual-preview' { '--manual-preview' }; 'window-placement' { '--window-placement' }; 'text-ui' { '--text-ui' }; 'ui-gallery' { '--ui-gallery' }; 'hotkey' { '--hotkey' }; 'annotation-ui' { '--annotation-ui' }; 'editor-interaction' { '--editor-interaction' }; default { throw 'Unsupported check.' } }
           $rounds = [Math]::Clamp([int]$env:ROUNDS,1,5)
           New-Item -ItemType Directory -Path artifacts/validation -Force | Out-Null
           foreach ($round in 1..$rounds) {

@@ -67,7 +67,10 @@ internal static class InteractionPerformanceCheck
             vm.UndoCommand.Execute(null);Require(vm.BaseAnnotations.Count==1 && vm.BaseAnnotations[0].Points.SequenceEqual(points),"Stroke undo lost its original points.");
             vm.RedoCommand.Execute(null);Require(vm.BaseAnnotations.Count==2,"Stroke redo lost the later stroke.");
             vm.BeginPointer(new(50,50),false);vm.MovePointer(new(60,60));vm.CancelGesture();Require(vm.BaseAnnotations.Count==2,"Cancelled stroke entered history.");
-            vm.Tool=AnnotationTool.Text;vm.BeginPointer(new(10,10),false);window.UpdateLayout();
+            vm.Tool=AnnotationTool.Text;vm.BeginPointer(new(10,10),false);
+            Require(vm.Selected?.Tool==AnnotationTool.Pen && vm.InlineText is null,"Text tool did not directly select an existing pen stroke.");
+            vm.EndPointer(new(10,10));
+            vm.BeginPointer(new(100,120),false);window.UpdateLayout();
             var input=TextWindowChecks.Descendants<TextBox>(canvas).Single();input.Text="Public inline fixture";
             vm.CommitPendingEdits();window.UpdateLayout();
             Require(!TextWindowChecks.Descendants<TextBox>(canvas).Any() && vm.BaseAnnotations.Any(a=>a.Text=="Public inline fixture"),"Layout optimization broke inline text creation or commit.");
