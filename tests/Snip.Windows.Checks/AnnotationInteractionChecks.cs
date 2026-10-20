@@ -39,12 +39,19 @@ internal static class AnnotationInteractionChecks
         {
             window.Show(); window.Activate(); window.UpdateLayout(); vm.Zoom = .75; window.UpdateLayout(); Pause();
             var canvas = TextWindowChecks.Descendants<EditorCanvas>(window).Single();
+            var viewport = (ScrollViewer)window.FindName("Viewport");
             void Move(PixelPoint point)
             {
                 var screen = canvas.PointToScreen(new Point(point.X, point.Y));
                 Require(SetPhysicalCursorPos((int)Math.Round(screen.X), (int)Math.Round(screen.Y)), "Native pointer rejected."); Pause();
             }
             void Click(PixelPoint point) { Move(point); Mouse(2, 4); Pause(); }
+            void Reveal(PixelPoint point, double scale)
+            {
+                viewport.ScrollToHorizontalOffset(Math.Max(0, point.X * scale - viewport.ViewportWidth / 2));
+                viewport.ScrollToVerticalOffset(Math.Max(0, point.Y * scale - viewport.ViewportHeight / 2));
+                window.UpdateLayout(); Pause();
+            }
             void Drag(PixelPoint start, PixelPoint end)
             {
                 Move(start); Mouse(2); Pause(); Move(end); Mouse(4); Wait(() => !vm.IsDrawing);
@@ -125,16 +132,19 @@ internal static class AnnotationInteractionChecks
             {
                 canvas.LayoutTransform = new ScaleTransform(scale, scale); window.UpdateLayout(); Pause();
                 var point = new PixelPoint(resized.Start.X, resized.Start.Y + 60);
+                Reveal(point, scale);
                 Click(point); Move(point); Require(canvas.Cursor == System.Windows.Input.Cursors.SizeAll, "Outline cursor does not indicate movement.");
                 Drag(point, point + new PixelPoint(20, 20)); Near(resized.Start.X + 20, vm.BaseAnnotations[0].Start.X); Undo();
                 Require(vm.BaseAnnotations[0] == resized, "Move undo did not restore rectangle before resize.");
-                Click(point); Move(resized.End);
+                Click(point); Reveal(resized.End, scale); Move(resized.End);
                 var mouse = System.Windows.Input.Mouse.GetPosition(canvas);
                 Console.WriteLine($"SCALE scale={scale}; transform={canvas.LayoutTransform.Value.M11}; cursor={canvas.Cursor}; captured={canvas.IsMouseCaptured}; selected={vm.Selected?.Tool}; bounds={vm.Selected?.Bounds}; requested={resized.End}; pointer={mouse}; direct={vm.PointerHandle(new(mouse.X,mouse.Y),scale)}; size={window.ActualWidth}x{window.ActualHeight}");
                 Require(canvas.Cursor == System.Windows.Input.Cursors.SizeNWSE, "Resize cursor does not match the visible control point.");
                 Drag(resized.End, resized.End + new PixelPoint(20, 20)); Near(resized.Bounds.Width + 20, vm.BaseAnnotations[0].Bounds.Width); Undo();
                 Require(vm.BaseAnnotations[0] == resized, "Display scale changed annotation history geometry.");
             }
+            vm.Zoom = .5; canvas.LayoutTransform = new ScaleTransform(.5,.5); window.UpdateLayout();
+            Reveal(new(resized.Start.X, resized.Start.Y + 60), .5);
             Click(new(resized.Start.X, resized.Start.Y + 60));
             SavePreview(window);
             Require(vm.Save(), "Final PNG save failed.");
