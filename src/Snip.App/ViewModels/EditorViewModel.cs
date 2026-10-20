@@ -17,7 +17,7 @@ public sealed class EditorViewModel : ObservableObject
     private readonly EditHistory history = new();
     private AnnotationTool tool = AnnotationTool.Rectangle;
     private string color = "#FF3B30", status = "点击标注选中，拖动框线移动，拖动控制点缩放；空白处继续绘图，双击文字编辑。";
-    private double strokeWidth = 4, fontSize = 24, zoom = 1;
+    private double strokeWidth = 6, fontSize = 24, zoom = 1;
     private int mosaicSize = 12;
     private PixelPoint pointerStart;
     private Annotation? gestureOriginal;
@@ -98,7 +98,6 @@ public sealed class EditorViewModel : ObservableObject
     public string Status { get => status; private set => Set(ref status, value); }
     public double[] StrokeWidths { get; } = [2, 4, 6, 8];
     public double[] FontSizes { get; } = [16, 20, 24, 32, 48, 64];
-    public int[] MosaicSizes { get; } = [8, 12, 20, 32];
     public string[] Colors { get; } = ["#FF3B30", "#FF9500", "#FFCC00", "#168B73", "#007AFF", "#AF52DE", "#FFFFFF", "#202020"];
     public RelayCommand UndoCommand { get; }
     public RelayCommand RedoCommand { get; }

@@ -20,6 +20,7 @@ public sealed class EditorCanvas : FrameworkElement
     private readonly VisualCollection children;
     private Guid? editingId;
     private bool changingText;
+    private Size inlineEditorSize;
     public PixelRect? VisibleImageBounds { get; set; }
     public EditorCanvas()
     {
@@ -73,7 +74,9 @@ public sealed class EditorCanvas : FrameworkElement
                 editingId = a.Id;
                 textBox = new TextBox { Text = a.Text, FontSize = a.FontSize, FontFamily = new FontFamily("Microsoft YaHei UI"),
                     Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString(a.Color)), Background = new SolidColorBrush(Color.FromArgb(210, 255, 255, 255)),
-                    AcceptsReturn = true, Padding = new Thickness(2), BorderBrush = Ui.Brush("AccentBrush"), BorderThickness = new Thickness(1), MinWidth = 100,
+                    AcceptsReturn = true, Padding = new Thickness(2), BorderBrush = Ui.Brush("AccentBrush"), BorderThickness = new Thickness(1),
+                    VerticalContentAlignment = VerticalAlignment.Top, HorizontalScrollBarVisibility = ScrollBarVisibility.Hidden,
+                    VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
                     ToolTip = "Ctrl+Enter 提交；Esc 取消；点击其他位置提交" };
                 textBox.PreviewKeyDown += (_, e) =>
                 {
@@ -81,6 +84,7 @@ public sealed class EditorCanvas : FrameworkElement
                     else if (e.Key == Key.Enter && Keyboard.Modifiers.HasFlag(ModifierKeys.Control)) { CommitText(this, EventArgs.Empty); e.Handled = true; Focus(); }
                 };
                 textBox.LostKeyboardFocus += (_, _) => { if (!changingText) CommitText(this, EventArgs.Empty); };
+                textBox.TextChanged += (_, _) => { InvalidateMeasure(); InvalidateArrange(); };
                 AddLogicalChild(textBox); children.Add(textBox);
                 Dispatcher.BeginInvoke(() => { textBox?.Focus(); if (textBox is not null) textBox.CaretIndex = textBox.Text.Length; });
             }
@@ -91,13 +95,24 @@ public sealed class EditorCanvas : FrameworkElement
     private void CommitText(object? sender, EventArgs e) { if (textBox is not null) vm?.CommitInlineText(textBox.Text); }
     protected override Size MeasureOverride(Size availableSize)
     {
-        textBox?.Measure(new Size(Math.Max(100, Width - (vm?.InlineText?.Start.X ?? 0)), Math.Max(60, Height)));
+        if (textBox is not null && vm?.InlineText is { } a)
+        {
+            // TextBox/ScrollViewer's desired size can stay at an empty-editor minimum.
+            // Reserve actual glyph/line metrics, then grow for typed text and explicit newlines.
+            var text = new FormattedText(string.IsNullOrEmpty(textBox.Text) ? "国Ag" : textBox.Text,
+                System.Globalization.CultureInfo.GetCultureInfo("zh-CN"), FlowDirection.LeftToRight,
+                new Typeface(textBox.FontFamily, textBox.FontStyle, textBox.FontWeight, textBox.FontStretch), textBox.FontSize, Brushes.Black, 1);
+            double width = Math.Min(Math.Max(1, Width - a.Start.X), Math.Max(Math.Max(100, a.FontSize * 3 + 10), Math.Ceiling(text.WidthIncludingTrailingWhitespace) + 10));
+            double height = Math.Min(Math.Max(1, Height - a.Start.Y), Math.Max(40, Math.Ceiling(Math.Max(text.Height, textBox.FontFamily.LineSpacing * a.FontSize)) + 10));
+            inlineEditorSize = new Size(width, height);
+            textBox.Measure(inlineEditorSize);
+        }
         return new Size(Width, Height);
     }
     protected override Size ArrangeOverride(Size finalSize)
     {
         if (textBox is not null && vm?.InlineText is { } a)
-            textBox.Arrange(new Rect(a.Start.X, a.Start.Y, Math.Min(Math.Max(100, textBox.DesiredSize.Width), Math.Max(1, Width - a.Start.X)), Math.Max(40, textBox.DesiredSize.Height)));
+            textBox.Arrange(new Rect(new Point(a.Start.X, a.Start.Y), inlineEditorSize));
         return finalSize;
     }
     protected override void OnRender(DrawingContext context)

@@ -89,7 +89,6 @@ public sealed class EditorToolbar : UserControl
         swatchButton.AppendChild(dot); palette.ItemTemplate = new DataTemplate { VisualTree = swatchButton }; options.Children.Add(palette);
         Label("线宽"); Choice(nameof(EditorViewModel.StrokeWidths), nameof(EditorViewModel.StrokeWidth), 65);
         Label("字号"); Choice(nameof(EditorViewModel.FontSizes), nameof(EditorViewModel.FontSize), 65);
-        Label("马赛克"); Choice(nameof(EditorViewModel.MosaicSizes), nameof(EditorViewModel.MosaicSize), 65);
         var filled = new CheckBox { Content = "填充矩形 / 椭圆", VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(10, 4, 4, 4) };
         filled.SetBinding(CheckBox.IsCheckedProperty, new Binding(nameof(EditorViewModel.Filled)) { Mode = BindingMode.TwoWay }); options.Children.Add(filled);
         Content = Ui.Card(panel, new Thickness(10));
