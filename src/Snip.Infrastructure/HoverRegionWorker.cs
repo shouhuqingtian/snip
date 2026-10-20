@@ -46,11 +46,12 @@ public static class HoverRegionWorker
     {
         var clock = Stopwatch.StartNew();
         var best = bounds;
+        double scale = Math.Max(96, DesktopWindows.GetDpiForWindow(handle)) / 96.0;
         double Area(PixelRect r) => r.Width * r.Height;
         void Consider(PixelRect rect)
         {
             rect = rect.Intersect(bounds).RoundOut();
-            if (rect.Width >= 20 && rect.Height >= 16 && rect.Contains(point) && Area(rect) < Area(best)) best = rect;
+            if (IsUsefulRegion(rect, scale) && rect.Contains(point) && Area(rect) < Area(best)) best = rect;
         }
         int nativeCount = 0;
         ChildCallback callback = (child, _) =>
@@ -60,6 +61,10 @@ public static class HoverRegionWorker
             return true;
         };
         EnumChildWindows(handle, callback, IntPtr.Zero);
+        // Area alone cannot establish visibility: CSS dialogs and embedded pages leave
+        // smaller background controls in the accessibility tree. Fail safely to the native
+        // viewport/window if Chromium cannot expose a hit, rather than choose a hidden row.
+        if (BrowserHoverHitTest.IsChromium(handle)) return BrowserHoverHitTest.Find(handle, bounds, point, scale) ?? best;
         try
         {
             var request = new CacheRequest { TreeScope = TreeScope.Element };
@@ -80,16 +85,17 @@ public static class HoverRegionWorker
                     if (data.IsOffscreen) continue;
                     var r = data.BoundingRectangle;
                     bool valid = !r.IsEmpty && double.IsFinite(r.X) && double.IsFinite(r.Y) && double.IsFinite(r.Right) && double.IsFinite(r.Bottom);
+                    bool atomic = data.ControlType == ControlType.Button || data.ControlType == ControlType.Edit || data.ControlType == ControlType.CheckBox ||
+                        data.ControlType == ControlType.RadioButton || data.ControlType == ControlType.ComboBox || data.ControlType == ControlType.ListItem ||
+                        data.ControlType == ControlType.DataItem || data.ControlType == ControlType.TreeItem || data.ControlType == ControlType.Image || data.ControlType == ControlType.Text;
                     if (valid)
                     {
                         var rect = new PixelRect(r.X, r.Y, r.Width, r.Height).Intersect(bounds);
                         if (!rect.Contains(point)) continue;
-                        // Raw glyph fragments are not useful screenshot regions; semantic controls are.
-                        if (data.ControlType != ControlType.ToolTip) Consider(rect);
+                        // Prefer complete panels/lists, not individual fields, labels or rows.
+                        if (!atomic && data.ControlType != ControlType.ToolTip) Consider(rect);
                     }
-                    if (data.ControlType == ControlType.Button || data.ControlType == ControlType.Edit || data.ControlType == ControlType.CheckBox ||
-                        data.ControlType == ControlType.RadioButton || data.ControlType == ControlType.ComboBox || data.ControlType == ControlType.ListItem ||
-                        data.ControlType == ControlType.DataItem || data.ControlType == ControlType.TreeItem || data.ControlType == ControlType.Image || data.ControlType == ControlType.Text) continue;
+                    if (atomic) continue;
                     Visit(child, depth + 1);
                 }
             }
@@ -98,6 +104,8 @@ public static class HoverRegionWorker
         catch (Exception error) when (error is ElementNotAvailableException or InvalidOperationException or COMException or System.UnauthorizedAccessException) { }
         return best;
     }
+    internal static bool IsUsefulRegion(PixelRect rect, double scale) => rect.Width >= 160 * scale && rect.Height >= 96 * scale;
+
     private delegate bool ChildCallback(IntPtr hwnd, IntPtr data);
     [DllImport("user32.dll")] private static extern bool EnumChildWindows(IntPtr hwnd, ChildCallback callback, IntPtr data);
     [DllImport("user32.dll")] private static extern bool IsWindowVisible(IntPtr hwnd);

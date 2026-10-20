@@ -45,12 +45,13 @@ internal static class HoverRegionChecks
         var desktop = new DesktopCaptureService();
         var originalCursor = desktop.CursorPosition;
         var button = new Button { Content = "Public action", Width = 150, Height = 44, Margin = new Thickness(12) };
-        var tools = new ToolBar(); tools.Items.Add(button);
+        var tools = new ToolBar { Height = 100 }; tools.Items.Add(button);
         var edit = new TextBox { Text = "Public editable text", Width = 250, Height = 60, Margin = new Thickness(12) };
+        var editPanel = new GroupBox { Header = "Public input panel", Width = 300, Height = 110, Margin = new Thickness(12), Content = edit };
         var list = new ListBox { Width = 250, Height = 120, Margin = new Thickness(12), ItemsSource = new[] { "Public row one", "Public row two", "Public row three" } };
         var panel = new GroupBox { Header = "Public panel", Width = 270, Height = 100, Margin = new Thickness(12), Content = new Border { Background = Brushes.PaleGreen } };
-        var stack = new StackPanel(); stack.Children.Add(tools); stack.Children.Add(edit); stack.Children.Add(list); stack.Children.Add(panel);
-        var window = new Window { Style = null, Title = "Public smart selection fixture", Left = 70, Top = 70, Width = 420, Height = 540, Content = stack, Background = Brushes.White };
+        var stack = new StackPanel(); stack.Children.Add(tools); stack.Children.Add(editPanel); stack.Children.Add(list); stack.Children.Add(panel);
+        var window = new Window { Style = null, Title = "Public smart selection fixture", Left = 70, Top = 30, Width = 420, Height = 620, Content = stack, Background = Brushes.White };
         SelectionSession? session = null; RecordingExport? export = null; DesktopFrame? frame = null;
         int workerPid = 0;
         var times = new List<double>();
@@ -73,9 +74,9 @@ internal static class HoverRegionChecks
             return new PixelRect(a.X, a.Y, b.X - a.X, b.Y - a.Y).RoundOut();
         }
         PixelPoint Center(FrameworkElement element) { var r = Bounds(element); return new(r.X + r.Width / 2, r.Y + r.Height / 2); }
-        void Hover(FrameworkElement element)
+        void Hover(FrameworkElement element, FrameworkElement? region = null)
         {
-            var expected = Bounds(element); var clock = Stopwatch.StartNew(); Move(Center(element));
+            var expected = Bounds(region ?? element); var clock = Stopwatch.StartNew(); Move(Center(element));
             Wait(() => session!.ViewModel.DisplayedSelection == expected, "Internal region not selected: " + element.GetType().Name);
             times.Add(clock.Elapsed.TotalMilliseconds);
         }
@@ -85,42 +86,42 @@ internal static class HoverRegionChecks
             Require(hotkey.Register(HotkeyGesture.Default), "Smart selection hotkey could not register.");
             hotkey.Triggered += Open;
             Move(Center(button)); HotkeyChecks.Press(0x11, 0x12, 0x41);
-            Wait(() => session is not null && session.ViewModel.DisplayedSelection == Bounds(button), "Initial hover did not refine the real toolbar button under the frozen overlay.");
+            Wait(() => session is not null && session.ViewModel.DisplayedSelection == Bounds(tools), "Initial hover did not choose the complete toolbar instead of a small button.");
             Require(session!.ViewModel.Selection.IsEmpty && session.Editor is null, "Hover entered editing without a click.");
-            Hover(edit);
+            Hover(edit, editPanel);
             // Target the blank part of the list: rows should not replace the complete list region there.
             var listBounds = Bounds(list); Move(new(listBounds.Right - 12, listBounds.Bottom - 12));
             Wait(() => session!.ViewModel.DisplayedSelection == listBounds, "List background was not recognized as the list region.");
             var item = (ListBoxItem)list.ItemContainerGenerator.ContainerFromIndex(1);
-            Hover(item);
+            Hover(item, list);
             var panelBounds = Bounds(panel); Move(new(panelBounds.X + 30, panelBounds.Bottom - 25));
             Wait(() => session!.ViewModel.DisplayedSelection == panelBounds, "Panel background was not recognized.");
-            Hover(button);
+            Hover(button, tools);
             SavePreview(Application.Current.Windows.OfType<SelectionWindow>().Single(w => w.IsActive));
             using var liveWorker = Process.GetProcessById(workerPid);
             double workerMiB = liveWorker.WorkingSet64 / (1024.0 * 1024.0);
-            var expected = Bounds(button); int releasedPid = workerPid;
+            var expected = Bounds(tools); int releasedPid = workerPid;
             HotkeyChecks.Press(0x0D);
             Wait(() => session.Completion.IsCompleted && Clipboard.ContainsImage(), "Enter did not copy the hovered internal region.");
             var result = Clipboard.GetImage();
             var crop = new CroppedBitmap(frame!.Image, new Int32Rect((int)(expected.X - frame.Bounds.X), (int)(expected.Y - frame.Bounds.Y), (int)expected.Width, (int)expected.Height));
             Require(export!.Copies == 1 && result.PixelWidth == crop.PixelWidth && result.PixelHeight == crop.PixelHeight && Pixels(result).SequenceEqual(Pixels(crop)), "Smart Enter copied different pixels from the highlighted frozen region.");
             Wait(() => Exited(releasedPid), "Smart selection worker survived copy completion.");
-            Console.WriteLine("PASS native smart hover: toolbar button, text input, list, list row and panel; Enter copies the frozen internal region without a click; helper exits.");
+            Console.WriteLine("PASS native smart hover: complete toolbar/input panel/list; small buttons/fields/rows do not fragment the region; Enter copies the frozen internal region without a click; helper exits.");
             hotkey.Triggered -= Open;
 
             VerifyStaleAndManual(desktop, window, button);
             VerifyTimeout(desktop, window);
-            VerifyCoordinator(hotkey, window, button);
+            VerifyCoordinator(hotkey, window, button, tools);
             VerifyCancelNoPrompt(desktop, window);
             SmartBrowserChecks.Verify();
             Directory.CreateDirectory("artifacts/validation");
             File.WriteAllText("artifacts/validation/smart-selection.json", JsonSerializer.Serialize(new {
-                ToolbarButton = true, TextInput = true, List = true, ListRow = true, Panel = true,
+                ToolbarRegion = true, InputPanel = true, List = true, ListRowsUseList = true, Panel = true,
                 EnterCopiesFrozenRegion = true, WorkerReleased = true, StaleResultsIgnored = true,
                 ManualSelectionPreserved = true, EscapeResponsive = true, TimeoutFallsBack = true,
                 NoRestartStorm = true, CoordinatorWorkerHost = true, CancelButtonNoPrompt = true, EscapeNoPrompt = true, EditorCancelNoPrompt = true,
-                CancelPreservesClipboard = true, ChromeButton = true, ChromePanel = true, ChromeEnterPixels = true,
+                CancelPreservesClipboard = true, ChromeSmallButtonUsesPage = true, ChromePanel = true, ChromeEnterPixels = true,
                 WorkerWorkingSetMiB = workerMiB, WarmHoverMilliseconds = times
             }, new JsonSerializerOptions { WriteIndented = true }));
         }
@@ -169,7 +170,7 @@ internal static class HoverRegionChecks
         Console.WriteLine("PASS dirty screenshot red cancel and native Escape plus independent-editor red cancel close directly without confirmation; clipboard is preserved.");
     }
 
-    private static void VerifyCoordinator(HotkeyService hotkey, Window owner, FrameworkElement button)
+    private static void VerifyCoordinator(HotkeyService hotkey, Window owner, FrameworkElement button, FrameworkElement region)
     {
         var desktop = new RecordingCapture(); var export = new RecordingExport(); var renderer = new AnnotationRenderer();
         using var pins = new PinManager(export);
@@ -180,7 +181,7 @@ internal static class HoverRegionChecks
         try
         {
             owner.Activate(); var point = button.PointToScreen(new(button.ActualWidth / 2, button.ActualHeight / 2));
-            var a = button.PointToScreen(new()); var b = button.PointToScreen(new(button.ActualWidth, button.ActualHeight));
+            var a = region.PointToScreen(new()); var b = region.PointToScreen(new(region.ActualWidth, region.ActualHeight));
             var expected = new PixelRect(a.X, a.Y, b.X - a.X, b.Y - a.Y).RoundOut();
             SetPhysicalCursorPos((int)point.X, (int)point.Y); HotkeyChecks.Press(0x11, 0x12, 0x41);
             Wait(() => Application.Current.Windows.OfType<SelectionWindow>().Any(w => TextWindowChecks.Descendants<Border>(w)

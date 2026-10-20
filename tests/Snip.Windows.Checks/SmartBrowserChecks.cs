@@ -80,9 +80,9 @@ internal static class SmartBrowserChecks
                 () => new HoverRegionProbe(() => new ProcessStartInfo(Path.GetFullPath("src/Snip.App/bin/Release/net8.0-windows10.0.19041.0/Snip.exe"))));
             session.Show();
             session.ViewModel.Changed += (_, _) => Console.WriteLine("Public Chrome hover bounds: " + session.ViewModel.DisplayedSelection);
-            var expectedButton = new PixelRect(viewport.X + 80, viewport.Y + 60, 220, 80);
+            var expectedButton = viewport;
             TextWindowChecks.PumpUntil(() => session.ViewModel.DisplayedSelection == expectedButton, TimeSpan.FromSeconds(7));
-            Console.WriteLine("PASS real Chrome accessibility button selection under a frozen overlay: " + session.ViewModel.DisplayedSelection);
+            Console.WriteLine("PASS real Chrome small button uses complete page region under a frozen overlay: " + session.ViewModel.DisplayedSelection);
             var panelPoint = new PixelPoint(viewport.X + 450, viewport.Y + 340);
             SetPhysicalCursorPos((int)panelPoint.X, (int)panelPoint.Y);
             var expectedPanel = new PixelRect(viewport.X + 80, viewport.Y + 180, 420, 200);
