@@ -13,7 +13,7 @@ namespace Snip.Infrastructure;
 /// <summary>Reads only geometry/control types. A stuck accessibility provider cannot hold the app UI.</summary>
 public static class HoverRegionWorker
 {
-    public static int Run(Stream input, Stream output)
+    public static int Run(Stream input, Stream output, TextWriter? trace = null)
     {
         using var watchdog = new Timer(_ => Environment.Exit(8), null, Timeout.Infinite, Timeout.Infinite);
         byte[] request = new byte[64], response = new byte[32];
@@ -33,7 +33,7 @@ public static class HoverRegionWorker
                 {
                     using var pixels = new PhysicalDesktopScope();
                     GetWindowThreadProcessId(handle, out int actualPid);
-                    if (pid == actualPid && IsWindowVisible(handle)) result = Find(handle, bounds, point);
+                    if (pid == actualPid && IsWindowVisible(handle)) result = Find(handle, bounds, point, trace);
                 }
                 double[] values = [result.X, result.Y, result.Width, result.Height];
                 for (int i = 0; i < values.Length; i++) BinaryPrimitives.WriteDoubleLittleEndian(response.AsSpan(i * 8), values[i]);
@@ -43,13 +43,14 @@ public static class HoverRegionWorker
         catch (Exception error) when (error is IOException or ObjectDisposedException) { return 0; }
     }
 
-    private static PixelRect Find(IntPtr handle, PixelRect bounds, PixelPoint point)
+    private static PixelRect Find(IntPtr handle, PixelRect bounds, PixelPoint point, TextWriter? trace)
     {
         var clock = Stopwatch.StartNew();
         var best = bounds;
         bool chromium = BrowserHoverHitTest.IsChromium(handle);
         PixelRect page = default;
         double scale = Math.Max(96, DesktopWindows.GetDpiForWindow(handle)) / 96.0;
+        trace?.WriteLine($"Public native hover: chromium={chromium}; scale={scale}; bounds={bounds}; point={point}");
         double Area(PixelRect r) => r.Width * r.Height;
         void Consider(PixelRect rect)
         {
@@ -64,6 +65,11 @@ public static class HoverRegionWorker
             // before the first callback and incorrectly fall back to the whole browser.
             // Accessibility below keeps its own time budget; the helper has a watchdog.
             if (++nativeCount > 512) return false;
+            if (trace is not null)
+            {
+                var className=new StringBuilder(64); GetClassName(child,className,className.Capacity); GetWindowRect(child,out var native);
+                trace.WriteLine($"Public native child: class={className}; visible={IsWindowVisible(child)}; rect={native.Left},{native.Top},{native.Right},{native.Bottom}");
+            }
             if (IsWindowVisible(child) && GetWindowRect(child, out var rect))
             {
                 var region = new PixelRect(rect.Left, rect.Top, rect.Right - rect.Left, rect.Bottom - rect.Top).Intersect(bounds).RoundOut();
@@ -79,6 +85,7 @@ public static class HoverRegionWorker
             return true;
         };
         EnumChildWindows(handle, callback, IntPtr.Zero);
+        trace?.WriteLine($"Public native result: count={nativeCount}; page={page}; best={best}; elapsed={clock.ElapsedMilliseconds}");
         // Area alone cannot establish visibility: CSS dialogs and embedded pages leave
         // smaller background controls in the accessibility tree. Fail safely to the native
         // viewport/window if Chromium cannot expose a hit, rather than choose a hidden row.

@@ -125,7 +125,7 @@ public partial class App : Application
     private async void RunHoverWorker()
     {
         int code;
-        try { code = await Task.Run(() => HoverRegionWorker.Run(Console.OpenStandardInput(), Console.OpenStandardOutput())); }
+        try { code = await Task.Run(() => HoverRegionWorker.Run(Console.OpenStandardInput(), Console.OpenStandardOutput(), Environment.GetEnvironmentVariable("SNIP_HOVER_TRACE") == "geometry" ? Console.Error : null)); }
         catch { code = 6; }
         Shutdown(code);
     }
