@@ -54,11 +54,7 @@ public sealed class SelectionWindow : Window
             session.Cancel();
         };
     }
-    private void Cancel()
-    {
-        if (session.Editor?.IsDirty == true && MessageBox.Show(this, "放弃当前截图和标注？", "取消截图", MessageBoxButton.OKCancel) != MessageBoxResult.OK) return;
-        session.Cancel();
-    }
+    private void Cancel() => session.Cancel();
     private void RefreshEditor(object? sender, EventArgs e)
     {
         if (editorCanvas is not null) { overlay.Children.Remove(editorCanvas); editorCanvas = null; }

@@ -1,14 +1,18 @@
 using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
+using System.Text;
 using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Automation.Peers;
+using System.Windows.Automation.Provider;
 using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using Snip.App.Services;
+using Snip.App.ViewModels;
 using Snip.App.Views;
 using Snip.Core;
 using Snip.Infrastructure;
@@ -18,6 +22,11 @@ namespace Snip.Windows.Checks;
 internal static class HoverRegionChecks
 {
     [DllImport("user32.dll")] private static extern bool SetPhysicalCursorPos(int x, int y);
+    private delegate bool WindowCallback(IntPtr window, IntPtr data);
+    [DllImport("user32.dll")] private static extern bool EnumWindows(WindowCallback callback, IntPtr data);
+    [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(IntPtr window, out int pid);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern int GetClassName(IntPtr window, StringBuilder value, int count);
+    [DllImport("user32.dll")] private static extern bool PostMessage(IntPtr window, uint message, IntPtr wParam, IntPtr lParam);
     internal static int StallWorker() { Thread.Sleep(20_000); return 0; }
     private static string WorkerExe => Path.GetFullPath("src/Snip.App/bin/Release/net8.0-windows10.0.19041.0/Snip.exe");
     private static HoverRegionProbe RealProbe() => new(() => new ProcessStartInfo(WorkerExe));
@@ -103,13 +112,15 @@ internal static class HoverRegionChecks
             VerifyStaleAndManual(desktop, window, button);
             VerifyTimeout(desktop, window);
             VerifyCoordinator(hotkey, window, button);
+            VerifyCancelNoPrompt(desktop, window);
             SmartBrowserChecks.Verify();
             Directory.CreateDirectory("artifacts/validation");
             File.WriteAllText("artifacts/validation/smart-selection.json", JsonSerializer.Serialize(new {
                 ToolbarButton = true, TextInput = true, List = true, ListRow = true, Panel = true,
                 EnterCopiesFrozenRegion = true, WorkerReleased = true, StaleResultsIgnored = true,
                 ManualSelectionPreserved = true, EscapeResponsive = true, TimeoutFallsBack = true,
-                NoRestartStorm = true, CoordinatorWorkerHost = true, ChromeButton = true, ChromePanel = true, ChromeEnterPixels = true,
+                NoRestartStorm = true, CoordinatorWorkerHost = true, CancelButtonNoPrompt = true, EscapeNoPrompt = true, EditorCancelNoPrompt = true,
+                CancelPreservesClipboard = true, ChromeButton = true, ChromePanel = true, ChromeEnterPixels = true,
                 WorkerWorkingSetMiB = workerMiB, WarmHoverMilliseconds = times
             }, new JsonSerializerOptions { WriteIndented = true }));
         }
@@ -118,6 +129,44 @@ internal static class HoverRegionChecks
             hotkey.Triggered -= Open; foreach (var owned in sessions) owned.Dispose(); window.Close();
             SetPhysicalCursorPos((int)originalCursor.X, (int)originalCursor.Y);
         }
+    }
+
+    private static void VerifyCancelNoPrompt(DesktopCaptureService desktop, Window owner)
+    {
+        var target = DesktopWindows.Snapshot(includeCurrentProcess: true).Single(w => w.Handle == new WindowInteropHelper(owner).Handle);
+        foreach (bool escape in new[] { false, true })
+        {
+            Clipboard.SetText("Public dirty-selection cancellation sentinel");
+            using var selection = new SelectionSession(desktop.Capture(), desktop, new AnnotationRenderer(), new RecordingExport(), [target]);
+            selection.Show(); selection.ViewModel.SetSelection(new(target.Bounds.X + 20, target.Bounds.Y + 50, 220, 180)); selection.BeginEditing();
+            selection.Editor!.BeginPointer(new(20, 20), false); selection.Editor.EndPointer(new(100, 80));
+            Require(selection.Editor.IsDirty, "Cancellation fixture must contain unsaved annotations.");
+            using var detector = new PromptDetector();
+            if (escape) HotkeyChecks.Press(0x1B);
+            else
+            {
+                var button = Application.Current.Windows.OfType<SelectionWindow>().SelectMany(w => TextWindowChecks.Descendants<Button>(w))
+                    .Single(b => b.IsVisible && Equals(b.ToolTip, "取消截图"));
+                ((IInvokeProvider)new ButtonAutomationPeer(button).GetPattern(PatternInterface.Invoke)).Invoke();
+            }
+            Wait(() => selection.Completion.IsCompleted || detector.Seen, "Cancelling a dirty screenshot required another action.");
+            Require(!detector.Seen && selection.Completion.IsCompleted && Clipboard.ContainsText() && Clipboard.GetText() == "Public dirty-selection cancellation sentinel", "Dirty screenshot cancellation prompted again or changed clipboard.");
+        }
+        var renderer = new AnnotationRenderer(); var export = new RecordingExport();
+        using var pins = new PinManager(export);
+        var hub = new FeatureHub(renderer, export, desktop, pins);
+        var image = desktop.CaptureRegion(new(target.Bounds.X + 20, target.Bounds.Y + 50, 220, 180));
+        var vm = new EditorViewModel(image, renderer, export, new NoDialogs());
+        vm.BeginPointer(new(20, 20), false); vm.EndPointer(new(100, 80));
+        var editor = hub.OpenEditor(vm);
+        using (var detector = new PromptDetector())
+        {
+            var cancel = TextWindowChecks.Descendants<Button>(editor).Single(b => b.IsVisible && Equals(b.ToolTip, "取消截图"));
+            ((IInvokeProvider)new ButtonAutomationPeer(cancel).GetPattern(PatternInterface.Invoke)).Invoke();
+            Wait(() => !editor.IsVisible || detector.Seen, "Independent editor cancel required confirmation.");
+            Require(!detector.Seen && !editor.IsVisible && export.Copies == 0 && Clipboard.GetText() == "Public dirty-selection cancellation sentinel", "Editor red cancel prompted or exported instead of discarding.");
+        }
+        Console.WriteLine("PASS dirty screenshot red cancel and native Escape plus independent-editor red cancel close directly without confirmation; clipboard is preserved.");
     }
 
     private static void VerifyCoordinator(HotkeyService hotkey, Window owner, FrameworkElement button)
@@ -241,5 +290,34 @@ internal static class HoverRegionChecks
         public DesktopFrame Capture() => Last = inner.Capture();
         public PixelPoint CursorPosition => inner.CursorPosition;
         public void PlaceOverlay(Window window, PixelRect bounds) => inner.PlaceOverlay(window, bounds);
+    }
+    private sealed class PromptDetector : IDisposable
+    {
+        private int seen;
+        private readonly System.Threading.Timer timer;
+        public bool Seen => Volatile.Read(ref seen) != 0;
+        public PromptDetector()
+        {
+            timer = new System.Threading.Timer(_ =>
+            {
+                WindowCallback callback = (window, _) =>
+                {
+                    GetWindowThreadProcessId(window, out int pid);
+                    if (pid != Environment.ProcessId) return true;
+                    var name = new StringBuilder(64); GetClassName(window, name, name.Capacity);
+                    if (name.ToString() == "#32770") { Interlocked.Exchange(ref seen, 1); PostMessage(window, 0x0010, IntPtr.Zero, IntPtr.Zero); }
+                    return true;
+                };
+                EnumWindows(callback, IntPtr.Zero);
+            }, null, 0, 25);
+        }
+        public void Dispose() => timer.Dispose();
+    }
+    private sealed class NoDialogs : IEditorDialogs
+    {
+        public string? ChoosePngPath() => throw new InvalidOperationException("No save expected.");
+        public TextInput? EditText(string text, string color, double fontSize) => throw new InvalidOperationException("No text dialog expected.");
+        public CloseChoice ConfirmClose() => throw new InvalidOperationException("No confirmation expected.");
+        public void ShowError(string message) => throw new InvalidOperationException("No error expected.");
     }
 }

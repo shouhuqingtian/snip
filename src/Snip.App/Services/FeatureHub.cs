@@ -152,7 +152,7 @@ public sealed class FeatureHub
         window.Toolbar.WindowRequested += (_, _) => window.Activate();
         window.Toolbar.ScrollRequested += _ => MessageBox.Show(window, "请使用截图快捷键或主窗口选取 Chrome/Edge 网页正文，再选择网页截图模式。", "网页截图");
         window.Toolbar.SelectionRequested += (_, _) => MessageBox.Show(window, "请使用截图快捷键或主窗口重新选择屏幕区域。", "调整选区");
-        window.Toolbar.CancelRequested += (_, _) => window.Close();
+        window.Toolbar.CancelRequested += (_, _) => window.CancelScreenshot();
         window.Toolbar.CompleteRequested += async (_, _) =>
         {
             try { if (await vm.CopyAndMarkAsync()) window.Close(); }
