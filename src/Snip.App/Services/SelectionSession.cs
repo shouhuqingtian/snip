@@ -42,7 +42,8 @@ public sealed class SelectionSession : IDisposable
     public SelectionSession(DesktopFrame frame, IDesktopCaptureService capture, AnnotationRenderer renderer, IImageExportService export, IReadOnlyList<WindowCaptureInfo> targets,
         Func<IHoverRegionProbe>? probeFactory = null)
     {
-        this.capture = capture; this.renderer = renderer; this.export = export; Targets = targets; ViewModel = new(frame);
+        this.capture = capture; this.renderer = renderer; this.export = export;
+        Targets = targets.Select(BrowserPageGeometry.Snapshot).ToArray(); ViewModel = new(frame);
         pixelInspector = new(frame);
         this.probeFactory = probeFactory; hoverTimer.Tick += ProbeHoveredRegion;
         timer.Tick += CheckLayout;

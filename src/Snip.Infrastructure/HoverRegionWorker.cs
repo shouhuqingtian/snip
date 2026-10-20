@@ -4,7 +4,6 @@ using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Threading;
-using System.Text;
 using System.Windows.Automation;
 using Snip.Core;
 
@@ -13,10 +12,10 @@ namespace Snip.Infrastructure;
 /// <summary>Reads only geometry/control types. A stuck accessibility provider cannot hold the app UI.</summary>
 public static class HoverRegionWorker
 {
-    public static int Run(Stream input, Stream output, TextWriter? trace = null)
+    public static int Run(Stream input, Stream output)
     {
         using var watchdog = new Timer(_ => Environment.Exit(8), null, Timeout.Infinite, Timeout.Infinite);
-        byte[] request = new byte[64], response = new byte[32];
+        byte[] request = new byte[96], response = new byte[32];
         try
         {
             while (true)
@@ -28,12 +27,13 @@ public static class HoverRegionWorker
                 double Value(int i) => BinaryPrimitives.ReadDoubleLittleEndian(request.AsSpan(12 + i * 8));
                 var point = new PixelPoint(Value(0), Value(1));
                 var bounds = new PixelRect(Value(2), Value(3), Value(4), Value(5));
+                var page = new PixelRect(Value(6), Value(7), Value(8), Value(9));
                 PixelRect result = default;
                 if (double.IsFinite(bounds.X) && double.IsFinite(bounds.Y) && double.IsFinite(bounds.Right) && double.IsFinite(bounds.Bottom) && !bounds.IsEmpty && bounds.Contains(point))
                 {
                     using var pixels = new PhysicalDesktopScope();
                     GetWindowThreadProcessId(handle, out int actualPid);
-                    if (pid == actualPid && IsWindowVisible(handle)) result = Find(handle, bounds, point, trace);
+                    if (pid == actualPid && IsWindowVisible(handle)) result = Find(handle, bounds, point, page);
                 }
                 double[] values = [result.X, result.Y, result.Width, result.Height];
                 for (int i = 0; i < values.Length; i++) BinaryPrimitives.WriteDoubleLittleEndian(response.AsSpan(i * 8), values[i]);
@@ -43,14 +43,21 @@ public static class HoverRegionWorker
         catch (Exception error) when (error is IOException or ObjectDisposedException) { return 0; }
     }
 
-    private static PixelRect Find(IntPtr handle, PixelRect bounds, PixelPoint point, TextWriter? trace)
+    private static PixelRect Find(IntPtr handle, PixelRect bounds, PixelPoint point, PixelRect page)
     {
         var clock = Stopwatch.StartNew();
         var best = bounds;
         bool chromium = BrowserHoverHitTest.IsChromium(handle);
-        PixelRect page = default;
         double scale = Math.Max(96, DesktopWindows.GetDpiForWindow(handle)) / 96.0;
-        trace?.WriteLine($"Public native hover: chromium={chromium}; scale={scale}; bounds={bounds}; point={point}");
+        if (chromium)
+        {
+            // Chrome may remove its renderer HWND as soon as the frozen overlay occludes
+            // it. Use the visible pre-overlay geometry, never a scrolled AX document rect.
+            bool valid = double.IsFinite(page.X) && double.IsFinite(page.Y) && double.IsFinite(page.Right) && double.IsFinite(page.Bottom) &&
+                IsUsefulRegion(page, scale) && page.Contains(point) && page.Intersect(bounds) == page;
+            var pageBounds = valid ? page : bounds;
+            return BrowserHoverHitTest.Find(handle, pageBounds, point, scale) ?? pageBounds;
+        }
         double Area(PixelRect r) => r.Width * r.Height;
         void Consider(PixelRect rect)
         {
@@ -60,40 +67,18 @@ public static class HoverRegionWorker
         int nativeCount = 0;
         ChildCallback callback = (child, _) =>
         {
-            // Native class/rectangle reads have no cross-process provider RPC. Bound their
-            // count, not elapsed time since cold-start JIT: that could skip the renderer
-            // before the first callback and incorrectly fall back to the whole browser.
-            // Accessibility below keeps its own time budget; the helper has a watchdog.
-            if (++nativeCount > 512) return false;
-            if (trace is not null)
-            {
-                var className=new StringBuilder(64); GetClassName(child,className,className.Capacity); GetWindowRect(child,out var native);
-                trace.WriteLine($"Public native child: class={className}; visible={IsWindowVisible(child)}; rect={native.Left},{native.Top},{native.Right},{native.Bottom}");
-            }
+            if (++nativeCount > 512 || clock.ElapsedMilliseconds > 100) return false;
             if (IsWindowVisible(child) && GetWindowRect(child, out var rect))
             {
                 var region = new PixelRect(rect.Left, rect.Top, rect.Right - rect.Left, rect.Bottom - rect.Top).Intersect(bounds).RoundOut();
                 Consider(region);
-                if (chromium && region.Contains(point) && IsUsefulRegion(region, scale))
-                {
-                    var name = new StringBuilder(64); GetClassName(child, name, name.Capacity);
-                    // The outer renderer is the complete visible page, including sidebars.
-                    // Nested renderer/iframe widgets must not shrink the ordinary selection.
-                    if (name.ToString() == "Chrome_RenderWidgetHostHWND" && Area(region) > Area(page)) page = region;
-                }
             }
             return true;
         };
         EnumChildWindows(handle, callback, IntPtr.Zero);
-        trace?.WriteLine($"Public native result: count={nativeCount}; page={page}; best={best}; elapsed={clock.ElapsedMilliseconds}");
         // Area alone cannot establish visibility: CSS dialogs and embedded pages leave
         // smaller background controls in the accessibility tree. Fail safely to the native
         // viewport/window if Chromium cannot expose a hit, rather than choose a hidden row.
-        if (chromium)
-        {
-            var pageBounds = page.IsEmpty ? bounds : page;
-            return BrowserHoverHitTest.Find(handle, pageBounds, point, scale) ?? pageBounds;
-        }
         try
         {
             var request = new CacheRequest { TreeScope = TreeScope.Element };
@@ -136,7 +121,6 @@ public static class HoverRegionWorker
     internal static bool IsUsefulRegion(PixelRect rect, double scale) => rect.Width >= 160 * scale && rect.Height >= 96 * scale;
 
     private delegate bool ChildCallback(IntPtr hwnd, IntPtr data);
-    [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern int GetClassName(IntPtr hwnd, StringBuilder name, int count);
     [DllImport("user32.dll")] private static extern bool EnumChildWindows(IntPtr hwnd, ChildCallback callback, IntPtr data);
     [DllImport("user32.dll")] private static extern bool IsWindowVisible(IntPtr hwnd);
     [DllImport("user32.dll")] private static extern bool GetWindowRect(IntPtr hwnd, out NativeMethods.NativeRect rect);

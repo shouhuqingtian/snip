@@ -93,6 +93,7 @@ internal static class SmartBrowserChecks
             var export = new Export();
             session = new SelectionSession(frame, desktop, new AnnotationRenderer(), export, [browser],
                 () => new TracedProbe());
+            Require(session.Targets.Single().PageBounds == viewport,"Pre-overlay browser snapshot did not preserve its visible page geometry.");
             session.Show(); SetPhysicalCursorPos((int)buttonPoint.X+6,(int)buttonPoint.Y);
             session.ViewModel.Changed += (_, _) => Console.WriteLine("Public Chrome hover bounds: " + session.ViewModel.DisplayedSelection);
             var expectedButton = viewport;
@@ -222,11 +223,7 @@ internal static class SmartBrowserChecks
     private static void Pause(int milliseconds) { var task = Task.Delay(milliseconds); TextWindowChecks.PumpUntil(() => task.IsCompleted, TimeSpan.FromSeconds(2)); }
     private sealed class TracedProbe : IHoverRegionProbe
     {
-        private readonly HoverRegionProbe inner=new(()=>
-        {
-            var start=new ProcessStartInfo(Path.GetFullPath("src/Snip.App/bin/Release/net8.0-windows10.0.19041.0/Snip.exe"));
-            start.Environment["SNIP_HOVER_TRACE"]="geometry"; return start;
-        });
+        private readonly HoverRegionProbe inner=new(()=>new ProcessStartInfo(Path.GetFullPath("src/Snip.App/bin/Release/net8.0-windows10.0.19041.0/Snip.exe")));
         public async Task<PixelRect?> FindAsync(WindowCaptureInfo target,PixelPoint point,CancellationToken token)
         {
             var clock=Stopwatch.StartNew(); Console.WriteLine($"Public Chrome probe request: point={point}; bounds={target.Bounds}");

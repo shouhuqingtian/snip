@@ -47,10 +47,11 @@ public sealed class HoverRegionProbe(Func<ProcessStartInfo> host, DiagnosticJour
                     WorkerStarted?.Invoke(current.Id);
                     try { current.PriorityClass = ProcessPriorityClass.BelowNormal; } catch (System.ComponentModel.Win32Exception) { }
                 }
-                byte[] request = new byte[64];
+                byte[] request = new byte[96];
                 BinaryPrimitives.WriteInt64LittleEndian(request, target.Handle.ToInt64());
                 BinaryPrimitives.WriteInt32LittleEndian(request.AsSpan(8), target.ProcessId);
-                double[] values = [point.X, point.Y, target.Bounds.X, target.Bounds.Y, target.Bounds.Width, target.Bounds.Height];
+                var page = target.PageBounds ?? default;
+                double[] values = [point.X, point.Y, target.Bounds.X, target.Bounds.Y, target.Bounds.Width, target.Bounds.Height, page.X, page.Y, page.Width, page.Height];
                 for (int i = 0; i < values.Length; i++) BinaryPrimitives.WriteDoubleLittleEndian(request.AsSpan(12 + i * 8), values[i]);
                 await current.StandardInput.BaseStream.WriteAsync(request, deadline.Token).ConfigureAwait(false);
                 await current.StandardInput.BaseStream.FlushAsync(deadline.Token).ConfigureAwait(false);

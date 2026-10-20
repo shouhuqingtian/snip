@@ -6,7 +6,10 @@ using Snip.Core;
 
 namespace Snip.Infrastructure;
 
-public sealed record WindowCaptureInfo(IntPtr Handle, PixelRect Bounds, int ProcessId);
+public sealed record WindowCaptureInfo(IntPtr Handle, PixelRect Bounds, int ProcessId)
+{
+    public PixelRect? PageBounds { get; init; }
+}
 
 public static class DesktopWindows
 {
