@@ -98,16 +98,18 @@ internal static class HoverRegionChecks
             Require(export!.Copies == 1 && result.PixelWidth == crop.PixelWidth && result.PixelHeight == crop.PixelHeight && Pixels(result).SequenceEqual(Pixels(crop)), "Smart Enter copied different pixels from the highlighted frozen region.");
             Wait(() => Exited(releasedPid), "Smart selection worker survived copy completion.");
             Console.WriteLine("PASS native smart hover: toolbar button, text input, list, list row and panel; Enter copies the frozen internal region without a click; helper exits.");
+            hotkey.Triggered -= Open;
 
             VerifyStaleAndManual(desktop, window, button);
             VerifyTimeout(desktop, window);
+            VerifyCoordinator(hotkey, window, button);
             SmartBrowserChecks.Verify();
             Directory.CreateDirectory("artifacts/validation");
             File.WriteAllText("artifacts/validation/smart-selection.json", JsonSerializer.Serialize(new {
                 ToolbarButton = true, TextInput = true, List = true, ListRow = true, Panel = true,
                 EnterCopiesFrozenRegion = true, WorkerReleased = true, StaleResultsIgnored = true,
                 ManualSelectionPreserved = true, EscapeResponsive = true, TimeoutFallsBack = true,
-                NoRestartStorm = true, ChromeButton = true, ChromePanel = true, ChromeEnterPixels = true,
+                NoRestartStorm = true, CoordinatorWorkerHost = true, ChromeButton = true, ChromePanel = true, ChromeEnterPixels = true,
                 WorkerWorkingSetMiB = workerMiB, WarmHoverMilliseconds = times
             }, new JsonSerializerOptions { WriteIndented = true }));
         }
@@ -116,6 +118,31 @@ internal static class HoverRegionChecks
             hotkey.Triggered -= Open; foreach (var owned in sessions) owned.Dispose(); window.Close();
             SetPhysicalCursorPos((int)originalCursor.X, (int)originalCursor.Y);
         }
+    }
+
+    private static void VerifyCoordinator(HotkeyService hotkey, Window owner, FrameworkElement button)
+    {
+        var desktop = new RecordingCapture(); var export = new RecordingExport(); var renderer = new AnnotationRenderer();
+        using var pins = new PinManager(export);
+        using var coordinator = new CaptureCoordinator(desktop, renderer, export, new FeatureHub(renderer, export, desktop, pins));
+        Task? active = null;
+        void Open(object? sender, EventArgs args) => active = coordinator.CaptureAsync();
+        hotkey.Triggered += Open;
+        try
+        {
+            owner.Activate(); var point = button.PointToScreen(new(button.ActualWidth / 2, button.ActualHeight / 2));
+            var a = button.PointToScreen(new()); var b = button.PointToScreen(new(button.ActualWidth, button.ActualHeight));
+            var expected = new PixelRect(a.X, a.Y, b.X - a.X, b.Y - a.Y).RoundOut();
+            SetPhysicalCursorPos((int)point.X, (int)point.Y); HotkeyChecks.Press(0x11, 0x12, 0x41);
+            Wait(() => Application.Current.Windows.OfType<SelectionWindow>().Any(w => TextWindowChecks.Descendants<Border>(w)
+                .Any(frame => frame.Name == "SelectionHint" && frame.Child is TextBlock hint && hint.Text.StartsWith($"{expected.Width:0} × {expected.Height:0} 像素", StringComparison.Ordinal))), "Real coordinator did not use Snip's internal-region worker.");
+            HotkeyChecks.Press(0x0D); Wait(() => active?.IsCompleted == true, "Coordinator smart Enter did not finish."); active!.GetAwaiter().GetResult();
+            var result = Clipboard.GetImage(); var frozen = desktop.Last!;
+            var crop = new CroppedBitmap(frozen.Image, new Int32Rect((int)(expected.X - frozen.Bounds.X), (int)(expected.Y - frozen.Bounds.Y), (int)expected.Width, (int)expected.Height));
+            Require(export.Copies == 1 && result.PixelWidth == crop.PixelWidth && result.PixelHeight == crop.PixelHeight && Pixels(result).SequenceEqual(Pixels(crop)), "Coordinator smart crop differs from frozen control pixels.");
+            Console.WriteLine("PASS actual CaptureCoordinator Ctrl+Alt+A uses Snip worker from a separate test host; hovered internal control Enter copies exact frozen pixels.");
+        }
+        finally { hotkey.Triggered -= Open; }
     }
 
     private static void VerifyStaleAndManual(DesktopCaptureService desktop, Window owner, FrameworkElement button)
@@ -205,5 +232,14 @@ internal static class HoverRegionChecks
         public TaskCompletionSource<PixelRect?> Result = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public Task<PixelRect?> FindAsync(WindowCaptureInfo target, PixelPoint point, CancellationToken token) { Calls++; Started = true; return Result.Task; }
         public void Dispose() => Disposed = true;
+    }
+    private sealed class RecordingCapture : IDesktopCaptureService
+    {
+        private readonly DesktopCaptureService inner = new();
+        public DesktopFrame? Last;
+        public IReadOnlyList<DisplayInfo> GetDisplays() => inner.GetDisplays();
+        public DesktopFrame Capture() => Last = inner.Capture();
+        public PixelPoint CursorPosition => inner.CursorPosition;
+        public void PlaceOverlay(Window window, PixelRect bounds) => inner.PlaceOverlay(window, bounds);
     }
 }

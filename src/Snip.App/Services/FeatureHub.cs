@@ -50,6 +50,13 @@ public sealed class FeatureHub
     internal static ProcessStartInfo WorkerHost()
     {
         string executable = Environment.ProcessPath ?? throw new InvalidOperationException("无法定位截图程序。");
+        // A library/test host must start Snip's worker entry, never recursively start itself.
+        if (System.Reflection.Assembly.GetEntryAssembly() != typeof(App).Assembly)
+        {
+            string appHost = System.IO.Path.Combine(AppContext.BaseDirectory, "Snip.exe");
+            if (!System.IO.File.Exists(appHost)) throw new InvalidOperationException("无法定位截图辅助程序。");
+            return new ProcessStartInfo(appHost);
+        }
         var info = new ProcessStartInfo(executable);
         if (System.IO.Path.GetFileNameWithoutExtension(executable).Equals("dotnet", StringComparison.OrdinalIgnoreCase))
             info.ArgumentList.Add(System.IO.Path.Combine(AppContext.BaseDirectory, "Snip.dll"));
