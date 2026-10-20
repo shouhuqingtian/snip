@@ -127,7 +127,11 @@ internal static class AnnotationInteractionChecks
                 var point = new PixelPoint(resized.Start.X, resized.Start.Y + 60);
                 Click(point); Move(point); Require(canvas.Cursor == System.Windows.Input.Cursors.SizeAll, "Outline cursor does not indicate movement.");
                 Drag(point, point + new PixelPoint(20, 20)); Near(resized.Start.X + 20, vm.BaseAnnotations[0].Start.X); Undo();
-                Click(point); Move(resized.End); Require(canvas.Cursor == System.Windows.Input.Cursors.SizeNWSE, "Resize cursor does not match the visible control point.");
+                Require(vm.BaseAnnotations[0] == resized, "Move undo did not restore rectangle before resize.");
+                Click(point); Move(resized.End);
+                var mouse = System.Windows.Input.Mouse.GetPosition(canvas);
+                Console.WriteLine($"SCALE scale={scale}; transform={canvas.LayoutTransform.Value.M11}; cursor={canvas.Cursor}; captured={canvas.IsMouseCaptured}; selected={vm.Selected?.Tool}; bounds={vm.Selected?.Bounds}; requested={resized.End}; pointer={mouse}; direct={vm.PointerHandle(new(mouse.X,mouse.Y),scale)}; size={window.ActualWidth}x{window.ActualHeight}");
+                Require(canvas.Cursor == System.Windows.Input.Cursors.SizeNWSE, "Resize cursor does not match the visible control point.");
                 Drag(resized.End, resized.End + new PixelPoint(20, 20)); Near(resized.Bounds.Width + 20, vm.BaseAnnotations[0].Bounds.Width); Undo();
                 Require(vm.BaseAnnotations[0] == resized, "Display scale changed annotation history geometry.");
             }
