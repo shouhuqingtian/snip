@@ -30,7 +30,7 @@ internal static class SmartBrowserChecks
         var file = Path.Combine(directory, "index.html");
         File.WriteAllText(file, """
             <!doctype html><meta charset="utf-8"><title>Snip smart region fixture</title>
-            <style>*{box-sizing:border-box}body{margin:0;background:#eef7f4}button{position:fixed;left:80px;top:60px;width:220px;height:80px;background:#087f65;color:white;border:0;font-size:20px}section{position:fixed;left:80px;top:180px;width:420px;height:200px;background:white;border:2px solid #087f65}</style>
+            <style>*{box-sizing:border-box}body{margin:0;min-height:100vh;background:#eef7f4}button{position:fixed;left:80px;top:60px;width:220px;height:80px;background:#087f65;color:white;border:0;font-size:20px}section{position:fixed;left:80px;top:180px;width:420px;height:200px;background:white;border:2px solid #087f65}</style>
             <button>Public capture action</button><section role="region" aria-label="Public browser panel"><h2>Public panel</h2><ul><li>Public row one</li><li>Public row two</li></ul></section>
             """);
         var start = new ProcessStartInfo(chrome) { UseShellExecute = false };
@@ -120,7 +120,7 @@ internal static class SmartBrowserChecks
             """);
         File.WriteAllText(Path.Combine(directory, "index.html"), """
             <!doctype html><meta charset="utf-8"><title>Snip smart region fixture</title>
-            <style>*{box-sizing:border-box}body{margin:0;background:#eef7f4}.row{position:absolute;left:80px;width:650px;height:28px;background:#bbddee}#modal{position:absolute;z-index:10;left:40px;top:40px;width:680px;height:400px;background:#fff;border:2px solid #087f65}iframe{position:absolute;left:28px;top:48px;width:450px;height:280px;border:0}#behind{position:absolute;z-index:15;left:530px;top:320px;width:180px;height:110px;background:#eee}#front{position:absolute;z-index:20;left:430px;top:280px;width:280px;height:150px;background:#fcebd3;border:2px solid #c76820}</style>
+            <style>*{box-sizing:border-box}body{margin:0;min-height:100vh;background:#eef7f4}.row{position:absolute;left:80px;width:650px;height:28px;background:#bbddee}#modal{position:absolute;z-index:10;left:40px;top:40px;width:680px;height:400px;background:#fff;border:2px solid #087f65}iframe{position:absolute;left:28px;top:48px;width:450px;height:280px;border:0}#behind{position:absolute;z-index:15;left:530px;top:320px;width:180px;height:110px;background:#eee}#front{position:absolute;z-index:20;left:430px;top:280px;width:280px;height:150px;background:#fcebd3;border:2px solid #c76820}</style>
             <section role="region" aria-label="Hidden original panel" style="position:absolute;left:80px;top:150px;width:650px;height:160px;background:#bbddee"></section>
             <div class="row" role="button" style="top:165px">Hidden original row one</div>
             <div class="row" role="button" style="top:250px">Hidden original row two</div>
