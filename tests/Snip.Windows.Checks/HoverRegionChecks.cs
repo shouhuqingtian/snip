@@ -135,7 +135,7 @@ internal static class HoverRegionChecks
                 EnterCopiesFrozenRegion = true, WorkerReleased = true, StaleResultsIgnored = true,
                 ManualSelectionPreserved = true, EscapeResponsive = true, TimeoutFallsBack = true,
                 NoRestartStorm = true, CoordinatorWorkerHost = true, CancelButtonNoPrompt = true, EscapeNoPrompt = true, EditorCancelNoPrompt = true,
-                CancelPreservesClipboard = true, ChromeSmallButtonUsesPage = true, ChromePanel = true, ChromeEnterPixels = true,
+                CancelPreservesClipboard = true, ChromeSmallButtonUsesPage = true, ChromePanelUsesPage = true, ChromeEnterPixels = true,
                 WorkerWorkingSetMiB = workerMiB, WarmHoverMilliseconds = times
             }, new JsonSerializerOptions { WriteIndented = true }));
         }

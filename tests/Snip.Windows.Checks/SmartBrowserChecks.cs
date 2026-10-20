@@ -30,8 +30,9 @@ internal static class SmartBrowserChecks
         var file = Path.Combine(directory, "index.html");
         File.WriteAllText(file, """
             <!doctype html><meta charset="utf-8"><title>Snip smart region fixture</title>
-            <style>*{box-sizing:border-box}body{margin:0;min-height:100vh;background:#eef7f4}button{position:fixed;left:80px;top:60px;width:220px;height:80px;background:#087f65;color:white;border:0;font-size:20px}section{position:fixed;left:80px;top:180px;width:420px;height:200px;background:white;border:2px solid #087f65}</style>
+            <style>*{box-sizing:border-box}body{margin:0;min-height:2000px;background:#eef7f4}button{position:fixed;left:80px;top:60px;width:220px;height:80px;background:#087f65;color:white;border:0;font-size:20px}section{position:fixed;left:80px;top:180px;width:420px;height:200px;background:white;border:2px solid #087f65}article{position:absolute;left:80px;top:480px;width:420px;height:1500px;background:white}</style>
             <button>Public capture action</button><section role="region" aria-label="Public browser panel"><h2>Public panel</h2><ul><li>Public row one</li><li>Public row two</li></ul></section>
+            <article role="region" aria-label="Public long narrow conversation"><p>Public scrollable content</p></article>
             """);
         var start = new ProcessStartInfo(chrome) { UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true };
         foreach (string argument in new[] { "--new-window", "--no-first-run", "--disable-background-mode", "--disable-background-networking", "--force-renderer-accessibility", "--force-device-scale-factor=1", "--disable-gpu",
@@ -97,7 +98,7 @@ internal static class SmartBrowserChecks
             Console.WriteLine("PASS real Chrome small button uses complete page region under a frozen overlay: " + session.ViewModel.DisplayedSelection);
             var panelPoint = new PixelPoint(viewport.X + 450, viewport.Y + 340);
             SetPhysicalCursorPos((int)panelPoint.X, (int)panelPoint.Y);
-            var expectedPanel = new PixelRect(viewport.X + 80, viewport.Y + 180, 420, 200);
+            var expectedPanel = viewport;
             TextWindowChecks.PumpUntil(() => session.ViewModel.DisplayedSelection == expectedPanel, TimeSpan.FromSeconds(7));
             var selected = session.ViewModel.DisplayedSelection;
             HotkeyChecks.Press(0x0D); TextWindowChecks.PumpUntil(() => session.Completion.IsCompleted && Clipboard.ContainsImage(), TimeSpan.FromSeconds(5));
@@ -106,8 +107,9 @@ internal static class SmartBrowserChecks
             byte[] a = new byte[actual.PixelWidth * actual.PixelHeight * 4], b = new byte[wanted.PixelWidth * wanted.PixelHeight * 4];
             actual.CopyPixels(a, actual.PixelWidth * 4, 0); wanted.CopyPixels(b, wanted.PixelWidth * 4, 0);
             Require(actual.PixelWidth == wanted.PixelWidth && actual.PixelHeight == wanted.PixelHeight && a.SequenceEqual(b) && export.Copies == 1, "Chrome smart selection Enter copied a different region.");
-            Console.WriteLine("PASS real Chrome panel selection and Enter copy: exact original frozen page pixels; no browser extension or model.");
+            Console.WriteLine("PASS real Chrome ordinary panel selects whole viewport and Enter copies exact original frozen page pixels.");
             session.Dispose(); session = null;
+            VerifyScrolledPage(browser, viewport, desktop);
             VerifyLayers(browser, viewport, desktop, directory);
         }
         finally
@@ -123,6 +125,34 @@ internal static class SmartBrowserChecks
             catch (Exception error) when (error is InvalidOperationException or System.ComponentModel.Win32Exception) { }
             try { Directory.Delete(directory, true); } catch (IOException) { }
         }
+    }
+    private static void VerifyScrolledPage(WindowCaptureInfo browser, PixelRect viewport, DesktopCaptureService desktop)
+    {
+        DesktopWindows.Activate(browser.Handle); HotkeyChecks.Press(0x11,0x23);
+        TextWindowChecks.PumpUntil(() =>
+        {
+            var pixel=desktop.CaptureRegion(new(viewport.X+90,viewport.Y+10,1,1));
+            byte[] bytes=new byte[4]; pixel.CopyPixels(bytes,4,0);
+            return bytes[0]==255 && bytes[1]==255 && bytes[2]==255;
+        },TimeSpan.FromSeconds(5));
+        var point=new PixelPoint(viewport.X+190,viewport.Y+420); SetPhysicalCursorPos((int)point.X,(int)point.Y);
+        var frame=desktop.Capture(); var export=new Export();
+        using var selection=new SelectionSession(frame,desktop,new AnnotationRenderer(),export,[browser],
+            ()=>new HoverRegionProbe(()=>new ProcessStartInfo(Path.GetFullPath("src/Snip.App/bin/Release/net8.0-windows10.0.19041.0/Snip.exe"))));
+        selection.Show(); SetPhysicalCursorPos((int)point.X+6,(int)point.Y);
+        TextWindowChecks.PumpUntil(()=>selection.ViewModel.DisplayedSelection==viewport,TimeSpan.FromSeconds(7));
+        var content=(FrameworkElement)Application.Current.Windows.OfType<Snip.App.Views.SelectionWindow>().Single(w=>w.IsActive).Content;
+        var preview=new RenderTargetBitmap((int)content.ActualWidth,(int)content.ActualHeight,96,96,PixelFormats.Pbgra32); preview.Render(content);
+        var encoder=new PngBitmapEncoder(); encoder.Frames.Add(BitmapFrame.Create(preview)); Directory.CreateDirectory("artifacts/validation/ui-previews");
+        using(var file=File.Create("artifacts/validation/ui-previews/45-browser-page-selection.png"))encoder.Save(file);
+        HotkeyChecks.Press(0x0D); TextWindowChecks.PumpUntil(()=>selection.Completion.IsCompleted && Clipboard.ContainsImage(),TimeSpan.FromSeconds(5));
+        var actual=Clipboard.GetImage();
+        var wanted=new CroppedBitmap(frame.Image,new((int)(viewport.X-frame.Bounds.X),(int)(viewport.Y-frame.Bounds.Y),(int)viewport.Width,(int)viewport.Height));
+        var a=new byte[actual.PixelWidth*actual.PixelHeight*4]; var b=new byte[wanted.PixelWidth*wanted.PixelHeight*4];
+        actual.CopyPixels(a,actual.PixelWidth*4,0); wanted.CopyPixels(b,wanted.PixelWidth*4,0);
+        Require(actual.PixelWidth==wanted.PixelWidth && actual.PixelHeight==wanted.PixelHeight && a.SequenceEqual(b) && export.Copies==1,"Scrolled narrow content did not copy the complete visible page.");
+        File.WriteAllText("artifacts/validation/browser-page-selection.json",JsonSerializer.Serialize(new { SmallButtonUsesPage=true, OrdinaryPanelUsesPage=true, ScrolledNarrowContentUsesPage=true, ExcludesBrowserChrome=true, EnterCopiesExactViewport=true }));
+        Console.WriteLine("PASS real scrolled Chrome narrow content selects complete native viewport, excludes browser chrome, and copies exact frozen viewport pixels.");
     }
     private static void VerifyLayers(WindowCaptureInfo browser, PixelRect viewport, DesktopCaptureService desktop, string directory)
     {

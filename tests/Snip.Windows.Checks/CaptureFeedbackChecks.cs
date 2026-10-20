@@ -35,6 +35,7 @@ internal static class CaptureFeedbackChecks
         {
             Ui.EnsureTheme(); owner.Show(); owner.Activate(); owner.UpdateLayout(); Move(new(180,200)); Pause(100);
             var target=DesktopWindows.Snapshot(includeCurrentProcess:true).Single(w=>w.Handle==new WindowInteropHelper(owner).Handle);
+            VerifyPixelInspector(desktop,target,owner);
             VerifyHoverRevisions(desktop,target,owner);
             VerifyMiddleAndNotice(desktop,target,owner,notifications);
             VerifyCoordinator(desktop,target,owner,notifications);
@@ -52,6 +53,38 @@ internal static class CaptureFeedbackChecks
         }
         catch(Exception error) { Console.Error.WriteLine(error); return 1; }
         finally { notifications.Hide(); owner.Close(); SetPhysicalCursorPos((int)cursor.X,(int)cursor.Y); SynchronizationContext.SetSynchronizationContext(previous); }
+    }
+    private static void VerifyPixelInspector(DesktopCaptureService desktop,WindowCaptureInfo target,Window owner)
+    {
+        // A 192-DPI bitmap with negative desktop coordinates and a monitor gap must
+        // still address physical source pixels, not scaled DIPs or an adjacent pixel.
+        byte[] pixels=new byte[128*96*3]; int offset=(6*128+2)*3;
+        pixels[offset]=0x56; pixels[offset+1]=0x34; pixels[offset+2]=0x12;
+        var bitmap=BitmapSource.Create(128,96,192,192,PixelFormats.Bgr24,null,pixels,128*3); bitmap.Freeze();
+        var synthetic=new DesktopFrame(bitmap,new(-100,-50,128,96),[new("left",new(-100,-50,64,96),true),new("right",new(-16,-50,44,96),false)]);
+        var inspector=new FrozenPixelInspector(synthetic);
+        var sample=inspector.Read(new(-97.8,-43.4));
+        Require(sample==new PixelReading(new(-98,-44),"#123456"),"Negative-origin/high-DPI sampling changed physical position or RGB order.");
+        Require(inspector.Read(new(-20,0)) is null && inspector.Read(new(-36,0)) is null && inspector.Read(new(double.NaN,0)) is null && inspector.Read(new(28,0)) is null,"Pixel inspector accepted a monitor gap or out-of-range point.");
+        var alpha=BitmapSource.Create(1,1,96,96,PixelFormats.Pbgra32,null,new byte[]{0,0,128,128},4); alpha.Freeze();
+        Require(new FrozenPixelInspector(new(alpha,new(0,0,1,1),[new("one",new(0,0,1,1),true)])).Read(new(0,0))?.Hex=="#FF0000","Premultiplied pixel fallback changed color.");
+        owner.Activate(); Move(new(target.Bounds.X+100,target.Bounds.Y+110));
+        var frame=desktop.Capture(); var export=new GateExport();
+        using var selection=new SelectionSession(frame,desktop,new AnnotationRenderer(),export,[target]);
+        selection.Show(); owner.Background=Brushes.Red; owner.UpdateLayout();
+        var point=new PixelPoint(target.Bounds.X+130,target.Bounds.Y+120); Move(point);
+        Require(selection.PixelReading==new PixelReading(point,"#6495ED"),"Selection pixel inspector sampled shaded/live pixels or wrong physical position.");
+        HotkeyChecks.Press(0x11,0x43); Wait(()=>Clipboard.ContainsText() && Clipboard.GetText()=="#6495ED");
+        Require(!selection.Completion.IsCompleted && export.Copies==0 && !selection.Editing && selection.ColorCopyHint=="色值已复制","Ctrl+C finished the screenshot or failed to report color success.");
+        var window=Application.Current.Windows.OfType<SelectionWindow>().Single(w=>w.IsActive);
+        var content=(FrameworkElement)window.Content; window.UpdateLayout();
+        var preview=new RenderTargetBitmap((int)content.ActualWidth,(int)content.ActualHeight,96,96,PixelFormats.Pbgra32); preview.Render(content);
+        var encoder=new PngBitmapEncoder(); encoder.Frames.Add(BitmapFrame.Create(preview)); Directory.CreateDirectory("artifacts/validation/ui-previews");
+        using(var file=File.Create("artifacts/validation/ui-previews/44-coordinate-color-picker.png"))encoder.Save(file);
+        HotkeyChecks.Press(0x0D); Wait(()=>selection.Completion.IsCompleted && Clipboard.ContainsImage()); AssertClipboard(frame,target.Bounds);
+        owner.Background=Brushes.CornflowerBlue; owner.UpdateLayout(); Pause(100);
+        File.WriteAllText("artifacts/validation/pixel-inspector.json",JsonSerializer.Serialize(new { NegativeOrigin=true, HighDpiPhysicalCoordinates=true, Bgr24Color=true, PremultipliedColor=true, MonitorGapsRejected=true, FrozenUnshadedPixels=true, ControlCCopiesHex=true, ColorCopyKeepsSelection=true, EnterStillCopiesImage=true }));
+        Console.WriteLine("PASS frozen pixel inspector: physical negative/high-DPI coordinates, gaps, BGR/premultiplied formats; native Ctrl+C copies exact original HEX without ending capture; Enter still copies frozen image.");
     }
     private static void VerifyHoverRevisions(DesktopCaptureService desktop,WindowCaptureInfo target,Window owner)
     {

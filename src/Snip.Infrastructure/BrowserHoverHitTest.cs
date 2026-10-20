@@ -22,7 +22,6 @@ internal static class BrowserHoverHitTest
 
     public static PixelRect? Find(IntPtr window, PixelRect bounds, PixelPoint point, double scale)
     {
-        PixelRect? candidate = null;
         try
         {
             var iid = typeof(IAccessible).GUID;
@@ -45,24 +44,19 @@ internal static class BrowserHoverHitTest
                 int state = current.get_accState(childId) is int flags ? flags : 0;
                 current.accLocation(out int x, out int y, out int width, out int height, childId);
                 var rect = new PixelRect(x, y, width, height).Intersect(bounds).RoundOut();
-                // A label belongs to its button/list item/panel. Never turn a glyph fragment
-                // into a region, or search other branches after the topmost path was found.
-                bool container = role is 9 or 10 or 15 or 16 or 18 or 20 or 22 or 24 or 33 or 35 or 38;
-                if (container && (state & 0x18000) == 0 && HoverRegionWorker.IsUsefulRegion(rect, scale) && rect.Contains(point))
-                {
-                    // A visible web dialog is the intended screenshot window, including its
-                    // embedded document. Prefer it over controls/panels inside that dialog.
-                    if (role == 18) return rect; // ROLE_SYSTEM_DIALOG
-                    candidate ??= rect;
-                }
+                // Ordinary document/panel bounds may extend beyond the visible page after
+                // scrolling. Only semantic dialogs refine the native page viewport; never
+                // select a column, toolbar or scrolled document rectangle as the page.
+                if (role == 18 && (state & 0x18000) == 0 && HoverRegionWorker.IsUsefulRegion(rect, scale) && rect.Contains(point))
+                    return rect; // ROLE_SYSTEM_DIALOG
                 if (ReferenceEquals(current, root) && childId is int rootId && rootId == 0) break;
                 if (childId is int index && index != 0) childId = 0;
                 else if (current.accParent is IAccessible parent && !ReferenceEquals(parent, current)) current = parent;
                 else break;
             }
-            return candidate;
+            return null;
         }
         catch (Exception error) when (error is COMException or InvalidOperationException or UnauthorizedAccessException or NotImplementedException or ArgumentException) { }
-        return candidate;
+        return null;
     }
 }

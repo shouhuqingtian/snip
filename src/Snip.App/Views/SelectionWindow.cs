@@ -120,6 +120,8 @@ public sealed class SelectionWindow : Window
         if (Keyboard.FocusedElement is TextBox) return;
         if (e.Key == Key.Escape) { if (session.Editor?.CancelCurrent() != true) Cancel(); e.Handled = true; }
         else if (e.Key == Key.Enter) { session.Confirm(); e.Handled = true; }
+        else if (!session.Editing && e.Key == Key.C && Keyboard.Modifiers == ModifierKeys.Control)
+        { session.CopyColor(); e.Handled = true; }
         else if (e.Key is Key.Left or Key.Right or Key.Up or Key.Down)
         { session.Nudge(e.Key == Key.Left ? -1 : e.Key == Key.Right ? 1 : 0, e.Key == Key.Up ? -1 : e.Key == Key.Down ? 1 : 0); e.Handled = true; }
         else if (session.Editor is { } vm && Keyboard.Modifiers.HasFlag(ModifierKeys.Control))
@@ -138,16 +140,17 @@ internal sealed class SelectionSurface : FrameworkElement
     private readonly IDesktopCaptureService capture;
     private readonly DisplayInfo display;
     private readonly BitmapSource image;
-    private PixelPoint dragStart, cursor;
+    private PixelPoint dragStart;
     private bool newSelection;
     public SelectionSurface(SelectionSession session, IDesktopCaptureService capture, DisplayInfo display)
     {
         this.session = session; vm = session.ViewModel; this.capture = capture; this.display = display; ClipToBounds = true; Focusable = true;
-        cursor = capture.CursorPosition;
+        session.UpdatePixelReading(capture.CursorPosition);
+        RenderOptions.SetBitmapScalingMode(this, BitmapScalingMode.NearestNeighbor);
         var b = display.Bounds; var desktop = vm.Frame.Bounds;
         image = new CroppedBitmap(vm.Frame.Image, new Int32Rect((int)(b.X - desktop.X), (int)(b.Y - desktop.Y), (int)b.Width, (int)b.Height)); image.Freeze();
-        vm.Changed += OnChanged; session.EditorChanged += OnChanged;
-        Unloaded += (_, _) => { vm.Changed -= OnChanged; session.EditorChanged -= OnChanged; if (IsMouseCaptured) ReleaseMouseCapture(); };
+        vm.Changed += OnChanged; session.EditorChanged += OnChanged; session.PixelChanged += OnChanged;
+        Unloaded += (_, _) => { vm.Changed -= OnChanged; session.EditorChanged -= OnChanged; session.PixelChanged -= OnChanged; if (IsMouseCaptured) ReleaseMouseCapture(); };
     }
     private void OnChanged(object? sender, EventArgs e) => InvalidateVisual();
     protected override void OnRender(DrawingContext dc)
@@ -167,16 +170,27 @@ internal sealed class SelectionSurface : FrameworkElement
                 foreach (double hy in new[] { local.Top, (local.Top + local.Bottom) / 2, local.Bottom })
                     if (hx != (local.Left + local.Right) / 2 || hy != (local.Top + local.Bottom) / 2)
                         dc.DrawRectangle(Brushes.White, new System.Windows.Media.Pen(Ui.Brush("AccentBrush"), 1), new Rect(hx - 3, hy - 3, 6, 6));
+            if (session.PixelReading is not { } reading) return;
+            var cursor = reading.Position;
             double x = (cursor.X - display.Bounds.X) * sx, y = (cursor.Y - display.Bounds.Y) * sy;
             if (x < 0 || y < 0 || x >= ActualWidth || y >= ActualHeight) return;
             int px = Math.Clamp((int)(cursor.X - display.Bounds.X), 0, image.PixelWidth - 1), py = Math.Clamp((int)(cursor.Y - display.Bounds.Y), 0, image.PixelHeight - 1);
             int left = Math.Max(0, px - 8), top = Math.Max(0, py - 8), w = Math.Min(17, image.PixelWidth - left), h = Math.Min(17, image.PixelHeight - top);
             var zoom = new CroppedBitmap(image, new Int32Rect(left, top, w, h));
-            double mx = Math.Clamp(x + 22, 0, Math.Max(0, ActualWidth - 120)), my = Math.Clamp(y + 22, 0, Math.Max(0, ActualHeight - 120));
-            dc.DrawRoundedRectangle(Brushes.White, new System.Windows.Media.Pen(Ui.Brush("AccentBrush"), 1.5), new Rect(mx, my, 112, 112), 6, 6);
-            dc.DrawImage(zoom, new Rect(mx + 1, my + 1, 110, 110));
-            dc.DrawLine(new System.Windows.Media.Pen(Brushes.Red, 1), new(mx + 56, my), new(mx + 56, my + 112));
-            dc.DrawLine(new System.Windows.Media.Pen(Brushes.Red, 1), new(mx, my + 56), new(mx + 112, my + 56));
+            double mx = Math.Clamp(x + 22, 4, Math.Max(4, ActualWidth - 154)), my = Math.Clamp(y + 22, 4, Math.Max(4, ActualHeight - 222));
+            dc.DrawRoundedRectangle(Brushes.White, new System.Windows.Media.Pen(Ui.Brush("AccentBrush"), 1), new Rect(mx, my, 150, 218), 6, 6);
+            dc.PushClip(new RectangleGeometry(new Rect(mx+1,my+1,148,148)));
+            dc.DrawImage(zoom, new Rect(mx + 1, my + 1, 148, 148));
+            double cx=mx+1+(px-left+0.5)*148/w, cy=my+1+(py-top+0.5)*148/h;
+            dc.DrawLine(new System.Windows.Media.Pen(Ui.Brush("AccentBrush"), 1), new(cx, my), new(cx, my+150));
+            dc.DrawLine(new System.Windows.Media.Pen(Ui.Brush("AccentBrush"), 1), new(mx, cy), new(mx+150, cy));
+            dc.Pop();
+            void Text(string value, double top, Brush brush) => dc.DrawText(new FormattedText(value,
+                System.Globalization.CultureInfo.CurrentUICulture, FlowDirection.LeftToRight, new Typeface("Microsoft YaHei UI"), 12, brush,
+                VisualTreeHelper.GetDpi(this).PixelsPerDip), new(mx+8,my+top));
+            Text($"坐标  {cursor.X:0}, {cursor.Y:0}",154,Brushes.DimGray);
+            Text($"色值  {reading.Hex}",174,Brushes.DimGray);
+            Text(session.ColorCopyHint,195,Brushes.Gray);
         }
     }
     protected override void OnMouseLeftButtonDown(MouseButtonEventArgs e)
@@ -184,7 +198,7 @@ internal sealed class SelectionSurface : FrameworkElement
     protected override void OnMouseMove(MouseEventArgs e)
     {
         if (session.Editing) return;
-        cursor = capture.CursorPosition;
+        var cursor = capture.CursorPosition; session.UpdatePixelReading(cursor);
         if (IsMouseCaptured) vm.Move(cursor);
         else session.UpdateHoveredTarget(cursor);
         Cursor = SelectionGeometry.HitTest(vm.Selection, cursor) switch

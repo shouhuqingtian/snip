@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Threading;
+using System.Text;
 using System.Windows.Automation;
 using Snip.Core;
 
@@ -46,6 +47,8 @@ public static class HoverRegionWorker
     {
         var clock = Stopwatch.StartNew();
         var best = bounds;
+        bool chromium = BrowserHoverHitTest.IsChromium(handle);
+        PixelRect page = default;
         double scale = Math.Max(96, DesktopWindows.GetDpiForWindow(handle)) / 96.0;
         double Area(PixelRect r) => r.Width * r.Height;
         void Consider(PixelRect rect)
@@ -57,14 +60,29 @@ public static class HoverRegionWorker
         ChildCallback callback = (child, _) =>
         {
             if (++nativeCount > 512 || clock.ElapsedMilliseconds > 100) return false;
-            if (IsWindowVisible(child) && GetWindowRect(child, out var rect)) Consider(new(rect.Left, rect.Top, rect.Right - rect.Left, rect.Bottom - rect.Top));
+            if (IsWindowVisible(child) && GetWindowRect(child, out var rect))
+            {
+                var region = new PixelRect(rect.Left, rect.Top, rect.Right - rect.Left, rect.Bottom - rect.Top).Intersect(bounds).RoundOut();
+                Consider(region);
+                if (chromium && region.Contains(point) && IsUsefulRegion(region, scale))
+                {
+                    var name = new StringBuilder(64); GetClassName(child, name, name.Capacity);
+                    // The outer renderer is the complete visible page, including sidebars.
+                    // Nested renderer/iframe widgets must not shrink the ordinary selection.
+                    if (name.ToString() == "Chrome_RenderWidgetHostHWND" && Area(region) > Area(page)) page = region;
+                }
+            }
             return true;
         };
         EnumChildWindows(handle, callback, IntPtr.Zero);
         // Area alone cannot establish visibility: CSS dialogs and embedded pages leave
         // smaller background controls in the accessibility tree. Fail safely to the native
         // viewport/window if Chromium cannot expose a hit, rather than choose a hidden row.
-        if (BrowserHoverHitTest.IsChromium(handle)) return BrowserHoverHitTest.Find(handle, bounds, point, scale) ?? best;
+        if (chromium)
+        {
+            var pageBounds = page.IsEmpty ? bounds : page;
+            return BrowserHoverHitTest.Find(handle, pageBounds, point, scale) ?? pageBounds;
+        }
         try
         {
             var request = new CacheRequest { TreeScope = TreeScope.Element };
@@ -107,6 +125,7 @@ public static class HoverRegionWorker
     internal static bool IsUsefulRegion(PixelRect rect, double scale) => rect.Width >= 160 * scale && rect.Height >= 96 * scale;
 
     private delegate bool ChildCallback(IntPtr hwnd, IntPtr data);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern int GetClassName(IntPtr hwnd, StringBuilder name, int count);
     [DllImport("user32.dll")] private static extern bool EnumChildWindows(IntPtr hwnd, ChildCallback callback, IntPtr data);
     [DllImport("user32.dll")] private static extern bool IsWindowVisible(IntPtr hwnd);
     [DllImport("user32.dll")] private static extern bool GetWindowRect(IntPtr hwnd, out NativeMethods.NativeRect rect);

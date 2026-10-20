@@ -24,6 +24,12 @@ public sealed class SelectionSession : IDisposable
     private bool probing, pointerMoved, hoverLocked;
     private PixelPoint entryPoint;
     private bool closed, confirming;
+    private readonly FrozenPixelInspector pixelInspector;
+    private bool copyingColor;
+    private CancellationTokenSource? colorCopyCancellation;
+    public PixelReading? PixelReading { get; private set; }
+    public string ColorCopyHint { get; private set; } = "Ctrl+C 复制色值";
+    public event EventHandler? PixelChanged;
     public SelectionViewModel ViewModel { get; }
     public Task<SelectionResult?> Completion => completion.Task;
     public EditorViewModel? Editor { get; private set; }
@@ -37,6 +43,7 @@ public sealed class SelectionSession : IDisposable
         Func<IHoverRegionProbe>? probeFactory = null)
     {
         this.capture = capture; this.renderer = renderer; this.export = export; Targets = targets; ViewModel = new(frame);
+        pixelInspector = new(frame);
         this.probeFactory = probeFactory; hoverTimer.Tick += ProbeHoveredRegion;
         timer.Tick += CheckLayout;
     }
@@ -58,6 +65,7 @@ public sealed class SelectionSession : IDisposable
     }
     public void UpdateHoveredTarget(PixelPoint point)
     {
+        UpdatePixelReading(point);
         if (closed || Editing || hoverLocked || ViewModel.IsDragging || !ViewModel.Selection.IsEmpty) return;
         var target = Targets.FirstOrDefault(w => w.Bounds.Contains(point) && !DesktopWindows.IsInputTransparent(w.Handle));
         if (target == hoveredTarget && point == hoveredPoint) return;
@@ -67,6 +75,30 @@ public sealed class SelectionSession : IDisposable
         hoveredTarget = target; hoveredPoint = point; hoverRevision++;
         if (!preserve) ViewModel.SetHoveredSelection(target?.Bounds ?? default);
         if (pointerMoved && probeFactory is not null && target is not null && !probing) hoverTimer.Start();
+    }
+    public void UpdatePixelReading(PixelPoint point)
+    {
+        if (closed || Editing || PixelReading?.Position == point) return;
+        PixelReading = pixelInspector.Read(point); ColorCopyHint = "Ctrl+C 复制色值";
+        PixelChanged?.Invoke(this, EventArgs.Empty);
+    }
+    public async void CopyColor()
+    {
+        if (closed || Editing || copyingColor) return;
+        UpdatePixelReading(capture.CursorPosition);
+        if (PixelReading is not { } reading) return;
+        copyingColor = true;
+        using var request = CancellationTokenSource.CreateLinkedTokenSource(hoverLifetime.Token);
+        colorCopyCancellation = request;
+        try
+        {
+            await new TextClipboardService().CopyAsync(reading.Hex, request.Token);
+            if (!closed && PixelReading == reading) ColorCopyHint = "色值已复制";
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception error) when (error is System.Runtime.InteropServices.ExternalException or System.ComponentModel.Win32Exception or InvalidOperationException)
+        { if (!closed && PixelReading == reading) ColorCopyHint = "复制失败，请重试"; }
+        finally { colorCopyCancellation = null; copyingColor = false; if (!closed) PixelChanged?.Invoke(this, EventArgs.Empty); }
     }
     private async void ProbeHoveredRegion(object? sender, EventArgs args)
     {
@@ -96,6 +128,7 @@ public sealed class SelectionSession : IDisposable
     public void BeginEditing()
     {
         if (closed || !ViewModel.CanConfirm) return;
+        colorCopyCancellation?.Cancel();
         LockHoveredSelection();
         var r = ViewModel.Selection.RoundOut();
         var image = new WriteableBitmap(new CroppedBitmap(ViewModel.Frame.Image,
