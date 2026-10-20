@@ -20,7 +20,6 @@ internal static class Program
         if (args.FirstOrDefault() == "--clipboard-lock") return ClipboardWindowChecks.HoldClipboard(args[1], args[2]);
         if (args.FirstOrDefault() == "--render-benchmark") return RenderPerformanceCheck.Benchmark(args[1]);
         if (args.FirstOrDefault() == "--interaction-benchmark") return InteractionPerformanceCheck.Benchmark(args[1],args[2]);
-        if (args.Contains("--editor-interaction")) { int result = Main([]); return result == 0 ? RenderPerformanceCheck.Run() : result; }
         if (args.Contains("--editor-performance")) return RenderPerformanceCheck.Run();
         if (args.Contains("--annotation-ui")) return AnnotationInteractionChecks.Run();
         if (args.Contains("--editor-zoom")) return EditorZoomChecks.Run();
