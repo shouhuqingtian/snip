@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.IO;
+using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
@@ -42,6 +43,7 @@ internal static class UiGalleryCheck
                 if (dispatcherError is not null) throw dispatcherError;
                 Require(window.IsLoaded && window.IsVisible && window.ActualWidth > 0, "Window did not render: " + name);
                 var content = (FrameworkElement)window.Content;
+                if (window is SelectionWindow) CheckSelectionLayout(content);
                 foreach (var button in TextWindowChecks.Descendants<Button>(content).Where(b => b.IsVisible && b.ActualWidth > 0))
                 {
                     var bounds = button.TransformToAncestor(content).TransformBounds(new Rect(0, 0, button.ActualWidth, button.ActualHeight));
@@ -115,6 +117,40 @@ internal static class UiGalleryCheck
             using var selection = new SelectionSession(new(image, new(0, 0, 1280, 800), capture.GetDisplays()), capture, renderer, export, []);
             selection.Show(); selection.ViewModel.SetSelection(new(90, 110, 1050, 460)); selection.BeginEditing();
             Capture(app.Windows.OfType<SelectionWindow>().Single(), "13-selection-toolbar");
+            var selectionLayouts = new List<object>();
+            foreach (var (name, width, height) in new[] {
+                ("37-selection-fullscreen", 1280.0, 800.0),
+                ("38-selection-scaled", 960.0, 600.0),
+                ("39-selection-compact", 640.0, 500.0) })
+            {
+                using var edgeSelection = new SelectionSession(new(image, new(0, 0, 1280, 800), capture.GetDisplays()), capture, renderer, export, []);
+                edgeSelection.Show();
+                var window = app.Windows.OfType<SelectionWindow>().Single();
+                window.Width = width; window.Height = height; window.UpdateLayout();
+                foreach (var (label, region) in new[] {
+                    ("full", new PixelRect(0, 0, 1280, 800)),
+                    ("top-edge", new PixelRect(20, 10, 1200, 780)),
+                    ("bottom-edge", new PixelRect(25, 620, 1150, 180)),
+                    ("ordinary", new PixelRect(90, 110, 600, 360)) })
+                {
+                    edgeSelection.ViewModel.SetSelection(region); edgeSelection.BeginEditing(); window.UpdateLayout();
+                    CheckSelectionLayout((FrameworkElement)window.Content);
+                    selectionLayouts.Add(new { Case = name + "/" + label, Width = window.ActualWidth, Height = window.ActualHeight, HintAndToolbarVisible = true, NoOverlap = true, InsideWindow = true });
+                }
+                edgeSelection.AdjustSelection(); window.UpdateLayout();
+                var hint = TextWindowChecks.Descendants<Border>(window).Single(b => b.Name == "SelectionHint");
+                Require(Canvas.GetTop(hint) == 16 && !TextWindowChecks.Descendants<EditorToolbar>(window).Single().IsVisible, "Reselecting must restore the hint and hide the toolbar.");
+                edgeSelection.ViewModel.SetSelection(new(0, 0, 1280, 800)); edgeSelection.BeginEditing(); window.UpdateLayout();
+                var rendered = edgeSelection.Editor!.Compose();
+                Require(rendered.PixelWidth == image.PixelWidth && rendered.PixelHeight == image.PixelHeight, "Overlay layout changed the screenshot size.");
+                var sourcePixels = new byte[image.PixelWidth * image.PixelHeight * 4];
+                var renderedPixels = new byte[sourcePixels.Length];
+                image.CopyPixels(sourcePixels, image.PixelWidth * 4, 0); rendered.CopyPixels(renderedPixels, image.PixelWidth * 4, 0);
+                Require(sourcePixels.SequenceEqual(renderedPixels), "Hint or toolbar leaked into screenshot pixels.");
+                Capture(window, name);
+            }
+            File.WriteAllText(Path.Combine(output, "..", "selection-layout.json"), JsonSerializer.Serialize(new { Cases = selectionLayouts, ReselectResetsHint = true, ExportPixelsUnchanged = true }, new JsonSerializerOptions { WriteIndented = true }));
+            Console.WriteLine("PASS selection layout: 12 full/top/bottom/ordinary cases at 1280x800, 960x600 and 640x500 DIPs; reselect resets; original export pixels unchanged.");
             using var manualControl = new DragCaptureControl();
             manualControl.Configure(900, 600); manualControl.Begin(new(50, 50)); manualControl.Move(new(450, 580));
             var manualVm = new ManualScrollCaptureViewModel(manualControl, () => { });
@@ -162,7 +198,7 @@ internal static class UiGalleryCheck
             Capture(VoiceWindow(), "34-ai-speech-settings");
             var narrowVoice = VoiceWindow(); narrowVoice.Width = narrowVoice.MinWidth;
             Capture(narrowVoice, "35-ai-speech-settings-narrow");
-            Console.WriteLine("PASS 35 themed UI previews including original/translation reading at normal and compact sizes; three browser menu actions; no share target invoked or user screenshot used."); return 0;
+            Console.WriteLine("PASS 38 themed UI previews including full-screen/edge/scaled selection layouts and reading views; three browser menu actions; no share target invoked or user screenshot used."); return 0;
         }
         catch (Exception error)
         {
@@ -175,6 +211,17 @@ internal static class UiGalleryCheck
         }
     }
     private static void Require(bool value, string message) { if (!value) throw new InvalidOperationException(message); }
+    private static void CheckSelectionLayout(FrameworkElement content)
+    {
+        var toolbar = TextWindowChecks.Descendants<EditorToolbar>(content).Single();
+        var hint = TextWindowChecks.Descendants<Border>(content).Single(b => b.Name == "SelectionHint");
+        Require(toolbar.IsVisible && hint.IsVisible && hint.ActualWidth > 0 && hint.ActualHeight > 0, "Selection controls must remain visible.");
+        Rect Bounds(FrameworkElement element) => element.TransformToAncestor(content).TransformBounds(new Rect(element.RenderSize));
+        var hintBounds = Bounds(hint); var toolbarBounds = Bounds(toolbar);
+        Require(!hintBounds.IntersectsWith(toolbarBounds), "Selection hint overlaps the toolbar: " + hintBounds + " / " + toolbarBounds);
+        foreach (var bounds in new[] { hintBounds, toolbarBounds })
+            Require(bounds.Left >= 0 && bounds.Top >= 0 && bounds.Right <= content.ActualWidth + 1 && bounds.Bottom <= content.ActualHeight + 1, "Selection controls extend outside the window: " + bounds);
+    }
     private static BitmapSource Sample()
     {
         var visual = new DrawingVisual();

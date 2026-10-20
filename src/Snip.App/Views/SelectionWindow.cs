@@ -17,6 +17,7 @@ public sealed class SelectionWindow : Window
     private readonly EditorToolbar toolbar = new();
     private EditorCanvas? editorCanvas;
     private readonly TextBlock hint;
+    private readonly Border hintFrame;
     public DisplayInfo Display { get; }
     public SelectionWindow(SelectionSession session, IDesktopCaptureService capture, DisplayInfo display)
     {
@@ -26,7 +27,9 @@ public sealed class SelectionWindow : Window
         ShowInTaskbar = false; Topmost = true; Background = Brushes.Black;
         Width = display.Bounds.Width; Height = display.Bounds.Height;
         var root = new Grid(); root.Children.Add(new SelectionSurface(session, capture, display)); root.Children.Add(overlay);
+        toolbar.Name = "SelectionToolbar";
         toolbar.Visibility = Visibility.Collapsed;
+        toolbar.SizeChanged += (_, _) => Position(this, EventArgs.Empty);
         toolbar.CompleteRequested += (_, _) => session.Confirm(); toolbar.CancelRequested += (_, _) => Cancel();
         toolbar.WindowRequested += (_, _) => session.Request(SelectionAction.Editor);
         toolbar.SelectionRequested += (_, _) => session.AdjustSelection();
@@ -37,8 +40,8 @@ public sealed class SelectionWindow : Window
         toolbar.OcrRequested += (_, _) => session.Request(SelectionAction.Ocr);
         toolbar.TranslateRequested += (_, _) => session.Request(SelectionAction.Translate);
         overlay.Children.Add(toolbar);
-        hint = new TextBlock { Text = "悬停自动选择窗口 · Enter复制 · 拖动重新选择 · Esc取消", Foreground = Brushes.White, FontSize = 12, Padding = new Thickness(12, 8, 12, 8), IsHitTestVisible = false };
-        var hintFrame = new Border { Child = hint, CornerRadius = new CornerRadius(8), Background = new SolidColorBrush(Color.FromArgb(225, 36, 50, 57)), IsHitTestVisible = false };
+        hint = new TextBlock { Text = "悬停自动选择窗口 · Enter复制 · 拖动重新选择 · Esc取消", Foreground = Brushes.White, FontSize = 12, Padding = new Thickness(12, 8, 12, 8), TextWrapping = TextWrapping.Wrap, IsHitTestVisible = false };
+        hintFrame = new Border { Name = "SelectionHint", Child = hint, CornerRadius = new CornerRadius(8), Background = new SolidColorBrush(Color.FromArgb(225, 36, 50, 57)), IsHitTestVisible = false };
         overlay.Children.Add(hintFrame); Canvas.SetLeft(hintFrame, 16); Canvas.SetTop(hintFrame, 16); Content = root;
         SourceInitialized += (_, _) => capture.PlaceOverlay(this, display.Bounds);
         PreviewKeyDown += OnKey; session.EditorChanged += RefreshEditor; session.ViewModel.Changed += Position;
@@ -83,13 +86,33 @@ public sealed class SelectionWindow : Window
         var selectedDisplay = session.ViewModel.Frame.Displays.OrderByDescending(d => { var i = r.Intersect(d.Bounds); return i.Width * i.Height; }).First();
         bool visible = session.Editing && selectedDisplay.Name == Display.Name;
         toolbar.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
-        if (!visible || ActualWidth <= 0 || ActualHeight <= 0) return;
+        if (ActualWidth <= 0 || ActualHeight <= 0) return;
+        // Measure in overlay DIPs, including wrapped text on smaller/scaled displays.
+        hintFrame.MaxWidth = Math.Max(1, ActualWidth - 32);
+        hintFrame.Measure(new Size(hintFrame.MaxWidth, double.PositiveInfinity));
+        Canvas.SetLeft(hintFrame, 16); Canvas.SetTop(hintFrame, 16);
+        if (!visible) return;
         toolbar.Width = Math.Min(1000, Math.Max(200, ActualWidth - 24)); toolbar.Measure(new Size(toolbar.Width, double.PositiveInfinity));
         double sx = ActualWidth / Display.Bounds.Width, sy = ActualHeight / Display.Bounds.Height;
         double x = Math.Clamp((r.X - Display.Bounds.X) * sx, 12, Math.Max(12, ActualWidth - toolbar.Width - 12));
         double below = (r.Bottom - Display.Bounds.Y) * sy + 10;
         double y = below + toolbar.DesiredSize.Height <= ActualHeight - 12 ? below : (r.Y - Display.Bounds.Y) * sy - toolbar.DesiredSize.Height - 10;
         y = Math.Clamp(y, 12, Math.Max(12, ActualHeight - toolbar.DesiredSize.Height - 12));
+        var toolbarBounds = new Rect(x, y, toolbar.Width, toolbar.DesiredSize.Height);
+        var hintBounds = new Rect(new Point(16, 16), hintFrame.DesiredSize);
+        var clearance = toolbarBounds; clearance.Inflate(8, 8);
+        if (clearance.IntersectsWith(hintBounds))
+        {
+            double hintBelow = toolbarBounds.Bottom + 8;
+            double hintAbove = toolbarBounds.Top - hintBounds.Height - 8;
+            if (hintBelow + hintBounds.Height <= ActualHeight - 16)
+                Canvas.SetTop(hintFrame, hintBelow);
+            else if (hintAbove >= 16)
+                Canvas.SetTop(hintFrame, hintAbove);
+            else
+                // When neither side has room, reserve the top hint row for both controls.
+                y = hintBounds.Bottom + 8;
+        }
         Canvas.SetLeft(toolbar, x); Canvas.SetTop(toolbar, y);
     }
     private void OnKey(object sender, KeyEventArgs e)
