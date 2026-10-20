@@ -14,6 +14,14 @@ public sealed class SelectionSession : IDisposable
     private readonly List<SelectionWindow> windows = [];
     private readonly TaskCompletionSource<SelectionResult?> completion = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly DispatcherTimer timer = new() { Interval = TimeSpan.FromMilliseconds(800) };
+    private readonly DispatcherTimer hoverTimer = new() { Interval = TimeSpan.FromMilliseconds(75) };
+    private readonly Func<IHoverRegionProbe>? probeFactory;
+    private readonly CancellationTokenSource hoverLifetime = new();
+    private IHoverRegionProbe? probe;
+    private WindowCaptureInfo? hoveredTarget;
+    private PixelPoint hoveredPoint;
+    private long hoverRevision;
+    private bool probing;
     private bool closed, confirming;
     public SelectionViewModel ViewModel { get; }
     public Task<SelectionResult?> Completion => completion.Task;
@@ -24,9 +32,11 @@ public sealed class SelectionSession : IDisposable
     private readonly AnnotationRenderer renderer;
     private readonly IImageExportService export;
     public string? CancellationReason { get; private set; }
-    public SelectionSession(DesktopFrame frame, IDesktopCaptureService capture, AnnotationRenderer renderer, IImageExportService export, IReadOnlyList<WindowCaptureInfo> targets)
+    public SelectionSession(DesktopFrame frame, IDesktopCaptureService capture, AnnotationRenderer renderer, IImageExportService export, IReadOnlyList<WindowCaptureInfo> targets,
+        Func<IHoverRegionProbe>? probeFactory = null)
     {
         this.capture = capture; this.renderer = renderer; this.export = export; Targets = targets; ViewModel = new(frame);
+        this.probeFactory = probeFactory; hoverTimer.Tick += ProbeHoveredRegion;
         timer.Tick += CheckLayout;
     }
     public void Show()
@@ -47,11 +57,38 @@ public sealed class SelectionSession : IDisposable
     public void UpdateHoveredTarget(PixelPoint point)
     {
         if (closed || Editing || ViewModel.IsDragging) return;
-        ViewModel.SetHoveredSelection(Targets.FirstOrDefault(w => w.Bounds.Contains(point))?.Bounds ?? default);
+        var target = Targets.FirstOrDefault(w => w.Bounds.Contains(point) && !DesktopWindows.IsInputTransparent(w.Handle));
+        if (target == hoveredTarget && point == hoveredPoint) return;
+        bool preserve = target == hoveredTarget && ViewModel.HoveredSelection.Contains(point);
+        hoveredTarget = target; hoveredPoint = point; hoverRevision++;
+        if (!preserve) ViewModel.SetHoveredSelection(target?.Bounds ?? default);
+        if (probeFactory is not null && target is not null && !probing) hoverTimer.Start();
+    }
+    private async void ProbeHoveredRegion(object? sender, EventArgs args)
+    {
+        hoverTimer.Stop();
+        if (closed || Editing || ViewModel.IsDragging || probing || hoveredTarget is not { } target || probeFactory is null) return;
+        long revision = hoverRevision; var point = hoveredPoint;
+        probing = true;
+        try
+        {
+            var active = probe ??= probeFactory();
+            var region = await active.FindAsync(target, point, hoverLifetime.Token);
+            // The frame is frozen, but mouse position, editing and lifetime may have changed.
+            if (!closed && !Editing && !ViewModel.IsDragging && ViewModel.Selection.IsEmpty && target == hoveredTarget &&
+                region is { } rect && rect.Contains(hoveredPoint)) ViewModel.SetHoveredSelection(rect);
+        }
+        catch (Exception error) when (error is OperationCanceledException or InvalidOperationException or System.ComponentModel.Win32Exception) { }
+        finally
+        {
+            probing = false;
+            if (!closed && !Editing && !ViewModel.IsDragging && revision != hoverRevision && hoveredTarget is not null) hoverTimer.Start();
+        }
     }
     public void BeginEditing()
     {
         if (closed || !ViewModel.CanConfirm) return;
+        hoverTimer.Stop(); probe?.Dispose(); probe = null;
         var r = ViewModel.Selection.RoundOut();
         var image = new WriteableBitmap(new CroppedBitmap(ViewModel.Frame.Image,
             new Int32Rect((int)(r.X - ViewModel.Frame.Bounds.X), (int)(r.Y - ViewModel.Frame.Bounds.Y), (int)r.Width, (int)r.Height)));
@@ -109,7 +146,7 @@ public sealed class SelectionSession : IDisposable
     private void Finish(SelectionResult? rect)
     {
         if (closed) return;
-        closed = true; timer.Stop();
+        closed = true; timer.Stop(); hoverTimer.Stop(); hoverLifetime.Cancel(); hoverLifetime.Dispose(); probe?.Dispose(); probe = null;
         foreach (var window in windows) window.Close();
         windows.Clear();
         // An editor must not retain its closed overlay, session and full desktop frame.

@@ -36,6 +36,7 @@ public partial class App : Application
     {
         base.OnStartup(e);
         if (e.Args.Length == 2 && e.Args[0] == "--ocr-worker") { RunOcrWorker(e.Args[1]); return; }
+        if (e.Args.Length == 1 && e.Args[0] == "--hover-worker") { RunHoverWorker(); return; }
         diagnostics = new DiagnosticJournal(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SelfSnip", "Logs"));
         diagnostics.Record("app", "started", new { Version = DesktopDiagnostics.Version });
         DispatcherUnhandledException += (_, args) => RecordUnhandled(args.Exception, "dispatcher-unhandled");
@@ -116,6 +117,13 @@ public partial class App : Application
     {
         int code;
         try { code = await Task.Run(() => OcrWorker.RunAsync(folder, Console.OpenStandardInput(), Console.OpenStandardOutput())); }
+        catch { code = 6; }
+        Shutdown(code);
+    }
+    private async void RunHoverWorker()
+    {
+        int code;
+        try { code = await Task.Run(() => HoverRegionWorker.Run(Console.OpenStandardInput(), Console.OpenStandardOutput())); }
         catch { code = 6; }
         Shutdown(code);
     }

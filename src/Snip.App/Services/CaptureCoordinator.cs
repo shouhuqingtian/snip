@@ -41,7 +41,8 @@ public sealed class CaptureCoordinator(IDesktopCaptureService capture, Annotatio
         var frame = await Task.Run(capture.Capture);
         if (disposed) return (null, null);
         operation?.Stage("desktop-captured", new { frame.Image.PixelWidth, frame.Image.PixelHeight, DisplayCount = frame.Displays.Count });
-        using var active = new SelectionSession(frame, capture, renderer, export, DesktopWindows.Snapshot(includeCurrentProcess: true));
+        using var active = new SelectionSession(frame, capture, renderer, export, DesktopWindows.Snapshot(includeCurrentProcess: true),
+            () => new HoverRegionProbe(FeatureHub.WorkerHost, diagnostics));
         session = active;
         try
         {

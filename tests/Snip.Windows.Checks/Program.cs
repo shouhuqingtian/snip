@@ -16,6 +16,8 @@ internal static class Program
     private static int Main(string[] args)
     {
         if (args.FirstOrDefault() == "--browser-transparent-overlay") return BrowserTargetChecks.HoldTransparentOverlay(args);
+        if (args.Contains("--hover-stall")) return HoverRegionChecks.StallWorker();
+        if (args.Contains("--smart-selection")) return HoverRegionChecks.Run();
         if (args.FirstOrDefault() == "--ocr-lifetime-launcher") return EnhancedOcrChecks.LifetimeLauncher(args);
         if (args.FirstOrDefault() == "--clipboard-lock") return ClipboardWindowChecks.HoldClipboard(args[1], args[2]);
         if (args.FirstOrDefault() == "--render-benchmark") return RenderPerformanceCheck.Benchmark(args[1]);

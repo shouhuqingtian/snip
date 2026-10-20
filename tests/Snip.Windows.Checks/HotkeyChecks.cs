@@ -69,6 +69,7 @@ internal static class HotkeyChecks
             Console.WriteLine("PASS invalid saved configuration is reported for default fallback.");
             SelectionChecks.Verify(service);
             SelfCaptureChecks.Verify(service);
+            HoverRegionChecks.Verify(service);
             return 0;
         }
         catch (Exception error) { Console.Error.WriteLine(error); return 1; }

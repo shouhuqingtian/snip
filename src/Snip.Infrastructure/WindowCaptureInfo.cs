@@ -14,6 +14,8 @@ public static class DesktopWindows
     [DllImport("user32.dll")] private static extern bool SetForegroundWindow(IntPtr hwnd);
     public static IntPtr Foreground => GetForegroundWindow();
     public static void Activate(IntPtr hwnd) { if (hwnd != IntPtr.Zero) SetForegroundWindow(hwnd); }
+    [DllImport("user32.dll", EntryPoint = "GetWindowLongPtrW")] private static extern IntPtr GetWindowLongPtr(IntPtr hwnd, int index);
+    public static bool IsInputTransparent(IntPtr hwnd) => (GetWindowLongPtr(hwnd, -20).ToInt64() & 0x20) != 0;
     private delegate bool Callback(IntPtr hwnd, IntPtr data);
     [DllImport("user32.dll")] private static extern bool EnumWindows(Callback callback, IntPtr data);
     [DllImport("user32.dll")] private static extern bool IsWindowVisible(IntPtr hwnd);

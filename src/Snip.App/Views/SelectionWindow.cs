@@ -40,7 +40,7 @@ public sealed class SelectionWindow : Window
         toolbar.OcrRequested += (_, _) => session.Request(SelectionAction.Ocr);
         toolbar.TranslateRequested += (_, _) => session.Request(SelectionAction.Translate);
         overlay.Children.Add(toolbar);
-        hint = new TextBlock { Text = "悬停自动选择窗口 · Enter复制 · 拖动重新选择 · Esc取消", Foreground = Brushes.White, FontSize = 12, Padding = new Thickness(12, 8, 12, 8), TextWrapping = TextWrapping.Wrap, IsHitTestVisible = false };
+        hint = new TextBlock { Text = "悬停自动选择区域 · Enter复制 · 拖动重新选择 · Esc取消", Foreground = Brushes.White, FontSize = 12, Padding = new Thickness(12, 8, 12, 8), TextWrapping = TextWrapping.Wrap, IsHitTestVisible = false };
         hintFrame = new Border { Name = "SelectionHint", Child = hint, CornerRadius = new CornerRadius(8), Background = new SolidColorBrush(Color.FromArgb(225, 36, 50, 57)), IsHitTestVisible = false };
         overlay.Children.Add(hintFrame); Canvas.SetLeft(hintFrame, 16); Canvas.SetTop(hintFrame, 16); Content = root;
         SourceInitialized += (_, _) => capture.PlaceOverlay(this, display.Bounds);

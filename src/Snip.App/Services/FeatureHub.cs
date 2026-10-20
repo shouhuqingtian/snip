@@ -47,7 +47,7 @@ public sealed class FeatureHub
         speechSettings = new OnlineSpeechSettingsStore(this.onlineSettings);
         this.onlineTranslator = onlineTranslator ?? new OnlineTranslator(() => this.onlineSettings.ReadCredentials());
     }
-    private static ProcessStartInfo WorkerHost()
+    internal static ProcessStartInfo WorkerHost()
     {
         string executable = Environment.ProcessPath ?? throw new InvalidOperationException("无法定位截图程序。");
         var info = new ProcessStartInfo(executable);
