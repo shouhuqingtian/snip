@@ -2,6 +2,8 @@ using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Text.Json;
+using System.Windows.Media;
 using System.Windows;
 using System.Windows.Media.Imaging;
 using Snip.App.Services;
@@ -93,6 +95,8 @@ internal static class SmartBrowserChecks
             actual.CopyPixels(a, actual.PixelWidth * 4, 0); wanted.CopyPixels(b, wanted.PixelWidth * 4, 0);
             Require(actual.PixelWidth == wanted.PixelWidth && actual.PixelHeight == wanted.PixelHeight && a.SequenceEqual(b) && export.Copies == 1, "Chrome smart selection Enter copied a different region.");
             Console.WriteLine("PASS real Chrome panel selection and Enter copy: exact original frozen page pixels; no browser extension or model.");
+            session.Dispose(); session = null;
+            VerifyLayers(browser, viewport, desktop, directory);
         }
         finally
         {
@@ -105,6 +109,67 @@ internal static class SmartBrowserChecks
             catch (Exception error) when (error is ArgumentException or InvalidOperationException or System.ComponentModel.Win32Exception) { }
             try { Directory.Delete(directory, true); } catch (IOException) { }
         }
+    }
+    private static void VerifyLayers(WindowCaptureInfo browser, PixelRect viewport, DesktopCaptureService desktop, string directory)
+    {
+        // Public CSS modal and iframe deliberately cover smaller, still-accessible background rows.
+        // Geometric minimum-area traversal picks those hidden rows instead of the visible page.
+        File.WriteAllText(Path.Combine(directory, "inside.html"), """
+            <!doctype html><meta charset="utf-8"><style>*{box-sizing:border-box}body{margin:0;background:#f6fcff}section{position:absolute;left:25px;top:30px;width:250px;height:100px;background:#ddf4ef;border:2px solid #087f65}</style>
+            <section role="region" aria-label="Public embedded panel"><h3>Embedded page</h3></section>
+            """);
+        File.WriteAllText(Path.Combine(directory, "index.html"), """
+            <!doctype html><meta charset="utf-8"><title>Snip smart region fixture</title>
+            <style>*{box-sizing:border-box}body{margin:0;background:#eef7f4}.row{position:absolute;left:80px;width:650px;height:28px;background:#bbddee}#modal{position:absolute;z-index:10;left:40px;top:40px;width:680px;height:400px;background:#fff;border:2px solid #087f65}iframe{position:absolute;left:28px;top:48px;width:450px;height:280px;border:0}#front{position:absolute;z-index:20;left:530px;top:320px;width:180px;height:110px;background:#fcebd3;border:2px solid #c76820}</style>
+            <div class="row" role="button" style="top:165px">Hidden original row one</div>
+            <div class="row" role="button" style="top:250px">Hidden original row two</div>
+            <div class="row" role="button" style="top:350px">Hidden original row three</div>
+            <div id="modal" role="dialog" aria-label="Public page modal"><iframe title="Public embedded page" src="inside.html"></iframe></div>
+            <div id="front" role="dialog" aria-label="Public front modal"></div>
+            """);
+        DesktopWindows.Activate(browser.Handle); HotkeyChecks.Press(0x11, 0x52);
+        Pause(200);
+        TextWindowChecks.PumpUntil(() =>
+        {
+            var pixel = desktop.CaptureRegion(new(viewport.X + 650, viewport.Y + 260, 1, 1));
+            var bytes = new byte[4]; pixel.CopyPixels(bytes, 4, 0); return bytes[0] == 255 && bytes[1] == 255 && bytes[2] == 255;
+        }, TimeSpan.FromSeconds(7));
+        // Iframe outer left/top is 70/90 after the dialog's two-pixel border.
+        var cases = new[] {
+            ("dialog over original row", new PixelPoint(650,260), new PixelRect(40,40,680,400)),
+            ("iframe panel over original row", new PixelPoint(250,170), new PixelRect(95,120,250,100)),
+            ("iframe background over original row", new PixelPoint(470,260), new PixelRect(70,90,450,280)),
+            ("front dialog over another dialog and row", new PixelPoint(620,360), new PixelRect(530,320,180,110))
+        };
+        foreach (var (name, localPoint, localRegion) in cases)
+        {
+            DesktopWindows.Activate(browser.Handle);
+            var point = new PixelPoint(viewport.X + localPoint.X, viewport.Y + localPoint.Y);
+            Require(SetPhysicalCursorPos((int)point.X, (int)point.Y), "Could not move over layered page.");
+            Pause(80);
+            var frame = desktop.Capture(); var export = new Export();
+            using var selection = new SelectionSession(frame, desktop, new AnnotationRenderer(), export, [browser],
+                () => new HoverRegionProbe(() => new ProcessStartInfo(Path.GetFullPath("src/Snip.App/bin/Release/net8.0-windows10.0.19041.0/Snip.exe"))));
+            selection.Show();
+            selection.ViewModel.Changed += (_, _) => Console.WriteLine("Public layered Chrome " + name + ": " + selection.ViewModel.DisplayedSelection);
+            var expected = new PixelRect(viewport.X + localRegion.X, viewport.Y + localRegion.Y, localRegion.Width, localRegion.Height);
+            TextWindowChecks.PumpUntil(() => selection.ViewModel.DisplayedSelection == expected, TimeSpan.FromSeconds(7));
+            if (name == "dialog over original row")
+            {
+                var content = (FrameworkElement)Application.Current.Windows.OfType<Snip.App.Views.SelectionWindow>().Single(w => w.IsActive).Content;
+                var image = new RenderTargetBitmap((int)content.ActualWidth, (int)content.ActualHeight, 96, 96, PixelFormats.Pbgra32); image.Render(content);
+                var png = new PngBitmapEncoder(); png.Frames.Add(BitmapFrame.Create(image)); Directory.CreateDirectory("artifacts/validation/ui-previews");
+                using var file = File.Create("artifacts/validation/ui-previews/42-browser-modal-selection.png"); png.Save(file);
+            }
+            HotkeyChecks.Press(0x0D); TextWindowChecks.PumpUntil(() => selection.Completion.IsCompleted && Clipboard.ContainsImage(), TimeSpan.FromSeconds(5));
+            var actual = Clipboard.GetImage();
+            var wanted = new CroppedBitmap(frame.Image, new Int32Rect((int)(expected.X-frame.Bounds.X),(int)(expected.Y-frame.Bounds.Y),(int)expected.Width,(int)expected.Height));
+            var a = new byte[actual.PixelWidth * actual.PixelHeight * 4]; var b = new byte[wanted.PixelWidth * wanted.PixelHeight * 4];
+            actual.CopyPixels(a,actual.PixelWidth*4,0); wanted.CopyPixels(b,wanted.PixelWidth*4,0);
+            Require(actual.PixelWidth==wanted.PixelWidth && actual.PixelHeight==wanted.PixelHeight && a.SequenceEqual(b) && export.Copies==1,"Layered page Enter copied a hidden/background region: " + name);
+            Console.WriteLine("PASS actual layered Chrome " + name + ": " + expected + "; Enter copies exact visible frozen pixels.");
+        }
+        File.WriteAllText("artifacts/validation/browser-layered-selection.json", JsonSerializer.Serialize(new { ChromeDialog=true, ChromeIframePanel=true, ChromeIframeBackground=true, OverlappingDialogs=true, EnterCopiesTopLayer=true }));
     }
     private static void Pause(int milliseconds) { var task = Task.Delay(milliseconds); TextWindowChecks.PumpUntil(() => task.IsCompleted, TimeSpan.FromSeconds(2)); }
     private static void Require(bool value, string message) { if (!value) throw new InvalidOperationException(message); }
