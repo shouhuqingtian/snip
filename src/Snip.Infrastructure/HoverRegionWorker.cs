@@ -59,7 +59,11 @@ public static class HoverRegionWorker
         int nativeCount = 0;
         ChildCallback callback = (child, _) =>
         {
-            if (++nativeCount > 512 || clock.ElapsedMilliseconds > 100) return false;
+            // Native class/rectangle reads have no cross-process provider RPC. Bound their
+            // count, not elapsed time since cold-start JIT: that could skip the renderer
+            // before the first callback and incorrectly fall back to the whole browser.
+            // Accessibility below keeps its own time budget; the helper has a watchdog.
+            if (++nativeCount > 512) return false;
             if (IsWindowVisible(child) && GetWindowRect(child, out var rect))
             {
                 var region = new PixelRect(rect.Left, rect.Top, rect.Right - rect.Left, rect.Bottom - rect.Top).Intersect(bounds).RoundOut();
