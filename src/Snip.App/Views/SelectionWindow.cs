@@ -93,12 +93,15 @@ public sealed class SelectionWindow : Window
         Canvas.SetLeft(hintFrame, 16); Canvas.SetTop(hintFrame, 16);
         if (!visible) return;
         toolbar.Width = Math.Min(1000, Math.Max(200, ActualWidth - 24)); toolbar.Measure(new Size(toolbar.Width, double.PositiveInfinity));
+        // Bindings/templates may finish layout after the first measure. SizeChanged repairs
+        // the placement using the rendered height, without a per-frame LayoutUpdated handler.
+        double toolbarHeight = Math.Max(toolbar.DesiredSize.Height, toolbar.ActualHeight);
         double sx = ActualWidth / Display.Bounds.Width, sy = ActualHeight / Display.Bounds.Height;
         double x = Math.Clamp((r.X - Display.Bounds.X) * sx, 12, Math.Max(12, ActualWidth - toolbar.Width - 12));
         double below = (r.Bottom - Display.Bounds.Y) * sy + 10;
-        double y = below + toolbar.DesiredSize.Height <= ActualHeight - 12 ? below : (r.Y - Display.Bounds.Y) * sy - toolbar.DesiredSize.Height - 10;
-        y = Math.Clamp(y, 12, Math.Max(12, ActualHeight - toolbar.DesiredSize.Height - 12));
-        var toolbarBounds = new Rect(x, y, toolbar.Width, toolbar.DesiredSize.Height);
+        double y = below + toolbarHeight <= ActualHeight - 12 ? below : (r.Y - Display.Bounds.Y) * sy - toolbarHeight - 10;
+        y = Math.Clamp(y, 12, Math.Max(12, ActualHeight - toolbarHeight - 12));
+        var toolbarBounds = new Rect(x, y, toolbar.Width, toolbarHeight);
         var hintBounds = new Rect(new Point(16, 16), hintFrame.DesiredSize);
         var clearance = toolbarBounds; clearance.Inflate(8, 8);
         if (clearance.IntersectsWith(hintBounds))

@@ -133,7 +133,10 @@ internal static class UiGalleryCheck
                     ("bottom-edge", new PixelRect(25, 620, 1150, 180)),
                     ("ordinary", new PixelRect(90, 110, 600, 360)) })
                 {
+                    stage = name + "/" + label;
                     edgeSelection.ViewModel.SetSelection(region); edgeSelection.BeginEditing(); window.UpdateLayout();
+                    CheckSelectionLayout((FrameworkElement)window.Content);
+                    var settled = Task.Delay(40); TextWindowChecks.PumpUntil(() => settled.IsCompleted, TimeSpan.FromSeconds(3));
                     CheckSelectionLayout((FrameworkElement)window.Content);
                     selectionLayouts.Add(new { Case = name + "/" + label, Width = window.ActualWidth, Height = window.ActualHeight, HintAndToolbarVisible = true, NoOverlap = true, InsideWindow = true });
                 }
