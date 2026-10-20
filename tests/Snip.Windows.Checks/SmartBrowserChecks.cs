@@ -120,11 +120,13 @@ internal static class SmartBrowserChecks
             """);
         File.WriteAllText(Path.Combine(directory, "index.html"), """
             <!doctype html><meta charset="utf-8"><title>Snip smart region fixture</title>
-            <style>*{box-sizing:border-box}body{margin:0;background:#eef7f4}.row{position:absolute;left:80px;width:650px;height:28px;background:#bbddee}#modal{position:absolute;z-index:10;left:40px;top:40px;width:680px;height:400px;background:#fff;border:2px solid #087f65}iframe{position:absolute;left:28px;top:48px;width:450px;height:280px;border:0}#front{position:absolute;z-index:20;left:530px;top:320px;width:180px;height:110px;background:#fcebd3;border:2px solid #c76820}</style>
+            <style>*{box-sizing:border-box}body{margin:0;background:#eef7f4}.row{position:absolute;left:80px;width:650px;height:28px;background:#bbddee}#modal{position:absolute;z-index:10;left:40px;top:40px;width:680px;height:400px;background:#fff;border:2px solid #087f65}iframe{position:absolute;left:28px;top:48px;width:450px;height:280px;border:0}#behind{position:absolute;z-index:15;left:530px;top:320px;width:180px;height:110px;background:#eee}#front{position:absolute;z-index:20;left:430px;top:280px;width:280px;height:150px;background:#fcebd3;border:2px solid #c76820}</style>
+            <section role="region" aria-label="Hidden original panel" style="position:absolute;left:80px;top:150px;width:650px;height:160px;background:#bbddee"></section>
             <div class="row" role="button" style="top:165px">Hidden original row one</div>
             <div class="row" role="button" style="top:250px">Hidden original row two</div>
             <div class="row" role="button" style="top:350px">Hidden original row three</div>
             <div id="modal" role="dialog" aria-label="Public page modal"><iframe title="Public embedded page" src="inside.html"></iframe></div>
+            <div id="behind" role="dialog" aria-label="Public covered dialog"></div>
             <div id="front" role="dialog" aria-label="Public front modal"></div>
             """);
         DesktopWindows.Activate(browser.Handle); HotkeyChecks.Press(0x11, 0x52);
@@ -139,7 +141,7 @@ internal static class SmartBrowserChecks
             ("dialog over original row", new PixelPoint(650,260), new PixelRect(40,40,680,400)),
             ("iframe panel over original row", new PixelPoint(250,170), new PixelRect(95,120,250,100)),
             ("iframe background over original row", new PixelPoint(470,260), new PixelRect(70,90,450,280)),
-            ("front dialog over another dialog and row", new PixelPoint(620,360), new PixelRect(530,320,180,110))
+            ("front dialog over another dialog and row", new PixelPoint(620,360), new PixelRect(430,280,280,150))
         };
         foreach (var (name, localPoint, localRegion) in cases)
         {

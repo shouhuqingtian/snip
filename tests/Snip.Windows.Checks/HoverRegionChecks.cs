@@ -42,6 +42,13 @@ internal static class HoverRegionChecks
 
     internal static void Verify(HotkeyService hotkey)
     {
+        string stage = "fixture setup";
+        void Stage(string name) { Volatile.Write(ref stage, name); Console.WriteLine("STAGE smart selection: " + name); }
+        using var deadline = new System.Threading.Timer(_ =>
+        {
+            Console.Error.WriteLine("FAIL smart-selection native deadline at " + Volatile.Read(ref stage));
+            CaptureStack(); Environment.Exit(1);
+        }, null, TimeSpan.FromSeconds(90), Timeout.InfiniteTimeSpan);
         var desktop = new DesktopCaptureService();
         var originalCursor = desktop.CursorPosition;
         var button = new Button { Content = "Public action", Width = 150, Height = 44, Margin = new Thickness(12) };
@@ -82,6 +89,7 @@ internal static class HoverRegionChecks
         }
         try
         {
+            Stage("WPF coarse hover");
             window.Show(); window.Activate(); window.UpdateLayout(); Pause(100);
             Require(hotkey.Register(HotkeyGesture.Default), "Smart selection hotkey could not register.");
             hotkey.Triggered += Open;
@@ -110,11 +118,11 @@ internal static class HoverRegionChecks
             Console.WriteLine("PASS native smart hover: complete toolbar/input panel/list; small buttons/fields/rows do not fragment the region; Enter copies the frozen internal region without a click; helper exits.");
             hotkey.Triggered -= Open;
 
-            VerifyStaleAndManual(desktop, window, button);
-            VerifyTimeout(desktop, window);
-            VerifyCoordinator(hotkey, window, button, tools);
-            VerifyCancelNoPrompt(desktop, window);
-            SmartBrowserChecks.Verify();
+            Stage("stale/manual"); VerifyStaleAndManual(desktop, window, button);
+            Stage("timeout"); VerifyTimeout(desktop, window);
+            Stage("coordinator"); VerifyCoordinator(hotkey, window, button, tools);
+            Stage("cancel"); VerifyCancelNoPrompt(desktop, window);
+            Stage("Chrome"); SmartBrowserChecks.Verify();
             Directory.CreateDirectory("artifacts/validation");
             File.WriteAllText("artifacts/validation/smart-selection.json", JsonSerializer.Serialize(new {
                 ToolbarRegion = true, InputPanel = true, List = true, ListRowsUseList = true, Panel = true,
@@ -253,6 +261,24 @@ internal static class HoverRegionChecks
             Console.WriteLine($"PASS actual stalled helper timeout {watch.ElapsedMilliseconds} ms; UI heartbeat {ticks}; process terminated; no restart storm.");
         }
         finally { timer.Stop(); }
+    }
+
+    private static void CaptureStack()
+    {
+        var executable = Environment.GetEnvironmentVariable("SNIP_CHECK_STACK_TOOL");
+        if (string.IsNullOrEmpty(executable) || !File.Exists(executable)) return;
+        try
+        {
+            var info = new ProcessStartInfo(executable) { UseShellExecute=false, CreateNoWindow=true, RedirectStandardOutput=true, RedirectStandardError=true };
+            info.ArgumentList.Add("report"); info.ArgumentList.Add("--process-id"); info.ArgumentList.Add(Environment.ProcessId.ToString());
+            using var process=Process.Start(info)!;
+            var output=process.StandardOutput.ReadToEndAsync(); var errors=process.StandardError.ReadToEndAsync();
+            if (!process.WaitForExit(5000)) { process.Kill(true); return; }
+            string stack=output.GetAwaiter().GetResult();
+            Console.Error.WriteLine("Smart-selection managed stacks (no dump/locals):\n" + stack[..Math.Min(stack.Length,24000)]);
+            _=errors.GetAwaiter().GetResult();
+        }
+        catch { }
     }
 
     private static void SavePreview(SelectionWindow window)
