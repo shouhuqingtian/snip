@@ -94,6 +94,12 @@ internal static class HoverRegionChecks
             Require(hotkey.Register(HotkeyGesture.Default), "Smart selection hotkey could not register.");
             hotkey.Triggered += Open;
             Move(Center(button)); HotkeyChecks.Press(0x11, 0x12, 0x41);
+            Wait(() => session is not null, "Shortcut did not open a screenshot.");
+            Pause(500);
+            var initial = session!.Targets.First(w => w.Handle == new WindowInteropHelper(window).Handle).Bounds.Intersect(session.ViewModel.Frame.Bounds);
+            Require(session.ViewModel.DisplayedSelection == initial && workerPid == 0, "Stationary initial selection changed or started automatic refinement without pointer movement.");
+            Console.WriteLine("PASS stationary screenshot entry keeps initial window and does not launch an internal-region worker.");
+            var moved = Center(button); Move(new(moved.X + 6, moved.Y));
             Wait(() => session is not null && session.ViewModel.DisplayedSelection == Bounds(tools), "Initial hover did not choose the complete toolbar instead of a small button.");
             Require(session!.ViewModel.Selection.IsEmpty && session.Editor is null, "Hover entered editing without a click.");
             Hover(edit, editPanel);
