@@ -20,6 +20,7 @@ internal static class SmartBrowserChecks
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern int GetWindowText(IntPtr hwnd, StringBuilder text, int count);
     [DllImport("user32.dll")] private static extern bool GetWindowRect(IntPtr hwnd, out NativeRect rect);
     [DllImport("user32.dll")] private static extern bool SetPhysicalCursorPos(int x, int y);
+    [DllImport("user32.dll")] private static extern bool IsWindowVisible(IntPtr hwnd);
     [StructLayout(LayoutKind.Sequential)] private struct NativeRect { public int Left, Top, Right, Bottom; }
     internal static void Verify()
     {
@@ -72,6 +73,7 @@ internal static class SmartBrowserChecks
                 if (name.ToString() == "Chrome_RenderWidgetHostHWND" && GetWindowRect(child, out var rect))
                 {
                     var r = new PixelRect(rect.Left, rect.Top, rect.Right - rect.Left, rect.Bottom - rect.Top);
+                    Console.WriteLine($"Public Chrome renderer: visible={IsWindowVisible(child)}; bounds={r}; browser={browser.Bounds}");
                     if (r.Width * r.Height > viewport.Width * viewport.Height) viewport = r;
                 }
                 return true;
@@ -90,7 +92,7 @@ internal static class SmartBrowserChecks
             Require(SetPhysicalCursorPos((int)buttonPoint.X, (int)buttonPoint.Y), "Could not move over the browser button.");
             var export = new Export();
             session = new SelectionSession(frame, desktop, new AnnotationRenderer(), export, [browser],
-                () => new HoverRegionProbe(() => new ProcessStartInfo(Path.GetFullPath("src/Snip.App/bin/Release/net8.0-windows10.0.19041.0/Snip.exe"))));
+                () => new TracedProbe());
             session.Show(); SetPhysicalCursorPos((int)buttonPoint.X+6,(int)buttonPoint.Y);
             session.ViewModel.Changed += (_, _) => Console.WriteLine("Public Chrome hover bounds: " + session.ViewModel.DisplayedSelection);
             var expectedButton = viewport;
@@ -218,6 +220,16 @@ internal static class SmartBrowserChecks
         File.WriteAllText("artifacts/validation/browser-layered-selection.json", JsonSerializer.Serialize(new { ChromeDialog=true, IframePanelUsesCurrentDialog=true, IframeBackgroundUsesCurrentDialog=true, OverlappingDialogs=true, EnterCopiesTopLayer=true }));
     }
     private static void Pause(int milliseconds) { var task = Task.Delay(milliseconds); TextWindowChecks.PumpUntil(() => task.IsCompleted, TimeSpan.FromSeconds(2)); }
+    private sealed class TracedProbe : IHoverRegionProbe
+    {
+        private readonly HoverRegionProbe inner=new(()=>new ProcessStartInfo(Path.GetFullPath("src/Snip.App/bin/Release/net8.0-windows10.0.19041.0/Snip.exe")));
+        public async Task<PixelRect?> FindAsync(WindowCaptureInfo target,PixelPoint point,CancellationToken token)
+        {
+            var clock=Stopwatch.StartNew(); Console.WriteLine($"Public Chrome probe request: point={point}; bounds={target.Bounds}");
+            var result=await inner.FindAsync(target,point,token); Console.WriteLine($"Public Chrome probe result: elapsed={clock.ElapsedMilliseconds}ms; region={result}"); return result;
+        }
+        public void Dispose()=>inner.Dispose();
+    }
     private static void Require(bool value, string message) { if (!value) throw new InvalidOperationException(message); }
     private sealed class Export : IImageExportService
     {
