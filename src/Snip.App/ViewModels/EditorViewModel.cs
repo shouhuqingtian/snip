@@ -16,7 +16,7 @@ public sealed class EditorViewModel : ObservableObject
     private IEditorDialogs dialogs;
     private readonly EditHistory history = new();
     private AnnotationTool tool = AnnotationTool.Rectangle;
-    private string color = "#FF3B30", status = "拖动画布添加标注；选择工具可移动、删除标注，双击文字可重新编辑。";
+    private string color = "#FF3B30", status = "点击标注选中，拖动框线移动，拖动控制点缩放；空白处继续绘图，双击文字编辑。";
     private double strokeWidth = 4, fontSize = 24, zoom = 1;
     private int mosaicSize = 12;
     private PixelPoint pointerStart;
@@ -25,6 +25,8 @@ public sealed class EditorViewModel : ObservableObject
     // Only the active, uncommitted stroke is mutable. EditHistory freezes its points on commit.
     private List<PixelPoint>? penPoints;
     private bool moving, resizing, exporting, filled;
+    private bool transformStarted;
+    private double gestureScale = 1;
     private SelectionHandle resizeHandle;
     private PixelRect resizeBounds;
     private Guid? selectedId;
@@ -62,6 +64,7 @@ public sealed class EditorViewModel : ObservableObject
     public bool IsDirty => history.IsDirty;
     public bool IsExporting => exporting;
     public bool IsDrawing => gestureOriginal is not null;
+    public bool CanManipulateAnnotations => Tool is not AnnotationTool.Pen and not AnnotationTool.Mosaic;
     public AnnotationTool Tool { get => tool; set { if (Set(ref tool, value)) { CancelGesture(); selectedId = null; Changed(false); } } }
     public string Color
     {
@@ -109,29 +112,52 @@ public sealed class EditorViewModel : ObservableObject
 
     private PixelPoint Clamp(PixelPoint p) => new(Math.Clamp(p.X, 0, PixelWidth), Math.Clamp(p.Y, 0, PixelHeight));
 
-    public bool BeginPointer(PixelPoint point, bool doubleClick)
+    private Annotation? HitAnnotation(PixelPoint point, double scale)
+    {
+        for (int i = history.Current.Count - 1; i >= 0; i--)
+            if (renderer.HitTest(history.Current[i], point, 6 / scale)) return history.Current[i];
+        return null;
+    }
+    public SelectionHandle PointerHandle(PixelPoint point, double? scale = null)
+    {
+        if (!CanManipulateAnnotations || exporting) return SelectionHandle.New;
+        double actualScale = scale ?? Zoom;
+        if (Selected is { } selected)
+        {
+            var handle = SelectionGeometry.ControlPointHitTest(renderer.GetBounds(selected), point, 6 / actualScale);
+            if (handle != SelectionHandle.New) return handle;
+        }
+        return HitAnnotation(point, actualScale) is null ? SelectionHandle.New : SelectionHandle.Move;
+    }
+
+    public bool BeginPointer(PixelPoint point, bool doubleClick, double? scale = null)
     {
         if (exporting) return false;
         CancelGesture();
         point = Clamp(point); pointerStart = point;
-        if (Tool == AnnotationTool.Select)
+        gestureScale = scale ?? Zoom; transformStarted = false;
+        if (CanManipulateAnnotations)
         {
+            if (doubleClick && HitAnnotation(point, gestureScale) is { Tool: AnnotationTool.Text } text)
+            { selectedId = text.Id; EditText(text); return false; }
             if (Selected is { } current)
             {
                 resizeBounds = renderer.GetBounds(current);
-                resizeHandle = SelectionGeometry.HitTest(resizeBounds, point, 8 / Zoom);
-                if (resizeHandle is not SelectionHandle.New and not SelectionHandle.Move)
+                resizeHandle = SelectionGeometry.ControlPointHitTest(resizeBounds, point, 6 / gestureScale);
+                if (resizeHandle != SelectionHandle.New)
                 {
                     gestureOriginal = current; preview = current; resizing = true; Changed(true); return true;
                 }
             }
-            var hit = history.Current.Reverse().FirstOrDefault(a => renderer.HitTest(a, point, 6 / Zoom));
+            var hit = HitAnnotation(point, gestureScale);
             selectedId = hit?.Id;
-            if (hit is null) { Changed(false); return false; }
-            if (doubleClick && hit.Tool == AnnotationTool.Text) { EditText(hit); return false; }
-            moving = true; gestureOriginal = hit; preview = hit; Changed(true); return true;
+            if (hit is not null)
+            {
+                moving = true; gestureOriginal = hit; preview = hit; Changed(true); return true;
+            }
         }
         selectedId = null;
+        if (Tool == AnnotationTool.Select) { Changed(false); return false; }
         if (Tool == AnnotationTool.Text)
         {
             if (UseInlineText) { InlineText = Create(point); Changed(true); return false; }
@@ -155,6 +181,11 @@ public sealed class EditorViewModel : ObservableObject
     {
         if (gestureOriginal is null) return;
         point = Clamp(point);
+        if (moving || resizing)
+        {
+            if (!transformStarted && Math.Max(Math.Abs(point.X - pointerStart.X), Math.Abs(point.Y - pointerStart.Y)) < 3 / gestureScale) return;
+            transformStarted = true;
+        }
         if (resizing)
         {
             var target = SelectionGeometry.Drag(resizeBounds, resizeHandle, pointerStart, point, new(0, 0, PixelWidth, PixelHeight));
@@ -323,7 +354,9 @@ public sealed class EditorViewModel : ObservableObject
         double w = Math.Max(1, width * scale), h = Math.Max(1, height * scale);
         var start = new PixelPoint((PixelWidth - w) / 2, (PixelHeight - h) / 2);
         var a = new Annotation(Guid.NewGuid(), AnnotationTool.Sticker, start, start + new PixelPoint(w, h), Color, 1, 24, 12, "", []) { StickerPng = png.ToArray() };
-        history.Commit(history.Current.Append(a)); selectedId = a.Id; Tool = AnnotationTool.Select; selectedId = a.Id; Changed(true);
+        history.Commit(history.Current.Append(a));
+        if (!CanManipulateAnnotations) Tool = AnnotationTool.Rectangle;
+        selectedId = a.Id; Changed(true);
     }
 
     private void Changed(bool baseChanged, bool refreshCommands = true)

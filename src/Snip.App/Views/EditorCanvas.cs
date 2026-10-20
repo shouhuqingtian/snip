@@ -24,7 +24,7 @@ public sealed class EditorCanvas : FrameworkElement
     public EditorCanvas()
     {
         children = new VisualCollection(this);
-        Focusable = true; ClipToBounds = true;
+        Focusable = true; ClipToBounds = true; Cursor = Cursors.Cross;
         DataContextChanged += (_, _) =>
         {
             Unsubscribe();
@@ -112,25 +112,40 @@ public sealed class EditorCanvas : FrameworkElement
         if (vm.Selected is { } selected)
         {
             var r = renderer.GetBounds(selected);
-            var pen = new System.Windows.Media.Pen(Brushes.DodgerBlue, 1 / vm.Zoom) { DashStyle = DashStyles.Dash };
-            context.DrawRectangle(null, pen, new Rect(r.X - 4, r.Y - 4, Math.Max(1, r.Width) + 8, Math.Max(1, r.Height) + 8));
-            if (vm.Tool == AnnotationTool.Select)
+            double scale = InteractionScale, padding = 4 / scale;
+            var pen = new System.Windows.Media.Pen(Brushes.DodgerBlue, 1 / scale) { DashStyle = DashStyles.Dash };
+            context.DrawRectangle(null, pen, new Rect(r.X - padding, r.Y - padding, Math.Max(1, r.Width) + padding * 2, Math.Max(1, r.Height) + padding * 2));
+            if (vm.CanManipulateAnnotations)
                 foreach (double x in new[] { r.X, r.X + r.Width / 2, r.Right }) foreach (double y in new[] { r.Y, r.Y + r.Height / 2, r.Bottom })
                 {
                     if (x == r.X + r.Width / 2 && y == r.Y + r.Height / 2) continue;
-                    double size = 6 / vm.Zoom; context.DrawRectangle(Brushes.White, pen, new Rect(x - size / 2, y - size / 2, size, size));
+                    double size = 6 / scale; context.DrawRectangle(Brushes.White, pen, new Rect(x - size / 2, y - size / 2, size, size));
                 }
         }
     }
+    private double InteractionScale => Math.Max(0.000001, Math.Abs(LayoutTransform.Value.M11));
     private PixelPoint Position(MouseEventArgs e) { var p = e.GetPosition(this); return new(p.X, p.Y); }
+    private Cursor PointerCursor(MouseEventArgs e) => vm?.PointerHandle(Position(e), InteractionScale) switch
+    {
+        SelectionHandle.Move => Cursors.SizeAll,
+        SelectionHandle.Left or SelectionHandle.Right => Cursors.SizeWE,
+        SelectionHandle.Top or SelectionHandle.Bottom => Cursors.SizeNS,
+        SelectionHandle.TopLeft or SelectionHandle.BottomRight => Cursors.SizeNWSE,
+        SelectionHandle.TopRight or SelectionHandle.BottomLeft => Cursors.SizeNESW,
+        _ => Cursors.Cross
+    };
     protected override void OnMouseLeftButtonDown(MouseButtonEventArgs e)
     {
         CommitText(this, EventArgs.Empty); Focus();
-        if (vm?.BeginPointer(Position(e), e.ClickCount > 1) == true) CaptureMouse();
+        Cursor = PointerCursor(e);
+        if (vm?.BeginPointer(Position(e), e.ClickCount > 1, InteractionScale) == true) CaptureMouse();
         e.Handled = true;
     }
     protected override void OnMouseMove(MouseEventArgs e)
-    { if (IsMouseCaptured) { vm?.MovePointer(Position(e)); e.Handled = true; } }
+    {
+        if (IsMouseCaptured) { vm?.MovePointer(Position(e)); e.Handled = true; }
+        else Cursor = PointerCursor(e);
+    }
     protected override void OnMouseLeftButtonUp(MouseButtonEventArgs e)
     {
         if (!IsMouseCaptured) return;

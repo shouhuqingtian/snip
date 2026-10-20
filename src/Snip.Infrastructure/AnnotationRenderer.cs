@@ -193,7 +193,7 @@ public sealed class AnnotationRenderer
     public bool HitTest(Annotation a, PixelPoint p, double tolerance)
     {
         var r = GetBounds(a);
-        if (a.Tool is AnnotationTool.Text or AnnotationTool.Mosaic or AnnotationTool.Sticker || (a.Filled && a.Tool is AnnotationTool.Rectangle or AnnotationTool.Ellipse)) return r.Contains(p);
+        if (a.Tool is AnnotationTool.Text or AnnotationTool.Mosaic or AnnotationTool.Sticker || (a.Filled && a.Tool == AnnotationTool.Rectangle)) return r.Contains(p);
         var limit = tolerance + a.StrokeWidth / 2;
         if (a.Tool == AnnotationTool.Arrow) return SegmentDistance(p, a.Start, a.End) <= limit;
         if (a.Tool == AnnotationTool.Pen)
@@ -204,7 +204,8 @@ public sealed class AnnotationRenderer
         if (a.Tool == AnnotationTool.Ellipse && r.Width > 0 && r.Height > 0)
         {
             double dx = (p.X - r.X - r.Width / 2) / (r.Width / 2), dy = (p.Y - r.Y - r.Height / 2) / (r.Height / 2);
-            return Math.Abs(Math.Sqrt(dx * dx + dy * dy) - 1) * Math.Min(r.Width, r.Height) / 2 <= limit;
+            double radius = Math.Sqrt(dx * dx + dy * dy);
+            return (a.Filled && radius <= 1) || Math.Abs(radius - 1) * Math.Min(r.Width, r.Height) / 2 <= limit;
         }
         var expanded = new PixelRect(r.X - limit, r.Y - limit, r.Width + limit * 2, r.Height + limit * 2);
         var inside = new PixelRect(r.X + limit, r.Y + limit, Math.Max(0, r.Width - limit * 2), Math.Max(0, r.Height - limit * 2));

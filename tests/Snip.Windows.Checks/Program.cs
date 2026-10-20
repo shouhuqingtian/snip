@@ -21,6 +21,7 @@ internal static class Program
         if (args.FirstOrDefault() == "--render-benchmark") return RenderPerformanceCheck.Benchmark(args[1]);
         if (args.FirstOrDefault() == "--interaction-benchmark") return InteractionPerformanceCheck.Benchmark(args[1],args[2]);
         if (args.Contains("--editor-performance")) return RenderPerformanceCheck.Run();
+        if (args.Contains("--annotation-ui")) return AnnotationInteractionChecks.Run();
         if (args.Contains("--editor-zoom")) return EditorZoomChecks.Run();
         if (args.Contains("--manual-preview")) return ManualPreviewChecks.Run();
         if (args.Contains("--application-settings")) return ApplicationSettingsChecks.Run();
@@ -47,6 +48,7 @@ internal static class Program
             try { test(); passed++; Console.WriteLine($"PASS {name}"); }
             catch (Exception e) { failed++; Console.Error.WriteLine($"FAIL {name}: {e}"); }
         }
+        Check("native direct annotation interaction", () => Require(AnnotationInteractionChecks.Run() == 0));
         Check("image pixel dimensions", () =>
         {
             var result = renderer.Render(image, []);

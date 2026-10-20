@@ -22,7 +22,7 @@ public sealed class EditorToolbar : UserControl
         panel.Children.Add(tools);
         var converter = new ToolConverter();
         foreach (var (tool, glyph, tip) in new[] {
-            (AnnotationTool.Select,"select","选择 / 移动 / 缩放标注"), (AnnotationTool.Rectangle,"rectangle","矩形"), (AnnotationTool.Ellipse,"ellipse","椭圆"),
+            (AnnotationTool.Rectangle,"rectangle","矩形"), (AnnotationTool.Ellipse,"ellipse","椭圆"),
             (AnnotationTool.Arrow,"arrow","箭头"), (AnnotationTool.Pen,"pen","画笔"), (AnnotationTool.Mosaic,"mosaic","马赛克"), (AnnotationTool.Text,"text","文字（Ctrl+Enter 提交）") })
         {
             var button = new RadioButton { Content = new UiIcon(glyph), ToolTip = tip, Width = 40, Height = 40, Padding = new Thickness(8) };

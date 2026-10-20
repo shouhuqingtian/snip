@@ -31,6 +31,26 @@ public enum SelectionHandle { New, Move, Left, Right, Top, Bottom, TopLeft, TopR
 
 public static class SelectionGeometry
 {
+    /// <summary>Hit the eight visible resize points, keeping the rest of an outline draggable.</summary>
+    public static SelectionHandle ControlPointHitTest(PixelRect rect, PixelPoint point, double tolerance)
+    {
+        double cx = rect.X + rect.Width / 2, cy = rect.Y + rect.Height / 2;
+        ReadOnlySpan<(double X, double Y, SelectionHandle Handle)> handles =
+        [
+            (rect.X, rect.Y, SelectionHandle.TopLeft), (cx, rect.Y, SelectionHandle.Top), (rect.Right, rect.Y, SelectionHandle.TopRight),
+            (rect.X, cy, SelectionHandle.Left), (rect.Right, cy, SelectionHandle.Right),
+            (rect.X, rect.Bottom, SelectionHandle.BottomLeft), (cx, rect.Bottom, SelectionHandle.Bottom), (rect.Right, rect.Bottom, SelectionHandle.BottomRight)
+        ];
+        double closest = double.PositiveInfinity;
+        var result = SelectionHandle.New;
+        foreach (var handle in handles)
+        {
+            double dx = Math.Abs(point.X - handle.X), dy = Math.Abs(point.Y - handle.Y), distance = dx * dx + dy * dy;
+            if (dx <= tolerance && dy <= tolerance && distance < closest) { result = handle.Handle; closest = distance; }
+        }
+        return result;
+    }
+
     public static SelectionHandle HitTest(PixelRect rect, PixelPoint point, double tolerance = 8)
     {
         if (rect.IsEmpty) return SelectionHandle.New;

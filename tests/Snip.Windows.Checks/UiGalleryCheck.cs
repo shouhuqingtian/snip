@@ -47,6 +47,8 @@ internal static class UiGalleryCheck
                     var bounds = button.TransformToAncestor(content).TransformBounds(new Rect(0, 0, button.ActualWidth, button.ActualHeight));
                     Require(bounds.Left >= -1 && bounds.Top >= -1 && bounds.Right <= content.ActualWidth + 1 && bounds.Bottom <= content.ActualHeight + 1, "Button clipped outside the window in " + name + ": " + button.Content + "; bounds=" + bounds + "; content=" + content.ActualWidth + "x" + content.ActualHeight);
                 }
+                foreach (var toolbar in TextWindowChecks.Descendants<EditorToolbar>(content))
+                    Require(TextWindowChecks.Descendants<RadioButton>(toolbar).Count()==6 && !TextWindowChecks.Descendants<RadioButton>(toolbar).Any(b=>Equals(b.ToolTip,"选择 / 移动 / 缩放标注")), "Selection button remains in an editor or overlay toolbar.");
                 if (window is TextResultWindow)
                     foreach (var field in TextWindowChecks.Descendants<TextBox>(content).Where(b => b.IsVisible && b.Name is "RecognizedText" or "TranslatedText"))
                         Require(field.ActualHeight >= 70, "Text result is too short to read in " + name + ": " + field.ActualHeight + " DIP");
