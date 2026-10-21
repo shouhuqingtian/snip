@@ -61,14 +61,24 @@ public sealed class ManualScrollCaptureTests
         Assert.Contains("最后一段", progress.Last.Status); Assert.Equal(0, source.AutomaticInputs);
     }
     [Fact]
-    public async Task DesktopModeWaitsForStableViewportRatherThanAppendingAnimationFrames()
+    public async Task DesktopModeIgnoresUnmatchableAnimationFramesAndKeepsCorrectPixels()
     {
         using var control = new ManualCaptureControl();
-        var source = new ManualSource(control, [0, 15, 30, 45, 60, 70, 70, 70, 70]);
+        var source = new AnimatedSource(control);
         var progress = new InlineProgress();
         var result = await new ManualScrollCaptureSession(TimeSpan.Zero).CaptureAsync(source, control, progress, CancellationToken.None, desktopMode: true);
         Assert.Equal(source.Page.AsSpan(0, 270 * 120 * 4).ToArray(), result.Bgra);
         Assert.Equal(2, progress.Last!.Frames); Assert.False(progress.Last.Partial); Assert.Equal(0, source.AutomaticInputs);
+    }
+    [Fact]
+    public async Task DesktopContinuousScrollingRetainsIntermediateOverlapWithoutWaitingForStop()
+    {
+        using var control = new ManualCaptureControl();
+        var source = new ManualSource(control, [0, 32, 64, 96, 128, 160, 192, 192, 192]);
+        var progress = new InlineProgress();
+        var result = await new ManualScrollCaptureSession(TimeSpan.Zero).CaptureAsync(source, control, progress, CancellationToken.None, desktopMode: true);
+        Assert.Equal(source.Page.AsSpan(0, 392 * 120 * 4).ToArray(), result.Bgra);
+        Assert.False(progress.Last!.Partial); Assert.Equal(0, source.AutomaticInputs);
     }
     [Theory]
     [InlineData(false)]
@@ -115,6 +125,22 @@ public sealed class ManualScrollCaptureTests
         public Task<PixelFrame> ReadAsync(CancellationToken token)
         { Reads++; return Task.FromResult(new PixelFrame(120, 200, new byte[120 * 200 * 4])); }
         public Task<PixelFrame> ScrollAsync(int units, CancellationToken token) => throw new InvalidOperationException("Unexpected automatic wheel input.");
+    }
+    private sealed class AnimatedSource(ManualCaptureControl control) : IScrollCaptureSource
+    {
+        public byte[] Page { get; } = MakePage(); private int reads;
+        public int AutomaticInputs { get; private set; }
+        public Task<PixelFrame> ReadAsync(CancellationToken token)
+        {
+            token.ThrowIfCancellationRequested(); int stage = reads++; control.RequestFrame();
+            if (reads >= 9) control.RequestFinish();
+            if (stage == 0 || stage >= 6)
+                return Task.FromResult(new PixelFrame(120, 200, Page.AsSpan((stage == 0 ? 0 : 70) * 120 * 4, 200 * 120 * 4).ToArray()));
+            var noise = new byte[120 * 200 * 4]; new Random(stage + 12345).NextBytes(noise);
+            return Task.FromResult(new PixelFrame(120, 200, noise));
+        }
+        public Task<PixelFrame> ScrollAsync(int units, CancellationToken token) { AutomaticInputs++; throw new InvalidOperationException("Unexpected automatic input."); }
+        private static byte[] MakePage() { var page = new byte[120 * 800 * 4]; new Random(18).NextBytes(page); return page; }
     }
     private sealed class InlineProgress : IProgress<ManualCaptureProgress>
     {

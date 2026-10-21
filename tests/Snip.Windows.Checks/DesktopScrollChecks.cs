@@ -48,7 +48,7 @@ internal static class DesktopScrollChecks
         try
         {
             Ui.EnsureTheme();
-            foreach (string kind in new[] { "table", "chat", "frozen" })
+            foreach (string kind in new[] { "table", "chat", "frozen", "continuous" })
             {
                 stage = kind + " external window";
                 using var fixture = new Fixture(folder, kind);
@@ -70,14 +70,17 @@ internal static class DesktopScrollChecks
                 stage = kind + " physical wheel";
                 for (int step = 0; step < 5; step++)
                 {
-                    int before = vm.Frames; Wheel(kind == "frozen" ? 1 : 3);
-                    Wait(() => task.IsCompleted || vm.Frames > before, 6);
+                    int before = vm.Frames; Wheel(kind is "frozen" or "continuous" ? 1 : 3);
+                    if (kind == "continuous") Pause(90);
+                    else Wait(() => task.IsCompleted || vm.Frames > before, 6);
                     if (task.IsCompleted) task.GetAwaiter().GetResult();
                     Require(!task.IsCompleted, "Manual capture finished without explicit completion.");
                 }
+                if (kind == "continuous") Wait(() => task.IsCompleted || vm.Height == region.Height + fixture.State().Offset, 6);
                 timer.Stop();
                 double offset = fixture.State().Offset;
-                Require(offset >= (kind == "frozen" ? 160 : 300) && desktop.CursorPosition == pointer, "Wheel did not reach actual target or capture moved the cursor.");
+                Require(offset >= (kind is "frozen" or "continuous" ? 160 : 300) && desktop.CursorPosition == pointer, "Wheel did not reach actual target or capture moved the cursor.");
+                if (kind == "continuous") Require(vm.Frames > 1 && vm.CompleteText == "完成", "Continuous wheel input without stopping lost intermediate overlap.");
                 if (kind == "frozen") Require(state.Header > region.Height / 2 && !vm.CompleteText.Contains("保存"), "Large frozen header caused ordinary wheel input to pause.");
                 SavePreview("46-desktop-manual-" + kind, region, bar, desktop.Inner);
                 if (kind == "table") Click(TextWindowChecks.Descendants<Button>(bar).Single(b => b.Name == "CompleteManualButton"));
@@ -144,7 +147,7 @@ internal static class DesktopScrollChecks
                 CleanCaptureWithoutOwnUi = true, NativeButtonCompletion = true, NativeCtrlEnterCompletion = true,
                 UnmatchedTailExcluded = true, PartialResultNotice = true, EscapeCancels = true, HooksRemoved = true,
                 ResizeStopsCapture = true, FocusChangeCancels = true, UiResponsive = true, TechnicalDiagnosticsOnly = true,
-                LargeFrozenHeader = true, NativeSingleWheelStep = true, FrozenHeaderFooterOnce = true
+                LargeFrozenHeader = true, NativeSingleWheelStep = true, FrozenHeaderFooterOnce = true, ContinuousWheelWithoutPauses = true
             }, new JsonSerializerOptions { WriteIndented = true }));
             File.WriteAllText("artifacts/validation/desktop-scroll-performance.json", JsonSerializer.Serialize(new { UiPulses = pulses, MaxUiPulseGapMilliseconds = Math.Round(maxGap, 2), CapturedReads = desktop.Reads }));
             Console.WriteLine($"PASS desktop manual capture integration; UI pulses={pulses}, max gap={maxGap:F1}ms; no Excel/ChatGPT application-specific claim."); return 0;
@@ -182,6 +185,7 @@ internal static class DesktopScrollChecks
             if (fixedRegion is null)
             {
                 var p = image.PointToScreen(new Point(16, 12)); var q = image.PointToScreen(new Point(496, 392));
+                if (kind == "continuous") q = image.PointToScreen(new Point(496, 192));
                 if (kind == "frozen")
                 {
                     p.Y = grid.PointToScreen(new Point(0, 12)).Y; q.Y = grid.PointToScreen(new Point(0, 422)).Y;
@@ -265,7 +269,7 @@ internal static class DesktopScrollChecks
             Buffer.BlockCopy(first, first.Length - state.Footer * stride, pixels, pixels.Length - state.Footer * stride, state.Footer * stride);
             expected = BitmapSource.Create(width, height, 96, 96, PixelFormats.Bgra32, null, pixels, stride);
         }
-        else expected = new CroppedBitmap(page, new Int32Rect(16, 12, 480, 380 + offset));
+        else expected = new CroppedBitmap(page, new Int32Rect(16, 12, 480, (int)(state?.Region.Height ?? 380) + offset));
         expected.Freeze();
         var actualBytes = Pixels(result); var expectedBytes = Pixels(expected);
         if (result.PixelWidth != expected.PixelWidth || result.PixelHeight != expected.PixelHeight || !actualBytes.SequenceEqual(expectedBytes))

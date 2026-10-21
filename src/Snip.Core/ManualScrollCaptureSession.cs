@@ -39,7 +39,7 @@ public sealed class ManualScrollCaptureSession(TimeSpan? sampleDelay = null)
         void Report(string? warning = null) => progress?.Report(new(frames.FrameCount, frames.Height,
             warning ?? $"已采集 {frames.FrameCount} 帧，{frames.Height} 像素 · 滚轮向下滚动，完成 Ctrl+Enter", !gap || desktopMode, gap && desktopMode));
         Report(); diagnostics?.Stage("manual-ready", new { first.Width, first.Height });
-        async Task<PixelFrame> Observe(PixelFrame? observed = null)
+        async Task<PixelFrame> Observe(PixelFrame? observed = null, bool moving = false)
         {
             token.ThrowIfCancellationRequested();
             var frame = observed ?? await source.ReadAsync(token).ConfigureAwait(false);
@@ -47,6 +47,9 @@ public sealed class ManualScrollCaptureSession(TimeSpan? sampleDelay = null)
             if (ScrollMatching.Unchanged(frames.Last, frame)) { gap = false; Report(); return frame; }
             int? offset = positionReliable && position is not null && current is not null ? (int)Math.Round(current.Offset - position.Offset) : null;
             var match = desktopMode ? DesktopScrollMatching.Match(frames.Last, frame, token, diagnostics) : null;
+            // A rendered frame can be safely joined during scrolling when its moving pixels
+            // align confidently. Transient animation failures must not publish a pause warning.
+            if (desktopMode && moving && (match is null || match.Offset < 0 || match.Error > 4)) return frame;
             if (offset < 0 || desktopMode && match?.Offset < 0 || !desktopMode && offset is null && ScrollMatching.Match(frame, frames.Last) is not null)
             { gap = true; Report(desktopMode ? "已暂停拼接：请回到已采集末尾；也可保存已采集部分。" : "已向上滚动；请回到已采集末尾再向下滚动，避免重复内容。"); return frame; }
             if (offset == 0) { positionReliable = false; offset = null; }
@@ -82,10 +85,10 @@ public sealed class ManualScrollCaptureSession(TimeSpan? sampleDelay = null)
             var previous = frames.Last; int settled = 0;
             for (int i = 0; i < 30 && !control.FinishRequested; i++)
             {
-                await Task.Delay(sampleDelay ?? TimeSpan.FromMilliseconds(80), token).ConfigureAwait(false);
+                await Task.Delay(sampleDelay ?? TimeSpan.FromMilliseconds(desktopMode && control.InputRecent ? 40 : 80), token).ConfigureAwait(false);
                 var observed = desktopMode ? await source.ReadAsync(token).ConfigureAwait(false) : await Observe().ConfigureAwait(false);
                 settled = ScrollMatching.Difference(previous, observed) < .2 ? settled + 1 : 0; previous = observed;
-                if (desktopMode && settled >= 2) await Observe(observed).ConfigureAwait(false);
+                if (desktopMode) await Observe(observed, moving: settled < 2).ConfigureAwait(false);
                 if (settled >= 2 && !control.InputRecent) break;
             }
         }
