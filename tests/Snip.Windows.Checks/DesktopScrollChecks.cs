@@ -48,7 +48,7 @@ internal static class DesktopScrollChecks
         try
         {
             Ui.EnsureTheme();
-            foreach (string kind in new[] { "table", "chat", "frozen", "continuous", "sheet" })
+            foreach (string kind in new[] { "table", "chat", "frozen", "continuous", "sheet", "full" })
             {
                 stage = kind + " external window";
                 using var fixture = new Fixture(folder, kind);
@@ -57,15 +57,17 @@ internal static class DesktopScrollChecks
                 Require(DesktopWindows.Snapshot().Any(w => w.Handle == target), "External desktop fixture not found independently of current process.");
                 DesktopWindows.Activate(target); Pause(160);
                 var original = new EditorViewModel(desktop.CaptureRegion(region), renderer, export, new Dialogs());
-                AssertPixels(original.Image, fixture.Page, 0, state, original.Image);
+                if (kind != "full") AssertPixels(original.Image, fixture.Page, 0, state, original.Image);
                 var task = features.HandleAsync(new(original, region, SelectionAction.Scroll, BrowserCaptureMode.DesktopManual));
                 var bar = Ready(task); var vm = (ManualScrollCaptureViewModel)bar.DataContext;
                 var barBounds = Bounds(bar);
-                Require(bar.Viewport == region && barBounds.Intersect(region).IsEmpty, "Desktop mode expanded user selection or placed normal controls inside capture.");
+                Require(bar.Viewport == region && (kind == "full" ? !barBounds.Intersect(region).IsEmpty : barBounds.Intersect(region).IsEmpty), "Desktop capture selection or toolbar placement is incorrect.");
+                if (kind == "full") { ((Border)bar.Content).Background = Brushes.Magenta; bar.UpdateLayout(); }
                 Require(DesktopWindows.Foreground == target && vm.Drag is null, "Desktop toolbar stole focus or entered browser drag mode.");
                 int idleReads = desktop.Reads; Pause(550);
                 Require(desktop.Reads == idleReads, "Idle manual capture keeps photographing the desktop.");
-                var pointer = new PixelPoint(region.X + region.Width / 2, region.Y + state.Header + (region.Height - state.Header - state.Footer) / 2);
+                var pointer = new PixelPoint(region.X + (kind == "full" ? 280 : region.Width / 2), region.Y + state.Header + (region.Height - state.Header - state.Footer) / 2);
+                int continuousBefore = desktop.ContinuousReads;
                 Move(pointer); clock.Restart(); timer.Start();
                 stage = kind + " physical wheel";
                 for (int step = 0; step < 5; step++)
@@ -90,6 +92,11 @@ internal static class DesktopScrollChecks
                 Require(offset >= (kind is "frozen" or "continuous" or "sheet" ? 160 : 300) && desktop.CursorPosition == pointer, "Wheel did not reach actual target or capture moved the cursor.");
                 if (kind == "continuous") Require(vm.Frames > 1 && vm.CompleteText == "完成", "Continuous wheel input without stopping lost intermediate overlap.");
                 if (kind == "frozen") Require(state.Header > region.Height / 2 && !vm.CompleteText.Contains("保存"), "Large frozen header caused ordinary wheel input to pause.");
+                if (kind == "full")
+                {
+                    Require(desktop.ContinuousReads > continuousBefore, "In-selection toolbar never allowed continuous reads while scrolling.");
+                    Pause(600); Require(bar.IsVisible, "In-selection toolbar did not return after scrolling stopped.");
+                }
                 SavePreview("46-desktop-manual-" + kind, region, bar, desktop.Inner);
                 if (kind == "table") Click(TextWindowChecks.Descendants<Button>(bar).Single(b => b.Name == "CompleteManualButton"));
                 else HotkeyChecks.Press(0x11, 0x0D);
@@ -97,10 +104,16 @@ internal static class DesktopScrollChecks
                 var editor = app.Windows.OfType<EditorWindow>().Single();
                 var result = (EditorViewModel)editor.DataContext;
                 Require(result.PixelWidth == region.Width && result.PixelHeight == region.Height + offset, "Desktop result size lost a viewport or included fixed window chrome.");
-                AssertPixels(result.Image, fixture.Page, (int)offset, state, original.Image);
+                if (kind == "full")
+                {
+                    var pixels = Pixels(result.Image);
+                    for (int i = 0; i < pixels.Length; i += 4)
+                        Require(!(pixels[i] > 250 && pixels[i + 1] < 5 && pixels[i + 2] > 250), "In-selection controls were photographed into the long result.");
+                }
+                else AssertPixels(result.Image, fixture.Page, (int)offset, state, original.Image);
                 Require(!app.Windows.OfType<ManualScrollCaptureWindow>().Any(), "Desktop controls survived successful completion.");
                 editor.CancelScreenshot();
-                Console.WriteLine($"PASS external {kind} desktop: native wheel pass-through, exact original/stitched pixels, selected width, no idle captures, cursor/focus retained, real {(kind == "table" ? "button" : "Ctrl+Enter")} completion; offset={offset:0}.");
+                Console.WriteLine($"PASS external {kind} desktop: native wheel pass-through, {(kind == "full" ? "in-selection controls excluded and continuous reads" : "exact original/stitched pixels")}, selected width, no idle captures, cursor/focus retained, real {(kind == "table" ? "button" : "Ctrl+Enter")} completion; offset={offset:0}.");
 
                 if (kind == "sheet")
                 {
@@ -183,7 +196,7 @@ internal static class DesktopScrollChecks
                 ResizeStopsCapture = true, FocusChangeCancels = true, UiResponsive = true, TechnicalDiagnosticsOnly = true,
                 LargeFrozenHeader = true, NativeSingleWheelStep = true, FrozenHeaderFooterOnce = true, ContinuousWheelWithoutPauses = true,
                 SparseSpreadsheet = true, ReturnInsideRangeRecovers = true, ChangedToolbarRecovers = true, ResumeWithoutDuplicateRows = true, RapidWheel25Milliseconds = true,
-                OutsideOutlineContinuousRead = true
+                OutsideOutlineContinuousRead = true, InSelectionToolbarExcluded = true, InSelectionToolbarContinuousRead = true
             }, new JsonSerializerOptions { WriteIndented = true }));
             File.WriteAllText("artifacts/validation/desktop-scroll-performance.json", JsonSerializer.Serialize(new { UiPulses = pulses, MaxUiPulseGapMilliseconds = Math.Round(maxGap, 2), CapturedReads = desktop.Reads, desktop.ContinuousReads }));
             Console.WriteLine($"PASS desktop manual capture integration; UI pulses={pulses}, max gap={maxGap:F1}ms; no Excel/ChatGPT application-specific claim."); return 0;
@@ -221,7 +234,9 @@ internal static class DesktopScrollChecks
         string statePath = args[1], kind = args[2]; using var stop = EventWaitHandle.OpenExisting(args[3]);
         var page = Page(kind); var image = new Image { Source = page, Width = 600, Height = 3600, Stretch = Stretch.None, SnapsToDevicePixels = true };
         RenderOptions.SetBitmapScalingMode(image, BitmapScalingMode.NearestNeighbor);
-        var scroll = new ScrollViewer { Content = image, VerticalScrollBarVisibility = ScrollBarVisibility.Visible, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, CanContentScroll = false, Width = 620, Height = 430, HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Top };
+        // Ctrl+Enter changes WPF's last input device and otherwise adds a dotted focus
+        // adorner on the second capture. It is not part of this public page reference.
+        var scroll = new ScrollViewer { FocusVisualStyle = null, Content = image, VerticalScrollBarVisibility = ScrollBarVisibility.Visible, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, CanContentScroll = false, Width = 620, Height = 430, HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Top };
         var grid = new Grid { Margin = new Thickness(40, 80, 20, 20), Children = { scroll }, VerticalAlignment = VerticalAlignment.Top };
         Border? header = null;
         if (kind is "frozen" or "sheet")
@@ -232,6 +247,12 @@ internal static class DesktopScrollChecks
             var footer = new Border { Width = 620, HorizontalAlignment = HorizontalAlignment.Left, Background = Brushes.LightGray, Child = new TextBlock { Text = "Public sheet tabs / 固定状态栏", Margin = new(10, 4, 0, 0) } }; Grid.SetRow(footer, 2); grid.Children.Add(footer);
         }
         var window = new Window { Style = null, Title = "Public desktop fixture " + kind, Width = 760, Height = 650, Left = 40, Top = 30, Content = grid, Background = Brushes.White, UseLayoutRounding = true };
+        if (kind == "full")
+        {
+            var area = SystemParameters.WorkArea;
+            window.WindowStyle = WindowStyle.None; window.ResizeMode = ResizeMode.NoResize;
+            window.Left = area.X; window.Top = area.Y; window.Width = area.Width; window.Height = area.Height;
+        }
         PixelRect? fixedRegion = null; int fixedHeader = 0, fixedFooter = 0;
         void State()
         {
@@ -243,6 +264,12 @@ internal static class DesktopScrollChecks
                 if (kind is "frozen" or "sheet")
                 {
                     p.Y = grid.PointToScreen(new Point(0, 12)).Y; q.Y = grid.PointToScreen(new Point(0, 422)).Y;
+                    fixedHeader = (int)Math.Round(image.PointToScreen(new Point()).Y - p.Y);
+                    fixedFooter = (int)Math.Round(q.Y - image.PointToScreen(new Point(0, scroll.ViewportHeight)).Y);
+                }
+                if (kind == "full")
+                {
+                    p = window.PointToScreen(new Point()); q = window.PointToScreen(new Point(window.ActualWidth, window.ActualHeight));
                     fixedHeader = (int)Math.Round(image.PointToScreen(new Point()).Y - p.Y);
                     fixedFooter = (int)Math.Round(q.Y - image.PointToScreen(new Point(0, scroll.ViewportHeight)).Y);
                 }

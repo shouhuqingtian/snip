@@ -19,7 +19,7 @@ public sealed class DesktopManualScrollCapture(IDesktopCaptureService capture)
     [DllImport("dwmapi.dll")] private static extern int DwmGetWindowAttribute(IntPtr window, int attribute, out NativeMethods.NativeRect rect, int size);
 
     public async Task<BitmapSource> CaptureAsync(PixelRect region, ManualCaptureControl control, IProgress<ManualCaptureProgress> progress,
-        CancellationToken token, DiagnosticOperation? diagnostics = null, Func<PixelRect, IntPtr, Task>? ready = null, Func<bool, Task>? previewVisibility = null, Func<bool>? requiresCaptureUiChange = null)
+        CancellationToken token, DiagnosticOperation? diagnostics = null, Func<PixelRect, IntPtr, Task>? ready = null, Func<bool, Task>? previewVisibility = null, Func<bool>? requiresCaptureUiChange = null, Func<bool>? requiresCompositionSynchronization = null)
     {
         using var lifetime = CancellationTokenSource.CreateLinkedTokenSource(token);
         lifetime.CancelAfter(TimeSpan.FromMinutes(5));
@@ -42,6 +42,7 @@ public sealed class DesktopManualScrollCapture(IDesktopCaptureService capture)
                 Check();
                 diagnostics?.Stage("desktop-target-ready", new { target.ProcessId, region.Width, region.Height, Dpi = DesktopWindows.GetDpiForWindow(target.Handle) });
                 if (ready is not null) await ready(region, target.Handle).ConfigureAwait(false);
+                bool firstRead = true;
                 var source = new Source(async cancellation =>
                 {
                     Check();
@@ -52,9 +53,11 @@ public sealed class DesktopManualScrollCapture(IDesktopCaptureService capture)
                         Check();
                         if (DesktopWindows.AtPhysicalPoint(center)?.Handle != target.Handle)
                             throw new InvalidOperationException("选区被其他窗口遮挡，已停止采集；请重新框选。");
-                        var pixels = new FormatConvertedBitmap(capture.CaptureRegion(region, synchronizeComposition: changeUi), PixelFormats.Bgra32, null, 0); pixels.Freeze();
+                        bool synchronize = firstRead || changeUi && (requiresCompositionSynchronization?.Invoke() ?? true);
+                        var pixels = new FormatConvertedBitmap(capture.CaptureRegion(region, synchronizeComposition: synchronize), PixelFormats.Bgra32, null, 0); pixels.Freeze();
                         var bytes = new byte[checked(pixels.PixelWidth * pixels.PixelHeight * 4)];
                         pixels.CopyPixels(bytes, checked(pixels.PixelWidth * 4), 0);
+                        firstRead = false;
                         cancellation.ThrowIfCancellationRequested(); Check();
                         return new PixelFrame(pixels.PixelWidth, pixels.PixelHeight, bytes);
                     }

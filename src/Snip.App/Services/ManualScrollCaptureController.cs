@@ -46,6 +46,7 @@ public sealed class ManualScrollCaptureController : IDisposable
     public PixelRect ToolbarBounds { get; private set; }
     public PixelRect Region { get; private set; }
     public bool RequiresCaptureUiChange { get; private set; } = true;
+    public bool RequiresCompositionSynchronization { get; private set; } = true;
     private PixelRect displayBounds;
     public string? CancellationReason { get; private set; }
     public ManualScrollCaptureController(Action cancel, bool desktop = false)
@@ -122,7 +123,11 @@ public sealed class ManualScrollCaptureController : IDisposable
         if (disposed || outline is null) return;
         previewVisible = visible;
         if (desktop && window is not null && !ToolbarBounds.Intersect(Region).IsEmpty)
-        { if (visible) window.Show(); else window.Hide(); }
+        {
+            if (!visible) { RequiresCompositionSynchronization = window.IsVisible; window.Hide(); }
+            else if (DesktopControl!.InputRecent) window.Hide();
+            else window.Show();
+        }
         if (visible) DrawSelection(); else outline.Hide();
     }
     private IntPtr Mouse(int code, IntPtr message, IntPtr data)
