@@ -70,12 +70,14 @@ public sealed class ManualScrollCaptureTests
         Assert.Equal(source.Page.AsSpan(0, 270 * 120 * 4).ToArray(), result.Bgra);
         Assert.Equal(2, progress.Last!.Frames); Assert.False(progress.Last.Partial); Assert.Equal(0, source.AutomaticInputs);
     }
-    [Fact]
-    public async Task IdleSessionCapturesNoAdditionalFramesAndCancellationStopsWaiting()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task IdleSessionCapturesNoAdditionalFramesAndCancellationStopsWaiting(bool desktopMode)
     {
         using var control = new ManualCaptureControl(); using var cancellation = new CancellationTokenSource();
         var source = new IdleSource();
-        var task = new ManualScrollCaptureSession().CaptureAsync(source, control, null, cancellation.Token);
+        var task = new ManualScrollCaptureSession().CaptureAsync(source, control, null, cancellation.Token, desktopMode: desktopMode);
         await Task.Delay(150); Assert.Equal(1, source.Reads);
         cancellation.Cancel(); await Assert.ThrowsAnyAsync<OperationCanceledException>(() => task);
     }

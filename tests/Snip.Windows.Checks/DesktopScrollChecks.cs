@@ -117,6 +117,19 @@ internal static class DesktopScrollChecks
                     fixture.Resize(); HotkeyChecks.Press(0x11, 0x0D); Wait(() => task.IsCompleted, 6); task.GetAwaiter().GetResult();
                     editor = app.Windows.OfType<EditorWindow>().Single(); Require(failure is InvalidOperationException && ReferenceEquals(editor.DataContext, original), "Resized target was silently joined."); failure = null; editor.CancelScreenshot();
                     Console.WriteLine("PASS target resize stops native capture, retains original editor and closes controls.");
+
+                    stage = "focus protection"; fixture.Command(0); DesktopWindows.Activate(target); Pause(120);
+                    task = features.HandleAsync(new(original, region, SelectionAction.Scroll, BrowserCaptureMode.DesktopManual)); bar = Ready(task);
+                    var other = new Window { Style = null, Width = 200, Height = 180, Background = Brushes.Beige };
+                    try
+                    {
+                        other.Show(); other.Activate(); Wait(() => task.IsCompleted, 5); task.GetAwaiter().GetResult();
+                        editor = app.Windows.OfType<EditorWindow>().Single();
+                        Require(ReferenceEquals(editor.DataContext, original) && !app.Windows.OfType<ManualScrollCaptureWindow>().Any(), "Switching focus captured another application's content or retained controls.");
+                        editor.CancelScreenshot();
+                    }
+                    finally { other.Close(); }
+                    Console.WriteLine("PASS switching foreground applications cancels capture instead of reading unrelated content.");
                 }
             }
             Require(pulses > 20 && maxGap < 1000, "Native desktop capture blocked dispatcher heartbeat.");
@@ -129,7 +142,7 @@ internal static class DesktopScrollChecks
                 FixedSelectionWidth = true, IdleNoCapture = true, CursorUnchanged = true, NonactivatingControls = true,
                 CleanCaptureWithoutOwnUi = true, NativeButtonCompletion = true, NativeCtrlEnterCompletion = true,
                 UnmatchedTailExcluded = true, PartialResultNotice = true, EscapeCancels = true, HooksRemoved = true,
-                ResizeStopsCapture = true, UiResponsive = true, TechnicalDiagnosticsOnly = true
+                ResizeStopsCapture = true, FocusChangeCancels = true, UiResponsive = true, TechnicalDiagnosticsOnly = true
             }, new JsonSerializerOptions { WriteIndented = true }));
             File.WriteAllText("artifacts/validation/desktop-scroll-performance.json", JsonSerializer.Serialize(new { UiPulses = pulses, MaxUiPulseGapMilliseconds = Math.Round(maxGap, 2), CapturedReads = desktop.Reads }));
             Console.WriteLine($"PASS desktop manual capture integration; UI pulses={pulses}, max gap={maxGap:F1}ms; no Excel/ChatGPT application-specific claim."); return 0;
@@ -196,7 +209,13 @@ internal static class DesktopScrollChecks
                 { var color = Color.FromRgb((byte)random.Next(30, 170), (byte)random.Next(60, 190), (byte)random.Next(60, 190)); dc.DrawRectangle(new SolidColorBrush(color), null, new Rect(x, y + 39, random.Next(5, 18), 4)); }
             }
         }
-        var bitmap = new RenderTargetBitmap(600, 3600, 96, 96, PixelFormats.Pbgra32); bitmap.Render(drawing); bitmap.Freeze(); return bitmap;
+        var bitmap = new RenderTargetBitmap(600, 3600, 96, 96, PixelFormats.Pbgra32); bitmap.Render(drawing);
+        // The screen composites glyph-edge alpha against the white window. Flatten the fixture
+        // explicitly so expected pixels are actual displayed pixels, not uncomposited Pbgra data.
+        var pixels = new byte[600 * 3600 * 4]; bitmap.CopyPixels(pixels, 600 * 4, 0);
+        for (int i = 0; i < pixels.Length; i += 4)
+        { int white = 255 - pixels[i + 3]; for (int c = 0; c < 3; c++) pixels[i + c] = (byte)Math.Min(255, pixels[i + c] + white); pixels[i + 3] = 255; }
+        var opaque = BitmapSource.Create(600, 3600, 96, 96, PixelFormats.Bgra32, null, pixels, 600 * 4); opaque.Freeze(); return opaque;
     }
     private sealed class Fixture : IDisposable
     {
