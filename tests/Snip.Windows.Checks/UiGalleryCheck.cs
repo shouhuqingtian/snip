@@ -84,12 +84,12 @@ internal static class UiGalleryCheck
                 color.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
                 Require(((EditorViewModel)editor.DataContext).Color == "#FF9500", "Color swatches no longer update the editor.");
                 var toolbar = TextWindowChecks.Descendants<EditorToolbar>(editor).Single();
-                var browser = TextWindowChecks.Descendants<Button>(toolbar).Single(b => Equals(b.ToolTip, "Chrome / Edge 网页截图"));
+                var browser = TextWindowChecks.Descendants<Button>(toolbar).Single(b => Equals(b.ToolTip, "长截图（网页 / 桌面软件）"));
                 var entries = browser.ContextMenu.Items.OfType<MenuItem>().ToArray();
-                Require(entries.Length == 3, "Browser menu must contain exactly three capture modes.");
+                Require(entries.Length == 4 && browser.ContextMenu.Items.OfType<Separator>().Count() == 1, "Long capture menu must separate three webpage modes and desktop manual capture.");
                 var requested = new List<BrowserCaptureMode>(); toolbar.ScrollRequested += requested.Add;
                 foreach (var entry in entries) entry.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
-                Require(requested.SequenceEqual(new[] { BrowserCaptureMode.EntirePage, BrowserCaptureMode.FromCurrentPage, BrowserCaptureMode.ManualScroll }), "Browser menu dispatches an incorrect capture mode.");
+                Require(requested.SequenceEqual(new[] { BrowserCaptureMode.EntirePage, BrowserCaptureMode.FromCurrentPage, BrowserCaptureMode.ManualScroll, BrowserCaptureMode.DesktopManual }), "Long capture menu dispatches an incorrect capture mode.");
             });
             TextResultWindow Result(bool translation) => new(new TextResultViewModel(image, new GalleryOcr(), new ModelStore("unused-models"), new GalleryTranslation()) { AutoTranslate = translation });
             var result = Result(false);

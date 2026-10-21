@@ -39,6 +39,7 @@ try {
     if (($Scope -in 'Desktop','All') -and $IsWindows) {
         # Independent checks all run, with their real exit codes preserved.
         Check 'windows' @('run','--project','tests/Snip.Windows.Checks/Snip.Windows.Checks.csproj','-c','Release','--no-build')
+        Check 'desktop-scroll' @('run','--project','tests/Snip.Windows.Checks/Snip.Windows.Checks.csproj','-c','Release','--no-build','--','--desktop-scroll')
         Check 'editor-performance' @('run','--project','tests/Snip.Windows.Checks/Snip.Windows.Checks.csproj','-c','Release','--no-build','--','--editor-performance')
         Check 'share-ui' @('run','--project','tests/Snip.Windows.Checks/Snip.Windows.Checks.csproj','-c','Release','--no-build','--','--share-ui')
         Check 'share-native' @('run','--project','tests/Snip.Windows.Checks/Snip.Windows.Checks.csproj','-c','Release','--no-build','--','--share-native') -AllowsMissingShare

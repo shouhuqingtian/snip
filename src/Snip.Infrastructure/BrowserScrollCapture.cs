@@ -36,6 +36,7 @@ public sealed class BrowserScrollCapture(IDesktopCaptureService capture)
     [StructLayout(LayoutKind.Sequential)] private struct KeyboardInput { public ushort Key, Scan; public uint Flags, Time; public UIntPtr Extra; }
     public async Task<BitmapSource> CaptureAsync(PixelRect region, IProgress<string> progress, CancellationToken token, BrowserCaptureMode mode = BrowserCaptureMode.EntirePage, DiagnosticOperation? diagnostics = null, DragCaptureControl? manualControl = null, IProgress<ManualCaptureProgress>? manualProgress = null, Func<PixelRect, IntPtr, Task>? manualReady = null, Func<bool, Task>? previewVisibility = null)
     {
+        if (mode == BrowserCaptureMode.DesktopManual) throw new ArgumentException("桌面手动长截图需要使用桌面采集入口。", nameof(mode));
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(token); deadline.CancelAfter(mode == BrowserCaptureMode.ManualScroll ? TimeSpan.FromMinutes(5) : TimeSpan.FromSeconds(90));
         try { return await Task.Run(() => CaptureCoreAsync(region, progress, deadline.Token, mode, diagnostics, manualControl, manualProgress, manualReady, previewVisibility), deadline.Token).WaitAsync(deadline.Token).ConfigureAwait(false); }
         catch (OperationCanceledException) when (!token.IsCancellationRequested) { throw new TimeoutException("网页采集超时，已停止；请分段截图。"); }

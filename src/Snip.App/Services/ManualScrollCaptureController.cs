@@ -11,7 +11,7 @@ using Snip.Infrastructure;
 
 namespace Snip.App.Services;
 
-/// <summary>Hooks exist only during this capture, pass wheel input to Chrome, and never log keystrokes.</summary>
+/// <summary>Hooks exist only during capture. Desktop mode observes input without consuming it.</summary>
 public sealed class ManualScrollCaptureController : IDisposable
 {
     private delegate IntPtr Hook(int code, IntPtr message, IntPtr data);
@@ -36,23 +36,27 @@ public sealed class ManualScrollCaptureController : IDisposable
     private CaptureOutline? outline;
     private int borderThickness = 2;
     private bool previewVisible = true;
-    private bool disposed;
+    private bool disposed, desktopPointerDown;
+    private readonly bool desktop;
     public int PreviewUpdates => outline?.UpdateCount ?? 0;
     public long PreviewSurfacePixels => outline?.SurfacePixels ?? 0;
     public DragCaptureControl Control { get; } = new();
+    public ManualCaptureControl? DesktopControl { get; }
     public ManualScrollCaptureViewModel ViewModel { get; }
     public PixelRect ToolbarBounds { get; private set; }
     public PixelRect Region { get; private set; }
     public string? CancellationReason { get; private set; }
-    public ManualScrollCaptureController(Action cancel)
+    public ManualScrollCaptureController(Action cancel, bool desktop = false)
     {
-        this.cancel = cancel; ViewModel = new(Control, cancel);
+        this.cancel = cancel; this.desktop = desktop;
+        if (desktop) { DesktopControl = new(); ViewModel = new(DesktopControl, cancel); }
+        else ViewModel = new(Control, cancel);
         mouse = Mouse; keyboard = Keyboard;
         refresh.Tick += (_, _) => { refresh.Stop(); DrawSelection(); };
         focus.Tick += (_, _) =>
         {
             if (!disposed && browser != IntPtr.Zero && DesktopWindows.Foreground != browser)
-            { CancellationReason = "浏览器焦点发生变化，手动长截图已取消。"; cancel(); }
+            { CancellationReason = "目标窗口焦点发生变化，手动长截图已取消。"; cancel(); }
         };
     }
     public void Bind(PixelRect region, IntPtr target)
@@ -64,7 +68,7 @@ public sealed class ManualScrollCaptureController : IDisposable
         var monitor = MonitorFromPoint(new() { X = (int)(region.X + region.Width / 2), Y = (int)(region.Y + region.Height / 2) }, 2);
         if (!GetMonitorInfo(monitor, ref info)) throw new Win32Exception();
         var area = new PixelRect(info.Work.Left, info.Work.Top, info.Work.Right - info.Work.Left, info.Work.Bottom - info.Work.Top);
-        window = new(ViewModel) { Viewport = region }; window.Show();
+        window = new(ViewModel, desktop) { Viewport = region }; window.Show();
         // Move onto the destination monitor before consulting that HWND's authoritative DPI.
         Move(window, new(region.X, Math.Max(area.Y, region.Y - 90), 410, 58));
         double scale = Math.Max(96, DesktopWindows.GetDpiForWindow(new WindowInteropHelper(window).Handle)) / 96.0;
@@ -77,10 +81,13 @@ public sealed class ManualScrollCaptureController : IDisposable
             new PixelRect(region.X - width - gap, Math.Clamp(region.Y, area.Y, Math.Max(area.Y, area.Bottom - height)), width, height)
         };
         var fitted = choices.FirstOrDefault(candidate => candidate.Intersect(area) == candidate && candidate.Intersect(region).IsEmpty);
+        if (fitted.IsEmpty && desktop)
+            fitted = new PixelRect(region.Right - Math.Min(width, region.Width), region.Y, Math.Min(width, region.Width), height).ClampInside(area);
         if (fitted.IsEmpty) throw new InvalidOperationException("请稍微缩小手动截图选区，为选区外的完成按钮留出空间；浏览器全屏时可先退出全屏。");
         ToolbarBounds = fitted.RoundOut(); Move(window, ToolbarBounds); window.UpdateLayout();
         borderThickness = Math.Max(1, (int)Math.Round(2 * scale));
         outline = new CaptureOutline(((SolidColorBrush)Ui.Brush("AccentBrush")).Color);
+        if (desktop) DrawSelection();
         mouseHook = SetWindowsHookEx(14, mouse, GetModuleHandle(null), 0);
         keyHook = SetWindowsHookEx(13, keyboard, GetModuleHandle(null), 0);
         if (mouseHook == IntPtr.Zero || keyHook == IntPtr.Zero) throw new Win32Exception();
@@ -100,7 +107,7 @@ public sealed class ManualScrollCaptureController : IDisposable
         if (disposed || outline is null) return;
         if (!previewVisible) { outline.Hide(); return; }
         ViewModel.RefreshSelection();
-        var r = Control.VisibleSelection;
+        var r = desktop ? new PixelRect(0, 0, Region.Width, Region.Height) : Control.VisibleSelection;
         if (r.IsEmpty) outline.Hide();
         else outline.Show(new(Region.X + r.X, Region.Y + r.Y, r.Width, r.Height), borderThickness);
     }
@@ -110,6 +117,8 @@ public sealed class ManualScrollCaptureController : IDisposable
     {
         if (disposed || outline is null) return;
         previewVisible = visible;
+        if (desktop && window is not null && !ToolbarBounds.Intersect(Region).IsEmpty)
+        { if (visible) window.Show(); else window.Hide(); }
         if (visible) DrawSelection(); else outline.Hide();
     }
     private IntPtr Mouse(int code, IntPtr message, IntPtr data)
@@ -120,6 +129,16 @@ public sealed class ManualScrollCaptureController : IDisposable
             var point = Marshal.PtrToStructure<Point>(data);
             var physical = new PixelPoint(point.X, point.Y);
             var local = new PixelPoint(point.X - Region.X, point.Y - Region.Y);
+            if (desktop)
+            {
+                // Never inject, swallow or relocate wheel/drag input in desktop mode.
+                if (kind == 0x0201) desktopPointerDown = !ToolbarBounds.Contains(physical);
+                if ((kind == 0x020A || kind == 0x020E) && Region.Contains(physical) ||
+                    kind == 0x0200 && desktopPointerDown || kind == 0x0202 && desktopPointerDown)
+                    DesktopControl!.RequestFrame();
+                if (kind == 0x0202) desktopPointerDown = false;
+                return CallNextHookEx(mouseHook, code, message, data);
+            }
             if (kind == 0x0201 && Region.Contains(physical) && Control.Begin(local))
             { RefreshSelection(); return new(1); }
             if (kind == 0x0200 && Control.Dragging && Marshal.ReadIntPtr(data, 24).ToInt64() != 0x534E4950) { Control.Move(local); RefreshSelection(); }
@@ -135,9 +154,11 @@ public sealed class ManualScrollCaptureController : IDisposable
         if (!disposed && code >= 0 && message.ToInt32() is 0x0100 or 0x0104)
         {
             int key = Marshal.ReadInt32(data);
+            if (desktop && DesktopWindows.Foreground != browser) return CallNextHookEx(keyHook, code, message, data);
             if (key == 0x1B) { cancel(); return new(1); }
             if (key == 0x0D && GetAsyncKeyState(0x11) < 0 && ViewModel.CanFinish)
-            { Control.RequestFinish(); return new(1); }
+            { if (desktop) DesktopControl!.RequestFinish(); else Control.RequestFinish(); return new(1); }
+            if (desktop && key is 0x21 or 0x22 or 0x23 or 0x24 or 0x26 or 0x28 or 0x20) DesktopControl!.RequestFrame();
         }
         return CallNextHookEx(keyHook, code, message, data);
     }
@@ -146,6 +167,6 @@ public sealed class ManualScrollCaptureController : IDisposable
         if (disposed) return; disposed = true; focus.Stop(); refresh.Stop();
         if (mouseHook != IntPtr.Zero) UnhookWindowsHookEx(mouseHook);
         if (keyHook != IntPtr.Zero) UnhookWindowsHookEx(keyHook);
-        outline?.Dispose(); window?.Close(); Control.Dispose();
+        outline?.Dispose(); window?.Close(); Control.Dispose(); DesktopControl?.Dispose();
     }
 }

@@ -50,6 +50,27 @@ public sealed class ManualScrollCaptureTests
         Assert.Equal(source.Page.AsSpan(0, 300 * 120 * 4).ToArray(), result.Bgra);
     }
     [Fact]
+    public async Task DesktopGapPreservesOnlyAcceptedFramesAndExplicitlyReportsPartialResult()
+    {
+        using var control = new ManualCaptureControl();
+        var source = new ManualSource(control, [0, 50, 50, 50, 50, 400, 400, 400]);
+        var progress = new InlineProgress();
+        var result = await new ManualScrollCaptureSession(TimeSpan.Zero).CaptureAsync(source, control, progress, CancellationToken.None, desktopMode: true);
+        Assert.Equal(source.Page.AsSpan(0, 250 * 120 * 4).ToArray(), result.Bgra);
+        Assert.True(progress.Last!.Partial); Assert.True(progress.Last.CanFinish);
+        Assert.Contains("最后一段", progress.Last.Status); Assert.Equal(0, source.AutomaticInputs);
+    }
+    [Fact]
+    public async Task DesktopModeWaitsForStableViewportRatherThanAppendingAnimationFrames()
+    {
+        using var control = new ManualCaptureControl();
+        var source = new ManualSource(control, [0, 15, 30, 45, 60, 70, 70, 70, 70]);
+        var progress = new InlineProgress();
+        var result = await new ManualScrollCaptureSession(TimeSpan.Zero).CaptureAsync(source, control, progress, CancellationToken.None, desktopMode: true);
+        Assert.Equal(source.Page.AsSpan(0, 270 * 120 * 4).ToArray(), result.Bgra);
+        Assert.Equal(2, progress.Last!.Frames); Assert.False(progress.Last.Partial); Assert.Equal(0, source.AutomaticInputs);
+    }
+    [Fact]
     public async Task IdleSessionCapturesNoAdditionalFramesAndCancellationStopsWaiting()
     {
         using var control = new ManualCaptureControl(); using var cancellation = new CancellationTokenSource();

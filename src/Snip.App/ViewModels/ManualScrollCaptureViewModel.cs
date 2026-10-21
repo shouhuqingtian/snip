@@ -5,7 +5,7 @@ namespace Snip.App.ViewModels;
 
 public sealed class ManualScrollCaptureViewModel : ObservableObject
 {
-    private string status = "正在准备网页区域…";
+    private string status = "正在准备截图区域…", completeText = "完成";
     private bool ready, canFinish;
     private int frames, height;
     public ManualScrollCaptureViewModel(ManualCaptureControl control, Action cancel)
@@ -19,6 +19,7 @@ public sealed class ManualScrollCaptureViewModel : ObservableObject
         CancelCommand = new(cancel);
     }
     public string Status { get => status; private set => Set(ref status, value); }
+    public string CompleteText { get => completeText; private set => Set(ref completeText, value); }
     public bool Ready { get => ready; private set => Set(ref ready, value); }
     public bool CanFinish { get => canFinish; private set { if (Set(ref canFinish, value)) CompleteCommand.Refresh(); } }
     public int Frames { get => frames; private set => Set(ref frames, value); }
@@ -26,7 +27,7 @@ public sealed class ManualScrollCaptureViewModel : ObservableObject
     public RelayCommand CompleteCommand { get; }
     public RelayCommand CancelCommand { get; }
     public void Update(ManualCaptureProgress value)
-    { Frames = value.Frames; Height = value.Height; Status = value.Status; Ready = true; CanFinish = value.CanFinish; }
+    { Frames = value.Frames; Height = value.Height; Status = value.Status; Ready = true; CanFinish = value.CanFinish; CompleteText = value.Partial ? "保存已采集" : "完成"; }
     public void RefreshSelection()
     {
         if (!Ready || Drag?.Started != true) return;

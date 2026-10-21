@@ -2,7 +2,7 @@ using System.Diagnostics;
 
 namespace Snip.Core;
 
-public enum BrowserCaptureMode { EntirePage, FromCurrentPage, ManualScroll }
+public enum BrowserCaptureMode { EntirePage, FromCurrentPage, ManualScroll, DesktopManual }
 
 /// <summary>Native drivers return settled frames; this loop needs no browser accessibility API.</summary>
 public interface IScrollCaptureSource

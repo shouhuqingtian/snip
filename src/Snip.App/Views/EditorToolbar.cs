@@ -50,8 +50,11 @@ public sealed class EditorToolbar : UserControl
         {
             var item = new MenuItem { Header = title }; item.Click += (_, _) => ScrollRequested?.Invoke(mode); browserMenu.Items.Add(item);
         }
+        browserMenu.Items.Add(new Separator());
+        var desktop = new MenuItem { Header = "桌面软件手动长截图（自行滚动，点击完成）" };
+        desktop.Click += (_, _) => ScrollRequested?.Invoke(BrowserCaptureMode.DesktopManual); browserMenu.Items.Add(desktop);
         Button? browser = null;
-        browser = Add("scroll", "Chrome / Edge 网页截图", () => { browserMenu.PlacementTarget = browser; browserMenu.IsOpen = true; });
+        browser = Add("scroll", "长截图（网页 / 桌面软件）", () => { browserMenu.PlacementTarget = browser; browserMenu.IsOpen = true; });
         browser.ContextMenu = browserMenu;
         Divider();
         var undo = Add("undo", "撤销 Ctrl+Z", () => { }); undo.SetBinding(Button.CommandProperty, new Binding(nameof(EditorViewModel.UndoCommand)));

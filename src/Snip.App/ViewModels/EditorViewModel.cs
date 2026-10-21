@@ -96,6 +96,7 @@ public sealed class EditorViewModel : ObservableObject
     public bool IsFitWindow => ZoomMode == EditorZoomMode.FitWindow;
     public bool IsFitWidth => ZoomMode == EditorZoomMode.FitWidth;
     public string Status { get => status; private set => Set(ref status, value); }
+    public void ShowCaptureNotice(string message) => Status = message;
     public double[] StrokeWidths { get; } = [2, 4, 6, 8];
     public double[] FontSizes { get; } = [16, 20, 24, 32, 48, 64];
     public string[] Colors { get; } = ["#FF3B30", "#FF9500", "#FFCC00", "#168B73", "#007AFF", "#AF52DE", "#FFFFFF", "#202020"];

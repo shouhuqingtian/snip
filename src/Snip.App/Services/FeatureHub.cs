@@ -150,7 +150,7 @@ public sealed class FeatureHub
         window.Toolbar.TranslateRequested += (_, _) => ShowText(vm, true);
         window.Toolbar.ShareRequested += (_, _) => ShowShare(vm);
         window.Toolbar.WindowRequested += (_, _) => window.Activate();
-        window.Toolbar.ScrollRequested += _ => MessageBox.Show(window, "请使用截图快捷键或主窗口选取 Chrome/Edge 网页正文，再选择网页截图模式。", "网页截图");
+        window.Toolbar.ScrollRequested += _ => MessageBox.Show(window, "请使用截图快捷键或主窗口框选屏幕内容，再选择网页或桌面手动长截图。", "长截图");
         window.Toolbar.SelectionRequested += (_, _) => MessageBox.Show(window, "请使用截图快捷键或主窗口重新选择屏幕区域。", "调整选区");
         window.Toolbar.CancelRequested += (_, _) => window.CancelScreenshot();
         window.Toolbar.CompleteRequested += async (_, _) =>
@@ -175,7 +175,7 @@ public sealed class FeatureHub
             case SelectionAction.Editor: OpenEditor(result.Editor); break;
             case SelectionAction.Share: ShowShare(result.Editor); break;
             case SelectionAction.Scroll:
-                if (result.Editor.IsDirty && MessageBox.Show("网页长截图使用网页原画面，不包含当前标注。继续？", "网页长截图", MessageBoxButton.OKCancel) != MessageBoxResult.OK)
+                if (result.Editor.IsDirty && MessageBox.Show("长截图使用屏幕原画面，不包含当前标注。继续？", "长截图", MessageBoxButton.OKCancel) != MessageBoxResult.OK)
                 { OpenEditor(result.Editor); return; }
                 await CaptureBrowserAsync(result);
                 break;
@@ -187,31 +187,37 @@ public sealed class FeatureHub
     private async Task CaptureBrowserAsync(SelectionResult result)
     {
         using var cancellation = new CancellationTokenSource(); browserCancellation = cancellation;
-        using var operation = diagnostics?.Begin("browser-capture", new { Mode = result.BrowserMode.ToString(), result.Region.Width, result.Region.Height });
+        bool desktop = result.BrowserMode == BrowserCaptureMode.DesktopManual;
+        using var operation = diagnostics?.Begin(desktop ? "desktop-manual-capture" : "browser-capture", new { Mode = result.BrowserMode.ToString(), result.Region.Width, result.Region.Height });
         System.Windows.Media.Imaging.BitmapSource? image = null;
         Exception? failure = null;
-        using var manual = result.BrowserMode == BrowserCaptureMode.ManualScroll ? new ManualScrollCaptureController(() => _ = cancellation.CancelAsync()) : null;
+        ManualCaptureProgress? lastProgress = null;
+        using var manual = result.BrowserMode is BrowserCaptureMode.ManualScroll or BrowserCaptureMode.DesktopManual ? new ManualScrollCaptureController(() => _ = cancellation.CancelAsync(), desktop) : null;
         try
         {
             // GDI can photograph floating windows even with ShowActivated=false.
             // Hide existing windows; manual controls are created later, outside the captured region.
             using var hidden = new CaptureWindowScope(Application.Current.Windows.Cast<Window>());
             operation?.Stage("own-windows-hidden");
-            CaptureStatus?.Invoke("正在采集网页 · Esc 取消");
+            CaptureStatus?.Invoke(desktop ? "正在准备桌面长截图 · Esc 取消" : "正在采集网页 · Esc 取消");
             await Task.Delay(160, cancellation.Token);
             var progress = new Progress<string>(message => { if (browserCancellation == cancellation && !cancellation.IsCancellationRequested) CaptureStatus?.Invoke(message); });
-            var feedback = manual is null ? null : new Progress<ManualCaptureProgress>(value =>
+            var uiFeedback = manual is null ? null : new Progress<ManualCaptureProgress>(value =>
             {
                 if (browserCancellation == cancellation && !cancellation.IsCancellationRequested)
                 { manual.ViewModel.Update(value); manual.RefreshSelection(); CaptureStatus?.Invoke(value.Status); }
             });
-            image = await new BrowserScrollCapture(capture).CaptureAsync(result.Region, progress, cancellation.Token, result.BrowserMode, operation,
-                manual?.Control, feedback, manual is null ? null : (region, target) => Application.Current.Dispatcher.InvokeAsync(() => manual.Bind(region, target)).Task,
-                manual is null ? null : visible => Application.Current.Dispatcher.InvokeAsync(() => manual.SetPreviewVisible(visible)).Task);
+            var feedback = uiFeedback is null ? null : new CaptureProgress(value => { lastProgress = value; ((IProgress<ManualCaptureProgress>)uiFeedback).Report(value); });
+            Func<PixelRect, IntPtr, Task>? ready = manual is null ? null : (region, target) => Application.Current.Dispatcher.InvokeAsync(() => { cancellation.Token.ThrowIfCancellationRequested(); manual.Bind(region, target); }).Task;
+            Func<bool, Task>? visibility = manual is null ? null : visible => Application.Current.Dispatcher.InvokeAsync(() => manual.SetPreviewVisible(visible)).Task;
+            image = desktop
+                ? await new DesktopManualScrollCapture(capture).CaptureAsync(result.Region, manual!.DesktopControl!, feedback!, cancellation.Token, operation, ready, visibility)
+                : await new BrowserScrollCapture(capture).CaptureAsync(result.Region, progress, cancellation.Token, result.BrowserMode, operation, manual?.Control, feedback, ready, visibility);
+            cancellation.Token.ThrowIfCancellationRequested();
             manual?.Dispose();
             operation?.Complete(new { image.PixelWidth, image.PixelHeight });
         }
-        catch (OperationCanceledException) { operation?.Cancel("requested"); }
+        catch (OperationCanceledException) { image = null; operation?.Cancel("requested"); }
         catch (Exception e) { failure = e; operation?.Fail(e); }
         finally { manual?.Dispose(); browserCancellation = null; CaptureStatus?.Invoke(null); }
         if (failure is not null)
@@ -219,8 +225,14 @@ public sealed class FeatureHub
             if (captureFailure is not null) captureFailure(failure);
             else MessageBox.Show(failure.Message, "长截图未完成", MessageBoxButton.OK, MessageBoxImage.Warning);
         }
-        if (image is not null) OpenEditor(new EditorViewModel(image, renderer, export, new EditorDialogs(() => null)));
+        if (image is not null)
+        {
+            var editor = new EditorViewModel(image, renderer, export, new EditorDialogs(() => null));
+            if (desktop && lastProgress?.Partial == true) editor.ShowCaptureNotice(lastProgress.Status);
+            OpenEditor(editor);
+        }
         else OpenEditor(result.Editor);
     }
-
+    private sealed class CaptureProgress(Action<ManualCaptureProgress> report) : IProgress<ManualCaptureProgress>
+    { public void Report(ManualCaptureProgress value) => report(value); }
 }

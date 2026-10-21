@@ -15,15 +15,16 @@ public sealed class ManualScrollCaptureWindow : Window
     [DllImport("user32.dll", EntryPoint = "GetWindowLongPtrW")] private static extern IntPtr GetStyle(IntPtr hwnd, int index);
     [DllImport("user32.dll", EntryPoint = "SetWindowLongPtrW")] private static extern IntPtr SetStyle(IntPtr hwnd, int index, IntPtr style);
     public PixelRect Viewport { get; internal set; }
-    public ManualScrollCaptureWindow(ManualScrollCaptureViewModel vm)
+    public ManualScrollCaptureWindow(ManualScrollCaptureViewModel vm, bool desktop = false)
     {
-        Ui.ApplyWindow(this); Title = "自用截图 · 网页选区拖选";
+        Ui.ApplyWindow(this); Title = desktop ? "自用截图 · 桌面手动长截图" : "自用截图 · 网页选区拖选";
         WindowStyle = WindowStyle.None; ResizeMode = ResizeMode.NoResize; ShowInTaskbar = false;
         ShowActivated = false; Topmost = true; AllowsTransparency = true; Background = Brushes.Transparent;
         Width = 410; Height = 58; DataContext = vm;
         var row = new DockPanel { LastChildFill = true };
         var buttons = new StackPanel { Orientation = Orientation.Horizontal };
-        var done = new Button { Name = "CompleteManualButton", Content = "完成", MinWidth = 58, Margin = new(4, 0, 0, 0) };
+        var done = new Button { Name = "CompleteManualButton", MinWidth = 58, Margin = new(4, 0, 0, 0) };
+        done.SetBinding(ContentControl.ContentProperty, new Binding(nameof(vm.CompleteText)));
         Ui.Style(done, "PrimaryButton"); done.SetBinding(Button.CommandProperty, new Binding(nameof(vm.CompleteCommand)));
         var cancel = new Button { Name = "CancelManualButton", Content = "取消", MinWidth = 58, Margin = new(4, 0, 0, 0) };
         Ui.Style(cancel, "QuietButton"); cancel.SetBinding(Button.CommandProperty, new Binding(nameof(vm.CancelCommand)));
