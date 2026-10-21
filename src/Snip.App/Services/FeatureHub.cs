@@ -211,7 +211,7 @@ public sealed class FeatureHub
             Func<PixelRect, IntPtr, Task>? ready = manual is null ? null : (region, target) => Application.Current.Dispatcher.InvokeAsync(() => { cancellation.Token.ThrowIfCancellationRequested(); manual.Bind(region, target); }).Task;
             Func<bool, Task>? visibility = manual is null ? null : visible => Application.Current.Dispatcher.InvokeAsync(() => manual.SetPreviewVisible(visible)).Task;
             image = desktop
-                ? await new DesktopManualScrollCapture(capture).CaptureAsync(result.Region, manual!.DesktopControl!, feedback!, cancellation.Token, operation, ready, visibility)
+                ? await new DesktopManualScrollCapture(capture).CaptureAsync(result.Region, manual!.DesktopControl!, feedback!, cancellation.Token, operation, ready, visibility, () => manual.RequiresCaptureUiChange)
                 : await new BrowserScrollCapture(capture).CaptureAsync(result.Region, progress, cancellation.Token, result.BrowserMode, operation, manual?.Control, feedback, ready, visibility);
             cancellation.Token.ThrowIfCancellationRequested();
             manual?.Dispose();

@@ -48,6 +48,9 @@ public sealed class DesktopScrollMatchingTests
     public void RepeatedGridCannotFalselyConfirmReturnToAnotherTextRow()
         => Assert.False(DesktopScrollMatching.AlignedBody(Sheet(0), Sheet(80), 180, 20));
     [Fact]
+    public void SharedGlyphFragmentsCannotMakeDistantSpreadsheetRowsLookLikeAnOverlap()
+        => Assert.Null(DesktopScrollMatching.Match(Sheet(0), Sheet(600)));
+    [Fact]
     public async Task ReturningInsideCollectedRangeClearsPauseAndResumesWithoutDuplicatingRows()
     {
         using var control = new ManualCaptureControl();

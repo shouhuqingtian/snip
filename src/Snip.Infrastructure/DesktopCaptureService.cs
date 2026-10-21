@@ -24,6 +24,8 @@ public interface IDesktopCaptureService
         var image = new CroppedBitmap(desktop.Image, new Int32Rect((int)(region.X - desktop.Bounds.X), (int)(region.Y - desktop.Bounds.Y), (int)region.Width, (int)region.Height));
         image.Freeze(); return image;
     }
+    // Continuous reads may use the already composed desktop when our UI is outside the crop.
+    BitmapSource CaptureRegion(PixelRect region, bool synchronizeComposition) => CaptureRegion(region);
     PixelPoint CursorPosition { get; }
     void PlaceOverlay(Window window, PixelRect bounds);
 }
@@ -59,19 +61,20 @@ public sealed class DesktopCaptureService : IDesktopCaptureService
         return new(CapturePixels(bounds, displays), bounds, displays);
     }
 
-    public BitmapSource CaptureRegion(PixelRect region)
+    public BitmapSource CaptureRegion(PixelRect region) => CaptureRegion(region, true);
+    public BitmapSource CaptureRegion(PixelRect region, bool synchronizeComposition)
     {
         var displays = GetDisplays();
         var bounds = new PixelRect(displays.Min(d => d.Bounds.X), displays.Min(d => d.Bounds.Y),
             displays.Max(d => d.Bounds.Right) - displays.Min(d => d.Bounds.X), displays.Max(d => d.Bounds.Bottom) - displays.Min(d => d.Bounds.Y));
         if (region.Intersect(bounds) != region) throw new InvalidOperationException("选区超出桌面。");
-        return CapturePixels(region, displays);
+        return CapturePixels(region, displays, synchronizeComposition);
     }
 
-    private static BitmapSource CapturePixels(PixelRect bounds, IReadOnlyList<DisplayInfo> displays)
+    private static BitmapSource CapturePixels(PixelRect bounds, IReadOnlyList<DisplayInfo> displays, bool synchronizeComposition = true)
     {
         using var pixels = new PhysicalDesktopScope();
-        NativeMethods.DwmFlush();
+        if (synchronizeComposition) NativeMethods.DwmFlush();
         using var bitmap = new Bitmap((int)bounds.Width, (int)bounds.Height, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
         using (var graphics = Graphics.FromImage(bitmap))
         {

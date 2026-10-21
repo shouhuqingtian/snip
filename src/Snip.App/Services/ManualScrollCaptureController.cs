@@ -45,6 +45,8 @@ public sealed class ManualScrollCaptureController : IDisposable
     public ManualScrollCaptureViewModel ViewModel { get; }
     public PixelRect ToolbarBounds { get; private set; }
     public PixelRect Region { get; private set; }
+    public bool RequiresCaptureUiChange { get; private set; } = true;
+    private PixelRect displayBounds;
     public string? CancellationReason { get; private set; }
     public ManualScrollCaptureController(Action cancel, bool desktop = false)
     {
@@ -67,6 +69,7 @@ public sealed class ManualScrollCaptureController : IDisposable
         var info = new MonitorInfo { Size = Marshal.SizeOf<MonitorInfo>(), Device = "" };
         var monitor = MonitorFromPoint(new() { X = (int)(region.X + region.Width / 2), Y = (int)(region.Y + region.Height / 2) }, 2);
         if (!GetMonitorInfo(monitor, ref info)) throw new Win32Exception();
+        displayBounds = new(info.Monitor.Left, info.Monitor.Top, info.Monitor.Right - info.Monitor.Left, info.Monitor.Bottom - info.Monitor.Top);
         var area = new PixelRect(info.Work.Left, info.Work.Top, info.Work.Right - info.Work.Left, info.Work.Bottom - info.Work.Top);
         window = new(ViewModel, desktop) { Viewport = region }; window.Show();
         // Move onto the destination monitor before consulting that HWND's authoritative DPI.
@@ -85,6 +88,7 @@ public sealed class ManualScrollCaptureController : IDisposable
             fitted = new PixelRect(region.Right - Math.Min(width, region.Width), region.Y, Math.Min(width, region.Width), height).ClampInside(area);
         if (fitted.IsEmpty) throw new InvalidOperationException("请稍微缩小手动截图选区，为选区外的完成按钮留出空间；浏览器全屏时可先退出全屏。");
         ToolbarBounds = fitted.RoundOut(); Move(window, ToolbarBounds); window.UpdateLayout();
+        RequiresCaptureUiChange = !desktop || !ToolbarBounds.Intersect(Region).IsEmpty;
         borderThickness = Math.Max(1, (int)Math.Round(2 * scale));
         outline = new CaptureOutline(((SolidColorBrush)Ui.Brush("AccentBrush")).Color);
         if (desktop) DrawSelection();
@@ -109,7 +113,7 @@ public sealed class ManualScrollCaptureController : IDisposable
         ViewModel.RefreshSelection();
         var r = desktop ? new PixelRect(0, 0, Region.Width, Region.Height) : Control.VisibleSelection;
         if (r.IsEmpty) outline.Hide();
-        else outline.Show(new(Region.X + r.X, Region.Y + r.Y, r.Width, r.Height), borderThickness);
+        else outline.Show(new(Region.X + r.X, Region.Y + r.Y, r.Width, r.Height), borderThickness, desktop ? displayBounds : null);
     }
     // The outline is inside the browser viewport. Hide it explicitly for every native read;
     // GDI capture cannot be assumed to honor display-affinity exclusion.

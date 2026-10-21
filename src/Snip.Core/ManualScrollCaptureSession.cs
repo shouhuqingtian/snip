@@ -34,6 +34,7 @@ public sealed class ManualScrollCaptureSession(TimeSpan? sampleDelay = null)
         CancellationToken token, DiagnosticOperation? diagnostics = null, bool desktopMode = false)
     {
         var first = await source.ReadAsync(token).ConfigureAwait(false);
+        if (desktopMode) DesktopScrollMatching.Prepare(token);
         int maximumFrames = desktopMode ? 1024 : 160;
         using var frames = new ScrollFrameAccumulator(first, maximumFrames);
         var position = source.Position; bool positionReliable = true, gap = false;
@@ -54,7 +55,7 @@ public sealed class ManualScrollCaptureSession(TimeSpan? sampleDelay = null)
                 return frame;
             }
             int? offset = positionReliable && position is not null && current is not null ? (int)Math.Round(current.Offset - position.Offset) : null;
-            var match = desktopMode ? DesktopScrollMatching.Match(frames.Last, frame, token, diagnostics) : null;
+            var match = desktopMode ? DesktopScrollMatching.Match(frames.Last, frame, token, diagnostics, accepted) : null;
             if (desktopMode && match is { Offset: < 0 } && -match.Offset <= frames.Height - first.Height)
             {
                 gap = false; Report("已回到已采集范围，继续向下滚动即可续接。");

@@ -19,7 +19,7 @@ public sealed class DesktopManualScrollCapture(IDesktopCaptureService capture)
     [DllImport("dwmapi.dll")] private static extern int DwmGetWindowAttribute(IntPtr window, int attribute, out NativeMethods.NativeRect rect, int size);
 
     public async Task<BitmapSource> CaptureAsync(PixelRect region, ManualCaptureControl control, IProgress<ManualCaptureProgress> progress,
-        CancellationToken token, DiagnosticOperation? diagnostics = null, Func<PixelRect, IntPtr, Task>? ready = null, Func<bool, Task>? previewVisibility = null)
+        CancellationToken token, DiagnosticOperation? diagnostics = null, Func<PixelRect, IntPtr, Task>? ready = null, Func<bool, Task>? previewVisibility = null, Func<bool>? requiresCaptureUiChange = null)
     {
         using var lifetime = CancellationTokenSource.CreateLinkedTokenSource(token);
         lifetime.CancelAfter(TimeSpan.FromMinutes(5));
@@ -45,19 +45,20 @@ public sealed class DesktopManualScrollCapture(IDesktopCaptureService capture)
                 var source = new Source(async cancellation =>
                 {
                     Check();
-                    if (previewVisibility is not null) await previewVisibility(false).ConfigureAwait(false);
+                    bool changeUi = requiresCaptureUiChange?.Invoke() ?? previewVisibility is not null;
+                    if (changeUi && previewVisibility is not null) await previewVisibility(false).ConfigureAwait(false);
                     try
                     {
                         Check();
                         if (DesktopWindows.AtPhysicalPoint(center)?.Handle != target.Handle)
                             throw new InvalidOperationException("选区被其他窗口遮挡，已停止采集；请重新框选。");
-                        var pixels = new FormatConvertedBitmap(capture.CaptureRegion(region), PixelFormats.Bgra32, null, 0); pixels.Freeze();
+                        var pixels = new FormatConvertedBitmap(capture.CaptureRegion(region, synchronizeComposition: changeUi), PixelFormats.Bgra32, null, 0); pixels.Freeze();
                         var bytes = new byte[checked(pixels.PixelWidth * pixels.PixelHeight * 4)];
                         pixels.CopyPixels(bytes, checked(pixels.PixelWidth * 4), 0);
                         cancellation.ThrowIfCancellationRequested(); Check();
                         return new PixelFrame(pixels.PixelWidth, pixels.PixelHeight, bytes);
                     }
-                    finally { if (previewVisibility is not null) await previewVisibility(true).ConfigureAwait(false); }
+                    finally { if (changeUi && previewVisibility is not null) await previewVisibility(true).ConfigureAwait(false); }
                 });
                 var frame = await new ManualScrollCaptureSession().CaptureAsync(source, control, progress, lifetime.Token, diagnostics, desktopMode: true).ConfigureAwait(false);
                 Check();

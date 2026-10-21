@@ -3,7 +3,22 @@ namespace Snip.Core;
 /// <summary>Match motion within desktop content, excluding unchanged controls at both ends of each correspondence.</summary>
 public static class DesktopScrollMatching
 {
-    public static ScrollMatch? Match(PixelFrame previous, PixelFrame next, CancellationToken token = default, DiagnosticOperation? diagnostics = null)
+    private static readonly Lazy<bool> prepared = new(() =>
+    {
+        var bytes = new byte[128 * 224 * 4]; new Random(55).NextBytes(bytes);
+        var a = new PixelFrame(128, 200, bytes.AsSpan(0, 128 * 200 * 4).ToArray());
+        var b = new PixelFrame(128, 200, bytes.AsSpan(128 * 24 * 4, 128 * 200 * 4).ToArray());
+        var match = Match(a, b);
+        if (match is not null) { using var frames = new ScrollFrameAccumulator(a); frames.Append(b, match); }
+        _ = AlignedBody(a, a, 0, 0);
+        return true;
+    });
+    // Called on the capture worker before announcing readiness. First-wheel input must
+    // not pay the JIT/collection initialization cost and lose intermediate overlap.
+    public static void Prepare(CancellationToken token = default)
+    { token.ThrowIfCancellationRequested(); _ = prepared.Value; token.ThrowIfCancellationRequested(); }
+
+    public static ScrollMatch? Match(PixelFrame previous, PixelFrame next, CancellationToken token = default, DiagnosticOperation? diagnostics = null, ScrollMatch? reference = null)
     {
         token.ThrowIfCancellationRequested();
         if (previous.Width != next.Width || previous.Height != next.Height || previous.Height < 120) return null;
@@ -18,14 +33,27 @@ public static class DesktopScrollMatching
             column[y] = error >= 18 ? (byte)2 : (byte)1;
             return error >= 18;
         }
+        bool StaticRow(int y)
+        {
+            int changedPixels = 0, samples = Math.Max(1, (width - 6) / 5);
+            for (int x = 3; x < width - 3; x += 5)
+                if (Changed(x, y) && ++changedPixels > Math.Max(1, samples / 200)) return false;
+            return true;
+        }
+        int header = reference?.Header ?? 0, footer = reference?.Footer ?? 0;
+        if (reference is null)
+        {
+            while (header < height - 32 && StaticRow(header)) header++;
+            while (footer < height - header - 32 && StaticRow(height - footer - 1)) footer++;
+        }
         var anchors = new List<(int X, int Y)>();
-        for (int top = 3; top < height - 3; top += 24)
+        for (int top = header + 3; top < height - footer - 3; top += 24)
         {
             token.ThrowIfCancellationRequested();
             for (int left = 3; left < width - 3; left += 32)
             {
                 int selected = 0;
-                for (int y = top; y < Math.Min(top + 24, height - 3) && selected < 4; y += 3)
+                for (int y = top; y < Math.Min(top + 24, height - footer - 3) && selected < 4; y += 3)
                 for (int x = left; x < Math.Min(left + 32, width - 3) && selected < 4; x += 3)
                 {
                     if (!Changed(x, y)) continue;
@@ -49,7 +77,7 @@ public static class DesktopScrollMatching
         {
             token.ThrowIfCancellationRequested();
             var keys = column.Select(p => Signature(previous, p.X, p.Y)).Distinct().ToDictionary(key => key, _ => new List<int>());
-            for (int y = 3; y < height - 3; y++)
+            for (int y = header + 3; y < height - footer - 3; y++)
             {
                 ulong key = Signature(next, column.Key, y);
                 if (keys.TryGetValue(key, out var hits) && hits.Count <= 8) hits.Add(y);
@@ -57,12 +85,14 @@ public static class DesktopScrollMatching
             foreach (var point in column)
             {
                 var hits = keys[Signature(previous, point.X, point.Y)];
-                if (hits.Count is 0 or > 8) continue;
+                if (hits.Count > 8) continue;
+                // Keep unmatched anchors in verification. Otherwise only shared glyph
+                // fragments survive and unrelated rows can appear perfectly aligned.
                 distinct.Add(point);
                 foreach (int y in hits)
                 {
                     int shift = point.Y - y;
-                    if (shift != 0 && Math.Abs(shift) <= range && Changed(point.X, y)) votes[shift] = votes.GetValueOrDefault(shift) + 1;
+                    if (shift != 0 && Math.Abs(shift) <= range) votes[shift] = votes.GetValueOrDefault(shift) + 1;
                 }
             }
         }
@@ -90,8 +120,7 @@ public static class DesktopScrollMatching
             foreach (var (x, y) in points)
             {
                 int targetY = y - shift;
-                // A source anchor moving into an unchanged frozen header/sidebar is not an overlap candidate.
-                if (targetY < 3 || targetY >= height - 3 || !Changed(x, targetY)) continue;
+                if (targetY < header + 3 || targetY >= height - footer - 3) continue;
                 sum += Math.Min(64, Patch(x, y, shift)); count++;
             }
             if (count >= minimum) candidates.Add((shift, sum / count));
@@ -100,21 +129,8 @@ public static class DesktopScrollMatching
         var ordered = candidates.OrderBy(v => v.Error).ToArray(); var best = ordered[0];
         double alternative = ordered.Where(v => Math.Abs(v.Shift - best.Shift) > 4).Select(v => v.Error).DefaultIfEmpty(64).Min();
         if (best.Error > 12 || alternative - best.Error < 1.2) return Reject("ambiguous-overlap", candidates.Count, best.Error, alternative - best.Error, best.Shift);
-        var inliers = points.Where(p => p.Y - best.Shift >= 3 && p.Y - best.Shift < height - 3 && Changed(p.X, p.Y - best.Shift) && Patch(p.X, p.Y, best.Shift) <= 12).ToArray();
+        var inliers = points.Where(p => p.Y - best.Shift >= header + 3 && p.Y - best.Shift < height - footer - 3 && Patch(p.X, p.Y, best.Shift) <= 12).ToArray();
         if (inliers.Length < minimum) return Reject("insufficient-inliers", candidates.Count, best.Error, alternative - best.Error, best.Shift);
-        bool StaticRow(int y)
-        {
-            int changed = 0, samples = Math.Max(1, (width - 6) / 5);
-            for (int x = 3; x < width - 3; x += 5)
-                if (Changed(x, y) && ++changed > Math.Max(1, samples / 200)) return false;
-            return true;
-        }
-        int header = 0, footer = 0;
-        // Frozen toolbars/rows can occupy most of a window; the browser's 20% band limit is unsuitable here.
-        while (header < height - 32 && StaticRow(header)) header++;
-        while (footer < height - header - 32 && StaticRow(height - footer - 1)) footer++;
-        header = Math.Max(header, Math.Max(0, inliers.Min(p => Math.Min(p.Y, p.Y - best.Shift)) - 3));
-        footer = Math.Max(footer, Math.Max(0, height - inliers.Max(p => Math.Max(p.Y, p.Y - best.Shift)) - 3));
         if (height - header - footer <= Math.Abs(best.Shift)) return Reject("moving-area-too-small", candidates.Count, best.Error, alternative - best.Error, best.Shift, header, footer);
         diagnostics?.Stage("desktop-overlap-evaluated", new { Reason = "accepted", Anchors = anchors.Count, Candidates = candidates.Count, Offset = best.Shift, best.Error, Gap = alternative - best.Error, Header = header, Footer = footer });
         return new(best.Shift, header, footer, best.Error);

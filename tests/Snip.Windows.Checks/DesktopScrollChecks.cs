@@ -157,7 +157,7 @@ internal static class DesktopScrollChecks
                     Console.WriteLine("PASS switching foreground applications cancels capture instead of reading unrelated content.");
                 }
             }
-            Require(pulses > 20 && maxGap < 1000, "Native desktop capture blocked dispatcher heartbeat.");
+            Require(pulses > 20 && maxGap < 1000 && desktop.ContinuousReads > 0, "Native desktop capture blocked dispatcher heartbeat or never used continuous reads.");
             var flush = journal.FlushAsync(); Wait(() => flush.IsCompleted, 3); flush.GetAwaiter().GetResult();
             string logs = File.ReadAllText(Path.Combine(folder, "logs/events.jsonl"));
             Require(logs.Contains("desktop-target-ready") && logs.Contains("manual-partial-completed") && !logs.Contains("Public desktop fixture", StringComparison.Ordinal) && !logs.Contains(folder, StringComparison.Ordinal), "Desktop capture diagnostics lack technical stages or include fixture content/path.");
@@ -169,9 +169,10 @@ internal static class DesktopScrollChecks
                 UnmatchedTailExcluded = true, PartialResultNotice = true, EscapeCancels = true, HooksRemoved = true,
                 ResizeStopsCapture = true, FocusChangeCancels = true, UiResponsive = true, TechnicalDiagnosticsOnly = true,
                 LargeFrozenHeader = true, NativeSingleWheelStep = true, FrozenHeaderFooterOnce = true, ContinuousWheelWithoutPauses = true,
-                SparseSpreadsheet = true, ReturnInsideRangeRecovers = true, ChangedToolbarRecovers = true, ResumeWithoutDuplicateRows = true, RapidWheel25Milliseconds = true
+                SparseSpreadsheet = true, ReturnInsideRangeRecovers = true, ChangedToolbarRecovers = true, ResumeWithoutDuplicateRows = true, RapidWheel25Milliseconds = true,
+                OutsideOutlineContinuousRead = true
             }, new JsonSerializerOptions { WriteIndented = true }));
-            File.WriteAllText("artifacts/validation/desktop-scroll-performance.json", JsonSerializer.Serialize(new { UiPulses = pulses, MaxUiPulseGapMilliseconds = Math.Round(maxGap, 2), CapturedReads = desktop.Reads }));
+            File.WriteAllText("artifacts/validation/desktop-scroll-performance.json", JsonSerializer.Serialize(new { UiPulses = pulses, MaxUiPulseGapMilliseconds = Math.Round(maxGap, 2), CapturedReads = desktop.Reads, desktop.ContinuousReads }));
             Console.WriteLine($"PASS desktop manual capture integration; UI pulses={pulses}, max gap={maxGap:F1}ms; no Excel/ChatGPT application-specific claim."); return 0;
         }
         catch (Exception error) { Console.Error.WriteLine("Desktop stage: " + stage); Console.Error.WriteLine(error); if (failure is not null) Console.Error.WriteLine(failure); return 1; }
@@ -330,8 +331,11 @@ internal static class DesktopScrollChecks
     private sealed class CountingCapture : IDesktopCaptureService
     {
         public DesktopCaptureService Inner { get; } = new(); private int reads; public int Reads => Volatile.Read(ref reads);
+        private int continuousReads; public int ContinuousReads => Volatile.Read(ref continuousReads);
         public IReadOnlyList<DisplayInfo> GetDisplays() => Inner.GetDisplays(); public DesktopFrame Capture() => Inner.Capture();
         public BitmapSource CaptureRegion(PixelRect r) { Interlocked.Increment(ref reads); return Inner.CaptureRegion(r); }
+        public BitmapSource CaptureRegion(PixelRect r, bool synchronizeComposition)
+        { Interlocked.Increment(ref reads); if (!synchronizeComposition) Interlocked.Increment(ref continuousReads); return Inner.CaptureRegion(r, synchronizeComposition); }
         public PixelPoint CursorPosition => Inner.CursorPosition; public void PlaceOverlay(Window window, PixelRect bounds) => Inner.PlaceOverlay(window, bounds);
     }
     private sealed class Dialogs : IEditorDialogs

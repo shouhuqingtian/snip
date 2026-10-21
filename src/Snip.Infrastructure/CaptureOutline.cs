@@ -43,13 +43,17 @@ public sealed class CaptureOutline : IDisposable
         if (message == 0x0021) { handled = true; return new(3); } // MA_NOACTIVATE
         return IntPtr.Zero;
     }
-    public void Show(PixelRect selection, int thickness)
+    public void Show(PixelRect selection, int thickness, PixelRect? outsideClip = null)
     {
         if (disposed) return;
         var r = selection.RoundOut();
         if (r.IsEmpty) { Hide(); return; }
         int line = Math.Max(1, Math.Min(thickness, (int)Math.Min(r.Width, r.Height)));
-        var next = new[] {
+        var next = outsideClip is { } clip ? new[] {
+            new PixelRect(r.X - line, r.Y - line, r.Width + 2 * line, line).Intersect(clip),
+            new PixelRect(r.X - line, r.Bottom, r.Width + 2 * line, line).Intersect(clip),
+            new PixelRect(r.X - line, r.Y, line, r.Height).Intersect(clip),
+            new PixelRect(r.Right, r.Y, line, r.Height).Intersect(clip) } : new[] {
             new PixelRect(r.X, r.Y, r.Width, line),
             new PixelRect(r.X, r.Bottom - line, r.Width, line),
             new PixelRect(r.X, r.Y + line, line, Math.Max(0, r.Height - 2 * line)),
