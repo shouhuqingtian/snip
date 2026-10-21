@@ -180,7 +180,20 @@ internal static class DesktopScrollChecks
             File.WriteAllText("artifacts/validation/desktop-scroll-performance.json", JsonSerializer.Serialize(new { UiPulses = pulses, MaxUiPulseGapMilliseconds = Math.Round(maxGap, 2), CapturedReads = desktop.Reads, desktop.ContinuousReads }));
             Console.WriteLine($"PASS desktop manual capture integration; UI pulses={pulses}, max gap={maxGap:F1}ms; no Excel/ChatGPT application-specific claim."); return 0;
         }
-        catch (Exception error) { Console.Error.WriteLine("Desktop stage: " + stage); Console.Error.WriteLine(error); if (failure is not null) Console.Error.WriteLine(failure); return 1; }
+        catch (Exception error)
+        {
+            Console.Error.WriteLine("Desktop stage: " + stage); Console.Error.WriteLine(error); if (failure is not null) Console.Error.WriteLine(failure);
+            try
+            {
+                var flush = journal.FlushAsync(); Wait(() => flush.IsCompleted, 3); flush.GetAwaiter().GetResult();
+                string path = Path.Combine(folder, "logs/events.jsonl");
+                Directory.CreateDirectory("artifacts/validation/desktop-debug");
+                File.Copy(path, "artifacts/validation/desktop-debug/technical-events.jsonl", true);
+                foreach (var line in File.ReadLines(path).TakeLast(8)) Console.WriteLine("Desktop technical stage: " + line);
+            }
+            catch (Exception diagnosticError) { Console.WriteLine("Technical export: " + diagnosticError.GetType().Name); }
+            return 1;
+        }
         finally
         {
             timer.Stop(); features.CancelBrowserCapture();
