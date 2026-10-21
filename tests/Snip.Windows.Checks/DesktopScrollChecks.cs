@@ -20,7 +20,6 @@ namespace Snip.Windows.Checks;
 /// <summary>Actual external WPF scrolling windows, physical wheel/button/key input and production FeatureHub.</summary>
 internal static class DesktopScrollChecks
 {
-    [DllImport("user32.dll")] private static extern bool SetPhysicalCursorPos(int x, int y);
     [DllImport("user32.dll")] private static extern IntPtr SendMessageTimeout(IntPtr window, uint message, IntPtr w, IntPtr l, uint flags, uint timeout, out IntPtr result);
     [DllImport("user32.dll")] private static extern uint SendInput(uint count, Input[] inputs, int size);
     [StructLayout(LayoutKind.Sequential)] private struct Input { public uint Type; public Union Data; }
@@ -119,7 +118,13 @@ internal static class DesktopScrollChecks
                 {
                     stage = "sheet recovery"; fixture.Command(0); DesktopWindows.Activate(target); Pause(120);
                     task = features.HandleAsync(new(original, region, SelectionAction.Scroll, BrowserCaptureMode.DesktopManual)); bar = Ready(task); vm = (ManualScrollCaptureViewModel)bar.DataContext;
-                    Move(pointer); Wheel(1); Wait(() => vm.Frames > 1, 6);
+                    Move(pointer); Wheel(1);
+                    try { Wait(() => vm.Frames > 1, 6); }
+                    catch (TimeoutException)
+                    {
+                        Console.WriteLine($"Recovery entry state: offset={fixture.State().Offset}; frames={vm.Frames}; reads={desktop.Reads}; foreground={DesktopWindows.Foreground == target}; status={vm.Status}.");
+                        throw;
+                    }
                     int acceptedHeight = vm.Height, acceptedOffset = (int)fixture.State().Offset;
                     fixture.Command(1800); Wheel(1); Wait(() => vm.CompleteText == "保存已采集", 6);
                     // Let the input-driven sampler go idle before arranging the next native
@@ -377,7 +382,19 @@ internal static class DesktopScrollChecks
         Directory.CreateDirectory("artifacts/validation/ui-previews"); new ImageExportService().SavePng(capture.CaptureRegion(bounds), "artifacts/validation/ui-previews/" + name + ".png");
     }
     private static byte[] Pixels(BitmapSource image) { var bitmap = new FormatConvertedBitmap(image, PixelFormats.Bgra32, null, 0); byte[] b = new byte[bitmap.PixelWidth * bitmap.PixelHeight * 4]; bitmap.CopyPixels(b, bitmap.PixelWidth * 4, 0); return b; }
-    private static void Move(PixelPoint p) { Require(SetPhysicalCursorPos((int)p.X, (int)p.Y), "Native pointer rejected."); Pause(60); }
+    private static void Move(PixelPoint p)
+    {
+        // SetPhysicalCursorPos at an unchanged coordinate does not reliably refresh WPF's
+        // mouse-over target after an editor took focus. Deliver the same real move as Chrome checks.
+        var displays = new DesktopCaptureService().GetDisplays();
+        double left = displays.Min(d => d.Bounds.X), top = displays.Min(d => d.Bounds.Y);
+        double width = displays.Max(d => d.Bounds.Right) - left, height = displays.Max(d => d.Bounds.Bottom) - top;
+        Input At(double x) => new() { Data = new() { Mouse = new() {
+            X = Math.Clamp((int)Math.Ceiling((x - left) * 65536 / width), 0, 65535),
+            Y = Math.Clamp((int)Math.Ceiling((p.Y - top) * 65536 / height), 0, 65535), Flags = 0xE001 } } };
+        Send([At(Math.Min(left + width - 1, p.X + 1)), At(p.X)]);
+        Pause(60);
+    }
     private static void Wheel(int count) => Send(Enumerable.Range(0, count).Select(_ => new Input { Data = new() { Mouse = new() { Wheel = unchecked((uint)-120), Flags = 0x0800 } } }).ToArray());
     private static void WheelUp() => Send([new() { Data = new() { Mouse = new() { Wheel = 120, Flags = 0x0800 } } }]);
     private static void Click(Button b) { var p = b.PointToScreen(new Point(b.ActualWidth / 2, b.ActualHeight / 2)); Move(new(p.X, p.Y)); Send([new() { Data = new() { Mouse = new() { Flags = 2 } } }, new() { Data = new() { Mouse = new() { Flags = 4 } } }]); }
