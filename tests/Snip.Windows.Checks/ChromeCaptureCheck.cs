@@ -82,6 +82,8 @@ internal static class ChromeCaptureCheck
             export.SavePng(entire, Path.Combine(output, "entire-page.png"));
             if (entire.PixelHeight < 3500 || entire.PixelHeight > 4000) throw new InvalidOperationException($"Unexpected full page height: {entire.PixelHeight}");
             Console.WriteLine($"PASS real Chrome entire page: {entire.PixelWidth}x{entire.PixelHeight}; ScrollPattern disabled.");
+            stage = "desktop manual continuous Chrome wheel";
+            VerifyDesktopContinuous(app, window, desktop, export, diagnostics, entire, output);
             stage = "current viewport from middle to bottom";
             Wheel(region, 12000); Task.Delay(650).GetAwaiter().GetResult();
             var atTopPixels = Pixels(desktop.CaptureRegion(region));
@@ -444,6 +446,58 @@ internal static class ChromeCaptureCheck
         for (int i = 0; i < pixels.Length; i += 4) if (pixels[i] > 250 && pixels[i + 1] < 10 && pixels[i + 2] > 250) return true;
         return false;
     }
+    private static void VerifyDesktopContinuous(Application app, WindowCaptureInfo window, DesktopCaptureService desktop,
+        ImageExportService export, DiagnosticJournal diagnostics, BitmapSource entire, string output)
+    {
+        var previous = SynchronizationContext.Current;
+        SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext());
+        try
+        {
+            var page = BrowserPageGeometry.Snapshot(window).PageBounds ?? throw new InvalidOperationException("Fixture renderer geometry unavailable.");
+            var region = new PixelRect(page.X + 40, page.Y + 30, 450, 280);
+            void Pause(int milliseconds) { var delay = Task.Delay(milliseconds); TextWindowChecks.PumpUntil(() => delay.IsCompleted, TimeSpan.FromSeconds(3)); }
+            Wheel(region, 12000); Pause(650);
+            var originalImage = desktop.CaptureRegion(region);
+            var expectedTop = new CroppedBitmap(entire, new Int32Rect(40, 30, 450, 280));
+            if (!Pixels(originalImage).SequenceEqual(Pixels(expectedTop))) throw new InvalidOperationException("Chrome fixture reference differs before desktop capture.");
+            var renderer = new AnnotationRenderer(); using var pins = new PinManager(export);
+            var features = new FeatureHub(renderer, export, desktop, pins, diagnostics, captureFailure: System.Runtime.ExceptionServices.ExceptionDispatchInfo.Throw);
+            var original = new EditorViewModel(originalImage, renderer, export, new EditorDialogs(() => null));
+            var task = features.HandleAsync(new(original, region, SelectionAction.Scroll, BrowserCaptureMode.DesktopManual));
+            TextWindowChecks.PumpUntil(() => task.IsCompleted || app.Windows.OfType<ManualScrollCaptureWindow>().Any(w => ((ManualScrollCaptureViewModel)w.DataContext).Ready), TimeSpan.FromSeconds(12));
+            if (task.IsCompleted) { task.GetAwaiter().GetResult(); throw new InvalidOperationException("Desktop Chrome capture stopped before wheel input."); }
+            var vm = (ManualScrollCaptureViewModel)app.Windows.OfType<ManualScrollCaptureWindow>().Single().DataContext;
+            Move(new Point(region.X + 200, region.Y + 120));
+            var clock = Stopwatch.StartNew();
+            for (int step = 0; step < 5; step++)
+            {
+                Send([new() { Type = 0, Data = new() { Mouse = new() { Wheel = unchecked((uint)-120), Flags = 0x0800 } } }]);
+                Pause(90);
+            }
+            Pause(650);
+            var title = Title(window.Handle); int index = title.IndexOf("|offset=", StringComparison.Ordinal);
+            int offset = index < 0 ? -1 : int.Parse(new string(title[(index + 8)..].TakeWhile(char.IsDigit).ToArray()), System.Globalization.CultureInfo.InvariantCulture);
+            if (offset < 300) throw new InvalidOperationException("Continuous Chrome wheel fixture did not scroll past its original viewport.");
+            TextWindowChecks.PumpUntil(() => task.IsCompleted || vm.Height == region.Height + offset, TimeSpan.FromSeconds(6));
+            if (task.IsCompleted || vm.CompleteText != "完成" || vm.Frames < 2) throw new InvalidOperationException("Continuous Chrome wheel lost intermediate overlap or paused.");
+            HotkeyChecks.Press(0x11, 0x0D);
+            TextWindowChecks.PumpUntil(() => task.IsCompleted, TimeSpan.FromSeconds(8)); task.GetAwaiter().GetResult();
+            var editor = app.Windows.OfType<EditorWindow>().Single();
+            var result = ((EditorViewModel)editor.DataContext).Compose();
+            export.SavePng(result, Path.Combine(output, "desktop-continuous.png"));
+            var expected = new CroppedBitmap(entire, new Int32Rect(40, 30, 450, 280 + offset));
+            if (result.PixelWidth != 450 || result.PixelHeight != 280 + offset || !Pixels(result).SequenceEqual(Pixels(expected)))
+                throw new InvalidOperationException("Desktop continuous Chrome capture differs from the complete page reference.");
+            editor.CancelScreenshot();
+            Directory.CreateDirectory("artifacts/validation");
+            var evidence = new { NativeChromeWheel = true, DesktopManualMode = true, ContinuousWithoutFrameWaits = true, ExactWholeResultPixels = true,
+                OffsetPixels = offset, Frames = vm.Frames, ElapsedMilliseconds = Math.Round(clock.Elapsed.TotalMilliseconds, 2) };
+            File.WriteAllText("artifacts/validation/desktop-chrome-continuous.json", System.Text.Json.JsonSerializer.Serialize(evidence));
+            Console.WriteLine("PASS desktop manual real Chrome continuous wheel, exact entire result pixels: " + System.Text.Json.JsonSerializer.Serialize(evidence));
+        }
+        finally { SynchronizationContext.SetSynchronizationContext(previous); }
+    }
+
     private static byte[] Pixels(BitmapSource image)
     {
         var converted = new FormatConvertedBitmap(image, PixelFormats.Bgra32, null, 0);
