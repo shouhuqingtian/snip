@@ -61,7 +61,11 @@ internal static class DesktopScrollChecks
                 var bar = Ready(task); var vm = (ManualScrollCaptureViewModel)bar.DataContext;
                 var barBounds = Bounds(bar);
                 Require(bar.Viewport == region && (kind == "full" ? !barBounds.Intersect(region).IsEmpty : barBounds.Intersect(region).IsEmpty), "Desktop capture selection or toolbar placement is incorrect.");
-                if (kind == "full") { ((Border)bar.Content).Background = Brushes.Magenta; bar.UpdateLayout(); }
+                if (kind == "full")
+                {
+                    SavePreview("46-desktop-manual-full", region, bar, desktop.Inner);
+                    ((Border)bar.Content).Background = Brushes.Magenta; bar.UpdateLayout();
+                }
                 Require(DesktopWindows.Foreground == target && vm.Drag is null, "Desktop toolbar stole focus or entered browser drag mode.");
                 int idleReads = desktop.Reads; Pause(550);
                 Require(desktop.Reads == idleReads, "Idle manual capture keeps photographing the desktop.");
@@ -96,7 +100,7 @@ internal static class DesktopScrollChecks
                     Require(desktop.ContinuousReads > continuousBefore, "In-selection toolbar never allowed continuous reads while scrolling.");
                     Pause(600); Require(bar.IsVisible, "In-selection toolbar did not return after scrolling stopped.");
                 }
-                SavePreview("46-desktop-manual-" + kind, region, bar, desktop.Inner);
+                if (kind != "full") SavePreview("46-desktop-manual-" + kind, region, bar, desktop.Inner);
                 if (kind == "table") Click(TextWindowChecks.Descendants<Button>(bar).Single(b => b.Name == "CompleteManualButton"));
                 else HotkeyChecks.Press(0x11, 0x0D);
                 Wait(() => task.IsCompleted, 8); task.GetAwaiter().GetResult(); Require(failure is null, "Desktop capture reported a failure: " + failure?.GetType().Name);
@@ -379,6 +383,10 @@ internal static class DesktopScrollChecks
     private static void SavePreview(string name, PixelRect region, Window bar, DesktopCaptureService capture)
     {
         var r = Bounds(bar); var bounds = new PixelRect(Math.Min(region.X, r.X) - 8, Math.Min(region.Y, r.Y) - 8, Math.Max(region.Right, r.Right) - Math.Min(region.X, r.X) + 16, Math.Max(region.Bottom, r.Bottom) - Math.Min(region.Y, r.Y) + 16).RoundOut();
+        var displays = capture.GetDisplays();
+        var desktop = new PixelRect(displays.Min(d => d.Bounds.X), displays.Min(d => d.Bounds.Y),
+            displays.Max(d => d.Bounds.Right) - displays.Min(d => d.Bounds.X), displays.Max(d => d.Bounds.Bottom) - displays.Min(d => d.Bounds.Y));
+        bounds = bounds.Intersect(desktop);
         Directory.CreateDirectory("artifacts/validation/ui-previews"); new ImageExportService().SavePng(capture.CaptureRegion(bounds), "artifacts/validation/ui-previews/" + name + ".png");
     }
     private static byte[] Pixels(BitmapSource image) { var bitmap = new FormatConvertedBitmap(image, PixelFormats.Bgra32, null, 0); byte[] b = new byte[bitmap.PixelWidth * bitmap.PixelHeight * 4]; bitmap.CopyPixels(b, bitmap.PixelWidth * 4, 0); return b; }
