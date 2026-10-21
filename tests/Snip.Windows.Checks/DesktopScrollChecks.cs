@@ -72,7 +72,15 @@ internal static class DesktopScrollChecks
                 {
                     int before = vm.Frames; Wheel(kind is "frozen" or "continuous" or "sheet" ? 1 : 3);
                     if (kind == "continuous") Pause(25);
-                    else Wait(() => task.IsCompleted || vm.Frames > before, 6);
+                    else
+                    {
+                        try { Wait(() => task.IsCompleted || vm.Frames > before, 6); }
+                        catch (TimeoutException)
+                        {
+                            Console.WriteLine($"Native wheel state: kind={kind}; step={step}; offset={fixture.State().Offset}; frames={vm.Frames}; height={vm.Height}; reads={desktop.Reads}; foreground={DesktopWindows.Foreground == target}; status={vm.Status}.");
+                            throw;
+                        }
+                    }
                     if (task.IsCompleted) task.GetAwaiter().GetResult();
                     Require(!task.IsCompleted, "Manual capture finished without explicit completion.");
                 }
@@ -189,7 +197,11 @@ internal static class DesktopScrollChecks
                 string path = Path.Combine(folder, "logs/events.jsonl");
                 Directory.CreateDirectory("artifacts/validation/desktop-debug");
                 File.Copy(path, "artifacts/validation/desktop-debug/technical-events.jsonl", true);
-                foreach (var line in File.ReadLines(path).TakeLast(8)) Console.WriteLine("Desktop technical stage: " + line);
+                foreach (var line in File.ReadLines(path).TakeLast(8))
+                {
+                    using var record = JsonDocument.Parse(line);
+                    Console.WriteLine("Desktop technical stage: " + record.RootElement.GetProperty("Stage").GetString() + " " + record.RootElement.GetProperty("Fields").GetRawText());
+                }
             }
             catch (Exception diagnosticError) { Console.WriteLine("Technical export: " + diagnosticError.GetType().Name); }
             return 1;
@@ -342,7 +354,14 @@ internal static class DesktopScrollChecks
     private static void Wheel(int count) => Send(Enumerable.Range(0, count).Select(_ => new Input { Data = new() { Mouse = new() { Wheel = unchecked((uint)-120), Flags = 0x0800 } } }).ToArray());
     private static void WheelUp() => Send([new() { Data = new() { Mouse = new() { Wheel = 120, Flags = 0x0800 } } }]);
     private static void Click(Button b) { var p = b.PointToScreen(new Point(b.ActualWidth / 2, b.ActualHeight / 2)); Move(new(p.X, p.Y)); Send([new() { Data = new() { Mouse = new() { Flags = 2 } } }, new() { Data = new() { Mouse = new() { Flags = 4 } } }]); }
-    private static void Send(Input[] input) => Require(SendInput((uint)input.Length, input, Marshal.SizeOf<Input>()) == input.Length, "Native mouse input rejected.");
+    private static void Send(Input[] input)
+    {
+        // Match real input: inject from outside the hook's UI thread and pump that
+        // dispatcher. A synchronous SendInput here can time out and silently remove hooks.
+        var sending = Task.Run(() => SendInput((uint)input.Length, input, Marshal.SizeOf<Input>()));
+        Wait(() => sending.IsCompleted, 3);
+        Require(sending.GetAwaiter().GetResult() == input.Length, "Native mouse input rejected.");
+    }
     private static void Pause(int ms) { var task = Task.Delay(ms); Wait(() => task.IsCompleted, 3); }
     private static void Wait(Func<bool> done, int seconds) => TextWindowChecks.PumpUntil(done, TimeSpan.FromSeconds(seconds));
     private static void Require(bool value, string message) { if (!value) throw new InvalidOperationException(message); }
