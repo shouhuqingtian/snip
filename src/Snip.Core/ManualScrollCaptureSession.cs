@@ -46,10 +46,11 @@ public sealed class ManualScrollCaptureSession(TimeSpan? sampleDelay = null)
             var current = source.Position;
             if (ScrollMatching.Unchanged(frames.Last, frame)) { gap = false; Report(); return frame; }
             int? offset = positionReliable && position is not null && current is not null ? (int)Math.Round(current.Offset - position.Offset) : null;
-            if (offset < 0 || offset is null && ScrollMatching.Match(frame, frames.Last) is not null)
+            var match = desktopMode ? DesktopScrollMatching.Match(frames.Last, frame, token, diagnostics) : null;
+            if (offset < 0 || desktopMode && match?.Offset < 0 || !desktopMode && offset is null && ScrollMatching.Match(frame, frames.Last) is not null)
             { gap = true; Report(desktopMode ? "已暂停拼接：请回到已采集末尾；也可保存已采集部分。" : "已向上滚动；请回到已采集末尾再向下滚动，避免重复内容。"); return frame; }
             if (offset == 0) { positionReliable = false; offset = null; }
-            var match = ScrollMatching.Match(frames.Last, frame);
+            if (!desktopMode) match = ScrollMatching.Match(frames.Last, frame);
             if (match is not null && offset is { } measured && Math.Abs(match.Offset - measured) > 2)
             { positionReliable = false; offset = null; }
             if (match is null && offset is > 0 && offset < first.Height * .8)
@@ -62,7 +63,8 @@ public sealed class ManualScrollCaptureSession(TimeSpan? sampleDelay = null)
                 gap = true; Report(desktopMode ? "对齐暂停：向上回到已采集末尾再缓慢下滚，或保存已采集部分。" : "滚动过快或内容难以对齐；请向上回到已采集末尾，再慢慢向下滚动。");
                 diagnostics?.Stage("manual-overlap-rejected", new { Frames = frames.FrameCount, KnownOffset = offset }); return frame;
             }
-            if (!control.FinishRequested && current?.AtBottom != true && match.Offset < Math.Max(24, first.Height / 4))
+            int minimumStep = desktopMode ? Math.Max(8, Math.Min(32, (first.Height - match.Header - match.Footer) / 6)) : Math.Max(24, first.Height / 4);
+            if (!control.FinishRequested && current?.AtBottom != true && match.Offset < minimumStep)
             { gap = false; Report(); return frame; } // Coalesce smooth-scroll microsteps; include remainder when finishing.
             if (desktopMode && (frames.FrameCount >= 160 || frames.Height + match.Offset > 24000 || (long)(frames.Height + match.Offset) * first.Width > 60_000_000))
             {

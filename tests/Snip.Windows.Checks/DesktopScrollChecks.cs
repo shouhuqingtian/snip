@@ -28,7 +28,7 @@ internal static class DesktopScrollChecks
     { [FieldOffset(0)] public Mouse Mouse; [FieldOffset(0)] public Keyboard Keyboard; }
     [StructLayout(LayoutKind.Sequential)] private struct Mouse { public int X, Y; public uint Wheel, Flags, Time; public UIntPtr Extra; }
     [StructLayout(LayoutKind.Sequential)] private struct Keyboard { public ushort Key, Scan; public uint Flags, Time; public UIntPtr Extra; }
-    private sealed record FixtureState(long Handle, PixelRect Region, double Offset);
+    private sealed record FixtureState(long Handle, PixelRect Region, double Offset, int Header = 0, int Footer = 0);
 
     public static int Run()
     {
@@ -48,7 +48,7 @@ internal static class DesktopScrollChecks
         try
         {
             Ui.EnsureTheme();
-            foreach (string kind in new[] { "table", "chat" })
+            foreach (string kind in new[] { "table", "chat", "frozen" })
             {
                 stage = kind + " external window";
                 using var fixture = new Fixture(folder, kind);
@@ -57,7 +57,7 @@ internal static class DesktopScrollChecks
                 Require(DesktopWindows.Snapshot().Any(w => w.Handle == target), "External desktop fixture not found independently of current process.");
                 DesktopWindows.Activate(target); Pause(160);
                 var original = new EditorViewModel(desktop.CaptureRegion(region), renderer, export, new Dialogs());
-                AssertPixels(original.Image, fixture.Page, 0);
+                AssertPixels(original.Image, fixture.Page, 0, state, original.Image);
                 var task = features.HandleAsync(new(original, region, SelectionAction.Scroll, BrowserCaptureMode.DesktopManual));
                 var bar = Ready(task); var vm = (ManualScrollCaptureViewModel)bar.DataContext;
                 var barBounds = Bounds(bar);
@@ -65,19 +65,20 @@ internal static class DesktopScrollChecks
                 Require(DesktopWindows.Foreground == target && vm.Drag is null, "Desktop toolbar stole focus or entered browser drag mode.");
                 int idleReads = desktop.Reads; Pause(550);
                 Require(desktop.Reads == idleReads, "Idle manual capture keeps photographing the desktop.");
-                var pointer = new PixelPoint(region.X + region.Width / 2, region.Y + region.Height / 2);
+                var pointer = new PixelPoint(region.X + region.Width / 2, region.Y + state.Header + (region.Height - state.Header - state.Footer) / 2);
                 Move(pointer); clock.Restart(); timer.Start();
                 stage = kind + " physical wheel";
                 for (int step = 0; step < 5; step++)
                 {
-                    int before = vm.Frames; Wheel(3);
+                    int before = vm.Frames; Wheel(kind == "frozen" ? 1 : 3);
                     Wait(() => task.IsCompleted || vm.Frames > before, 6);
                     if (task.IsCompleted) task.GetAwaiter().GetResult();
                     Require(!task.IsCompleted, "Manual capture finished without explicit completion.");
                 }
                 timer.Stop();
                 double offset = fixture.State().Offset;
-                Require(offset > 300 && desktop.CursorPosition == pointer, "Wheel did not reach actual target or capture moved the cursor.");
+                Require(offset >= (kind == "frozen" ? 160 : 300) && desktop.CursorPosition == pointer, "Wheel did not reach actual target or capture moved the cursor.");
+                if (kind == "frozen") Require(state.Header > region.Height / 2 && !vm.CompleteText.Contains("保存"), "Large frozen header caused ordinary wheel input to pause.");
                 SavePreview("46-desktop-manual-" + kind, region, bar, desktop.Inner);
                 if (kind == "table") Click(TextWindowChecks.Descendants<Button>(bar).Single(b => b.Name == "CompleteManualButton"));
                 else HotkeyChecks.Press(0x11, 0x0D);
@@ -85,7 +86,7 @@ internal static class DesktopScrollChecks
                 var editor = app.Windows.OfType<EditorWindow>().Single();
                 var result = (EditorViewModel)editor.DataContext;
                 Require(result.PixelWidth == region.Width && result.PixelHeight == region.Height + offset, "Desktop result size lost a viewport or included fixed window chrome.");
-                AssertPixels(result.Image, fixture.Page, (int)offset);
+                AssertPixels(result.Image, fixture.Page, (int)offset, state, original.Image);
                 Require(!app.Windows.OfType<ManualScrollCaptureWindow>().Any(), "Desktop controls survived successful completion.");
                 editor.CancelScreenshot();
                 Console.WriteLine($"PASS external {kind} desktop: native wheel pass-through, exact original/stitched pixels, selected width, no idle captures, cursor/focus retained, real {(kind == "table" ? "button" : "Ctrl+Enter")} completion; offset={offset:0}.");
@@ -142,7 +143,8 @@ internal static class DesktopScrollChecks
                 FixedSelectionWidth = true, IdleNoCapture = true, CursorUnchanged = true, NonactivatingControls = true,
                 CleanCaptureWithoutOwnUi = true, NativeButtonCompletion = true, NativeCtrlEnterCompletion = true,
                 UnmatchedTailExcluded = true, PartialResultNotice = true, EscapeCancels = true, HooksRemoved = true,
-                ResizeStopsCapture = true, FocusChangeCancels = true, UiResponsive = true, TechnicalDiagnosticsOnly = true
+                ResizeStopsCapture = true, FocusChangeCancels = true, UiResponsive = true, TechnicalDiagnosticsOnly = true,
+                LargeFrozenHeader = true, NativeSingleWheelStep = true, FrozenHeaderFooterOnce = true
             }, new JsonSerializerOptions { WriteIndented = true }));
             File.WriteAllText("artifacts/validation/desktop-scroll-performance.json", JsonSerializer.Serialize(new { UiPulses = pulses, MaxUiPulseGapMilliseconds = Math.Round(maxGap, 2), CapturedReads = desktop.Reads }));
             Console.WriteLine($"PASS desktop manual capture integration; UI pulses={pulses}, max gap={maxGap:F1}ms; no Excel/ChatGPT application-specific claim."); return 0;
@@ -164,18 +166,31 @@ internal static class DesktopScrollChecks
         var page = Page(kind); var image = new Image { Source = page, Width = 600, Height = 3600, Stretch = Stretch.None, SnapsToDevicePixels = true };
         RenderOptions.SetBitmapScalingMode(image, BitmapScalingMode.NearestNeighbor);
         var scroll = new ScrollViewer { Content = image, VerticalScrollBarVisibility = ScrollBarVisibility.Visible, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, CanContentScroll = false, Width = 620, Height = 430, HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Top };
-        var grid = new Grid { Margin = new Thickness(40, 80, 20, 20), Children = { scroll } };
+        var grid = new Grid { Margin = new Thickness(40, 80, 20, 20), Children = { scroll }, VerticalAlignment = VerticalAlignment.Top };
+        if (kind == "frozen")
+        {
+            grid.Height = 430; grid.RowDefinitions.Add(new() { Height = new(220) }); grid.RowDefinitions.Add(new() { Height = new(180) }); grid.RowDefinitions.Add(new() { Height = new(30) });
+            var header = new Border { Width = 620, HorizontalAlignment = HorizontalAlignment.Left, Background = Brushes.LightBlue, Child = new TextBlock { Text = "Public fixed toolbar / 冻结表头\n\nDocument title and editing controls\n\nColumn A     Column B     Column C\n\nFrozen row 1\n\nFrozen row 2", Margin = new(12), FontSize = 16 } };
+            grid.Children.Add(header); scroll.Height = 180; Grid.SetRow(scroll, 1);
+            var footer = new Border { Width = 620, HorizontalAlignment = HorizontalAlignment.Left, Background = Brushes.LightGray, Child = new TextBlock { Text = "Public sheet tabs / 固定状态栏", Margin = new(10, 4, 0, 0) } }; Grid.SetRow(footer, 2); grid.Children.Add(footer);
+        }
         var window = new Window { Style = null, Title = "Public desktop fixture " + kind, Width = 760, Height = 650, Left = 40, Top = 30, Content = grid, Background = Brushes.White, UseLayoutRounding = true };
-        PixelRect? fixedRegion = null;
+        PixelRect? fixedRegion = null; int fixedHeader = 0, fixedFooter = 0;
         void State()
         {
             if (!window.IsLoaded) return;
             if (fixedRegion is null)
             {
                 var p = image.PointToScreen(new Point(16, 12)); var q = image.PointToScreen(new Point(496, 392));
+                if (kind == "frozen")
+                {
+                    p.Y = grid.PointToScreen(new Point(0, 12)).Y; q.Y = grid.PointToScreen(new Point(0, 422)).Y;
+                    fixedHeader = (int)Math.Round(image.PointToScreen(new Point()).Y - p.Y);
+                    fixedFooter = (int)Math.Round(q.Y - image.PointToScreen(new Point(0, scroll.ViewportHeight)).Y);
+                }
                 fixedRegion = new PixelRect(p.X, p.Y, q.X - p.X, q.Y - p.Y).RoundOut();
             }
-            var state = new FixtureState(new WindowInteropHelper(window).Handle.ToInt64(), fixedRegion.Value, scroll.VerticalOffset);
+            var state = new FixtureState(new WindowInteropHelper(window).Handle.ToInt64(), fixedRegion.Value, scroll.VerticalOffset, fixedHeader, fixedFooter);
             string temp = statePath + ".new"; File.WriteAllText(temp, JsonSerializer.Serialize(state)); File.Move(temp, statePath, true);
         }
         window.SourceInitialized += (_, _) => HwndSource.FromHwnd(new WindowInteropHelper(window).Handle)!.AddHook((IntPtr _, int message, IntPtr w, IntPtr _, ref bool handled) =>
@@ -198,7 +213,7 @@ internal static class DesktopScrollChecks
             for (int row = 0; row < 60; row++)
             {
                 double y = row * 60;
-                if (kind == "table")
+                if (kind is "table" or "frozen")
                 {
                     dc.DrawRectangle(row % 2 == 0 ? Brushes.AliceBlue : Brushes.White, new Pen(Brushes.LightGray, 1), new Rect(0, y, 600, 60));
                     foreach (int x in new[] { 60, 260, 440 }) dc.DrawLine(new Pen(Brushes.LightGray, 1), new Point(x, y), new Point(x, y + 60));
@@ -237,9 +252,21 @@ internal static class DesktopScrollChecks
         public void Resize() { SendMessageTimeout(new(State().Handle), 0x8054, IntPtr.Zero, IntPtr.Zero, 2, 1000, out _); Pause(160); }
         public void Dispose() { stop.Set(); if (!process.WaitForExit(2000)) process.Kill(true); process.Dispose(); stop.Dispose(); }
     }
-    private static void AssertPixels(BitmapSource result, BitmapSource page, int offset)
+    private static void AssertPixels(BitmapSource result, BitmapSource page, int offset, FixtureState? state = null, BitmapSource? initial = null)
     {
-        var expected = new CroppedBitmap(page, new Int32Rect(16, 12, 480, 380 + offset)); expected.Freeze();
+        BitmapSource expected;
+        if (state is { Header: > 0 } && initial is not null)
+        {
+            int width = (int)state.Region.Width, height = (int)state.Region.Height + offset, stride = width * 4;
+            var pixels = new byte[height * stride]; var first = Pixels(initial);
+            Buffer.BlockCopy(first, 0, pixels, 0, state.Header * stride);
+            var body = new CroppedBitmap(page, new Int32Rect(16, 0, width, (int)state.Region.Height - state.Header - state.Footer + offset));
+            var content = Pixels(body); Buffer.BlockCopy(content, 0, pixels, state.Header * stride, content.Length);
+            Buffer.BlockCopy(first, first.Length - state.Footer * stride, pixels, pixels.Length - state.Footer * stride, state.Footer * stride);
+            expected = BitmapSource.Create(width, height, 96, 96, PixelFormats.Bgra32, null, pixels, stride);
+        }
+        else expected = new CroppedBitmap(page, new Int32Rect(16, 12, 480, 380 + offset));
+        expected.Freeze();
         var actualBytes = Pixels(result); var expectedBytes = Pixels(expected);
         if (result.PixelWidth != expected.PixelWidth || result.PixelHeight != expected.PixelHeight || !actualBytes.SequenceEqual(expectedBytes))
         {
