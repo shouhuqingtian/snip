@@ -1,8 +1,7 @@
 using System;
 using System.IO;
-using System.Runtime.InteropServices;
 using System.Threading.Tasks;
-using System.Windows;
+using System.Threading;
 using System.Windows.Media.Imaging;
 
 namespace Snip.Infrastructure;
@@ -11,7 +10,14 @@ public interface IImageExportService
 {
     void SavePng(BitmapSource image, string path);
     Task CopyAsync(BitmapSource image);
+    Task CopyAsync(BitmapSource image, CancellationToken token, IProgress<ImageCopyProgress>? progress = null)
+    {
+        token.ThrowIfCancellationRequested();
+        return CopyAsync(image).WaitAsync(token);
+    }
 }
+
+public sealed record ImageCopyProgress(string Stage, int Attempt = 0, int? BlockingProcessId = null, int? Bytes = null);
 
 public sealed class ImageExportService : IImageExportService
 {
@@ -30,13 +36,7 @@ public sealed class ImageExportService : IImageExportService
         finally { if (File.Exists(tempPath)) File.Delete(tempPath); }
     }
 
-    public async Task CopyAsync(BitmapSource image)
-    {
-        // SetImage supplies the standard WPF bitmap format consumed by Paint and other desktop apps.
-        for (int attempt = 0; ; attempt++)
-        {
-            try { Clipboard.SetImage(image); return; }
-            catch (COMException) when (attempt < 4) { await Task.Delay(80 * (attempt + 1)); }
-        }
-    }
+    public Task CopyAsync(BitmapSource image) => CopyAsync(image, CancellationToken.None);
+    public Task CopyAsync(BitmapSource image, CancellationToken token, IProgress<ImageCopyProgress>? progress = null)
+        => NativeImageClipboard.CopyAsync(image, token, progress);
 }

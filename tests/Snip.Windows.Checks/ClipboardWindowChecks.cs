@@ -7,6 +7,7 @@ using System.Windows.Automation.Peers;
 using System.Windows.Automation.Provider;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
+using System.Windows.Interop;
 using System.Windows.Threading;
 using Snip.App.ViewModels;
 using Snip.App.Views;
@@ -220,7 +221,9 @@ internal static class ClipboardWindowChecks
     {
         using var acquired = EventWaitHandle.OpenExisting(acquiredName);
         using var release = EventWaitHandle.OpenExisting(releaseName);
-        if (!OpenClipboard(IntPtr.Zero)) return 1;
+        using var owner = new HwndSource(new HwndSourceParameters("Snip.ClipboardLockFixture")
+            { ParentWindow = new IntPtr(-3), Width = 0, Height = 0, WindowStyle = 0 });
+        if (!OpenClipboard(owner.Handle)) return 1;
         try { acquired.Set(); return release.WaitOne(TimeSpan.FromSeconds(10)) ? 0 : 1; }
         finally { CloseClipboard(); }
     }
@@ -233,10 +236,11 @@ internal static class ClipboardWindowChecks
         return Process.Start(start)!;
     }
 
-    private sealed class ClipboardLock : IDisposable
+    internal sealed class ClipboardLock : IDisposable
     {
         private readonly EventWaitHandle acquired, release;
         private readonly Process child;
+        public int ProcessId => child.Id;
         public ClipboardLock()
         {
             string id = Guid.NewGuid().ToString("N");

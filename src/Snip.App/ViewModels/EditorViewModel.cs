@@ -40,7 +40,7 @@ public sealed class EditorViewModel : ObservableObject
         RedoCommand = new(() => { CancelGesture(); history.Redo(); selectedId = null; Changed(true); }, () => history.CanRedo && !exporting);
         DeleteCommand = new(DeleteSelected, () => selectedId.HasValue && !exporting);
         SaveCommand = new(() => Save(), () => !exporting);
-        CopyCommand = new(CopyAsync, e => dialogs.ShowError($"复制失败，请重试：{e.Message}"), () => !exporting);
+        CopyCommand = new(() => CopyAsync(), e => dialogs.ShowError($"复制失败，请重试：{e.Message}"), () => !exporting);
         ZoomInCommand = new(() => Zoom *= 1.25);
         ZoomOutCommand = new(() => Zoom /= 1.25);
         FitWindowCommand = new(() => SetZoomMode(EditorZoomMode.FitWindow), () => viewportWidth > 0);
@@ -289,16 +289,20 @@ public sealed class EditorViewModel : ObservableObject
         catch (Exception e) { dialogs.ShowError($"保存失败，编辑内容已保留：{e.Message}"); return false; }
     }
 
-    private async Task CopyAsync()
+    private async Task CopyAsync(CancellationToken token = default)
     {
         CommitTextRequested?.Invoke(this, EventArgs.Empty);
         CancelGesture(); exporting = true; RefreshCommands();
         try
         {
+            token.ThrowIfCancellationRequested(); Status = "正在复制图片…";
             var result = renderer.Render(Image, history.Current);
-            await export.CopyAsync(result);
+            await export.CopyAsync(result, token);
+            token.ThrowIfCancellationRequested();
             history.MarkExported(); Status = "截图已复制到剪贴板，可粘贴到画图或聊天窗口。";
         }
+        catch (OperationCanceledException) when (token.IsCancellationRequested) { Status = "已取消复制。"; throw; }
+        catch { Status = "复制未完成，截图和标注已保留，可以重试。"; throw; }
         finally { exporting = false; RefreshCommands(); }
     }
 
@@ -341,10 +345,10 @@ public sealed class EditorViewModel : ObservableObject
         CommitPendingEdits();
         return renderer.Render(Image, history.Current);
     }
-    public async Task<bool> CopyAndMarkAsync()
+    public async Task<bool> CopyAndMarkAsync(CancellationToken token = default)
     {
         if (exporting) return false;
-        await CopyAsync(); return true;
+        await CopyAsync(token); return true;
     }
     public void AddSticker(ReadOnlyMemory<byte> png, double width, double height)
     {

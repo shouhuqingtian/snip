@@ -7,9 +7,11 @@ namespace Snip.App.Services;
 public sealed class CopyFeedbackExport(IImageExportService inner, CopyNotificationService notifications) : IImageExportService
 {
     public void SavePng(BitmapSource image,string path) => inner.SavePng(image,path);
-    public async Task CopyAsync(BitmapSource image)
+    public Task CopyAsync(BitmapSource image) => CopyAsync(image, CancellationToken.None);
+    public async Task CopyAsync(BitmapSource image, CancellationToken token, IProgress<ImageCopyProgress>? progress = null)
     {
-        await inner.CopyAsync(image);
+        await inner.CopyAsync(image, token, progress);
+        token.ThrowIfCancellationRequested();
         notifications.NotifyCopied();
     }
 }

@@ -150,9 +150,10 @@ public sealed class SelectionSession : IDisposable
             if (!LayoutMatches()) { Cancel("显示器布局已变化，请重新截图。"); return; }
             if (Editor is null) BeginEditing();
             if (Editor is null) return;
-            if (await Editor.CopyAndMarkAsync()) Finish(null);
+            if (await Editor.CopyAndMarkAsync(hoverLifetime.Token)) Finish(null);
         }
-        catch (Exception e) { MessageBox.Show(e.Message, "复制失败", MessageBoxButton.OK, MessageBoxImage.Warning); }
+        catch (OperationCanceledException) when (closed) { }
+        catch (Exception e) { if (!closed) MessageBox.Show(e.Message, "复制失败", MessageBoxButton.OK, MessageBoxImage.Warning); }
         finally { confirming = false; }
     }
     public void Request(SelectionAction action, BrowserCaptureMode browserMode = BrowserCaptureMode.EntirePage)
