@@ -57,6 +57,7 @@ internal static class DesktopScrollChecks
                 Require(DesktopWindows.Snapshot().Any(w => w.Handle == target), "External desktop fixture not found independently of current process.");
                 DesktopWindows.Activate(target); Pause(160);
                 var original = new EditorViewModel(desktop.CaptureRegion(region), renderer, export, new Dialogs());
+                AssertPixels(original.Image, fixture.Page, 0);
                 var task = features.HandleAsync(new(original, region, SelectionAction.Scroll, BrowserCaptureMode.DesktopManual));
                 var bar = Ready(task); var vm = (ManualScrollCaptureViewModel)bar.DataContext;
                 var barBounds = Bounds(bar);
@@ -133,7 +134,7 @@ internal static class DesktopScrollChecks
             File.WriteAllText("artifacts/validation/desktop-scroll-performance.json", JsonSerializer.Serialize(new { UiPulses = pulses, MaxUiPulseGapMilliseconds = Math.Round(maxGap, 2), CapturedReads = desktop.Reads }));
             Console.WriteLine($"PASS desktop manual capture integration; UI pulses={pulses}, max gap={maxGap:F1}ms; no Excel/ChatGPT application-specific claim."); return 0;
         }
-        catch (Exception error) { Console.Error.WriteLine("Desktop stage: " + stage); Console.Error.WriteLine(error); return 1; }
+        catch (Exception error) { Console.Error.WriteLine("Desktop stage: " + stage); Console.Error.WriteLine(error); if (failure is not null) Console.Error.WriteLine(failure); return 1; }
         finally
         {
             timer.Stop(); features.CancelBrowserCapture();
@@ -220,7 +221,15 @@ internal static class DesktopScrollChecks
     private static void AssertPixels(BitmapSource result, BitmapSource page, int offset)
     {
         var expected = new CroppedBitmap(page, new Int32Rect(16, 12, 480, 380 + offset)); expected.Freeze();
-        Require(result.PixelWidth == expected.PixelWidth && result.PixelHeight == expected.PixelHeight && Pixels(result).SequenceEqual(Pixels(expected)), "Native long screenshot differs from public source pixels, including overlap, fixed chrome or own controls.");
+        var actualBytes = Pixels(result); var expectedBytes = Pixels(expected);
+        if (result.PixelWidth != expected.PixelWidth || result.PixelHeight != expected.PixelHeight || !actualBytes.SequenceEqual(expectedBytes))
+        {
+            Directory.CreateDirectory("artifacts/validation/desktop-debug");
+            var export = new ImageExportService(); export.SavePng(result, $"artifacts/validation/desktop-debug/actual-{offset}.png"); export.SavePng(expected, $"artifacts/validation/desktop-debug/expected-{offset}.png");
+            var differences = Enumerable.Range(0, Math.Min(actualBytes.Length, expectedBytes.Length)).Where(i => actualBytes[i] != expectedBytes[i]).ToArray();
+            Console.WriteLine($"Pixel dimensions actual={result.PixelWidth}x{result.PixelHeight}, expected={expected.PixelWidth}x{expected.PixelHeight}; different bytes={differences.Length}; first differences=" + string.Join(";", differences.Take(12).Select(i => $"{i}:{actualBytes[i]}/{expectedBytes[i]}")));
+            throw new InvalidOperationException("Native long screenshot differs from public source pixels, including overlap, fixed chrome or own controls.");
+        }
     }
     private static ManualScrollCaptureWindow Ready(Task task)
     {
