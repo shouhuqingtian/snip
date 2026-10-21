@@ -34,8 +34,10 @@ public sealed class ManualScrollCaptureSession(TimeSpan? sampleDelay = null)
         CancellationToken token, DiagnosticOperation? diagnostics = null, bool desktopMode = false)
     {
         var first = await source.ReadAsync(token).ConfigureAwait(false);
-        using var frames = new ScrollFrameAccumulator(first);
+        int maximumFrames = desktopMode ? 1024 : 160;
+        using var frames = new ScrollFrameAccumulator(first, maximumFrames);
         var position = source.Position; bool positionReliable = true, gap = false;
+        ScrollMatch? accepted = null;
         void Report(string? warning = null) => progress?.Report(new(frames.FrameCount, frames.Height,
             warning ?? $"已采集 {frames.FrameCount} 帧，{frames.Height} 像素 · 滚轮向下滚动，完成 Ctrl+Enter", !gap || desktopMode, gap && desktopMode));
         Report(); diagnostics?.Stage("manual-ready", new { first.Width, first.Height });
@@ -45,8 +47,20 @@ public sealed class ManualScrollCaptureSession(TimeSpan? sampleDelay = null)
             var frame = observed ?? await source.ReadAsync(token).ConfigureAwait(false);
             var current = source.Position;
             if (ScrollMatching.Unchanged(frames.Last, frame)) { gap = false; Report(); return frame; }
+            if (desktopMode && accepted is not null && DesktopScrollMatching.AlignedBody(frames.Last, frame, accepted.Header, accepted.Footer, token))
+            {
+                if (gap) diagnostics?.Stage("manual-overlap-recovered", new { Frames = frames.FrameCount, Reason = "aligned-body" });
+                bool recovered = gap; gap = false; Report(recovered ? "已恢复对齐，继续向下滚动即可续接。" : null);
+                return frame;
+            }
             int? offset = positionReliable && position is not null && current is not null ? (int)Math.Round(current.Offset - position.Offset) : null;
             var match = desktopMode ? DesktopScrollMatching.Match(frames.Last, frame, token, diagnostics) : null;
+            if (desktopMode && match is { Offset: < 0 } && -match.Offset <= frames.Height - first.Height)
+            {
+                gap = false; Report("已回到已采集范围，继续向下滚动即可续接。");
+                diagnostics?.Stage("manual-overlap-recovered", new { Frames = frames.FrameCount, Reason = "inside-collected-range", match.Offset });
+                return frame;
+            }
             // A rendered frame can be safely joined during scrolling when its moving pixels
             // align confidently. Transient animation failures must not publish a pause warning.
             if (desktopMode && moving && (match is null || match.Offset < 0 || match.Error > 4)) return frame;
@@ -69,12 +83,12 @@ public sealed class ManualScrollCaptureSession(TimeSpan? sampleDelay = null)
             int minimumStep = desktopMode ? Math.Max(8, Math.Min(32, (first.Height - match.Header - match.Footer) / 6)) : Math.Max(24, first.Height / 4);
             if (!control.FinishRequested && current?.AtBottom != true && match.Offset < minimumStep)
             { gap = false; Report(); return frame; } // Coalesce smooth-scroll microsteps; include remainder when finishing.
-            if (desktopMode && (frames.FrameCount >= 160 || frames.Height + match.Offset > 24000 || (long)(frames.Height + match.Offset) * first.Width > 60_000_000))
+            if (desktopMode && (frames.FrameCount >= maximumFrames || frames.Height + match.Offset > 24000 || (long)(frames.Height + match.Offset) * first.Width > 60_000_000))
             {
                 gap = true; Report("已到采集大小上限，正在保留已采集部分；其余内容请分段截图。");
                 control.RequestFinish(); return frame;
             }
-            frames.Append(frame, match); position = current; gap = false; Report();
+            frames.Append(frame, match); accepted ??= match; position = current; gap = false; Report();
             diagnostics?.Stage("manual-frame-appended", new { Frames = frames.FrameCount, frames.Height, match.Offset, match.Header, match.Footer });
             return frame;
         }
@@ -85,7 +99,7 @@ public sealed class ManualScrollCaptureSession(TimeSpan? sampleDelay = null)
             var previous = frames.Last; int settled = 0;
             for (int i = 0; i < 30 && !control.FinishRequested; i++)
             {
-                await Task.Delay(sampleDelay ?? TimeSpan.FromMilliseconds(desktopMode && control.InputRecent ? 40 : 80), token).ConfigureAwait(false);
+                await Task.Delay(sampleDelay ?? TimeSpan.FromMilliseconds(desktopMode && control.InputRecent ? 16 : 80), token).ConfigureAwait(false);
                 var observed = desktopMode ? await source.ReadAsync(token).ConfigureAwait(false) : await Observe().ConfigureAwait(false);
                 settled = ScrollMatching.Difference(previous, observed) < .2 ? settled + 1 : 0; previous = observed;
                 if (desktopMode) await Observe(observed, moving: settled < 2).ConfigureAwait(false);

@@ -48,7 +48,7 @@ internal static class DesktopScrollChecks
         try
         {
             Ui.EnsureTheme();
-            foreach (string kind in new[] { "table", "chat", "frozen", "continuous" })
+            foreach (string kind in new[] { "table", "chat", "frozen", "continuous", "sheet" })
             {
                 stage = kind + " external window";
                 using var fixture = new Fixture(folder, kind);
@@ -70,8 +70,8 @@ internal static class DesktopScrollChecks
                 stage = kind + " physical wheel";
                 for (int step = 0; step < 5; step++)
                 {
-                    int before = vm.Frames; Wheel(kind is "frozen" or "continuous" ? 1 : 3);
-                    if (kind == "continuous") Pause(90);
+                    int before = vm.Frames; Wheel(kind is "frozen" or "continuous" or "sheet" ? 1 : 3);
+                    if (kind == "continuous") Pause(25);
                     else Wait(() => task.IsCompleted || vm.Frames > before, 6);
                     if (task.IsCompleted) task.GetAwaiter().GetResult();
                     Require(!task.IsCompleted, "Manual capture finished without explicit completion.");
@@ -79,7 +79,7 @@ internal static class DesktopScrollChecks
                 if (kind == "continuous") Wait(() => task.IsCompleted || vm.Height == region.Height + fixture.State().Offset, 6);
                 timer.Stop();
                 double offset = fixture.State().Offset;
-                Require(offset >= (kind is "frozen" or "continuous" ? 160 : 300) && desktop.CursorPosition == pointer, "Wheel did not reach actual target or capture moved the cursor.");
+                Require(offset >= (kind is "frozen" or "continuous" or "sheet" ? 160 : 300) && desktop.CursorPosition == pointer, "Wheel did not reach actual target or capture moved the cursor.");
                 if (kind == "continuous") Require(vm.Frames > 1 && vm.CompleteText == "完成", "Continuous wheel input without stopping lost intermediate overlap.");
                 if (kind == "frozen") Require(state.Header > region.Height / 2 && !vm.CompleteText.Contains("保存"), "Large frozen header caused ordinary wheel input to pause.");
                 SavePreview("46-desktop-manual-" + kind, region, bar, desktop.Inner);
@@ -93,6 +93,27 @@ internal static class DesktopScrollChecks
                 Require(!app.Windows.OfType<ManualScrollCaptureWindow>().Any(), "Desktop controls survived successful completion.");
                 editor.CancelScreenshot();
                 Console.WriteLine($"PASS external {kind} desktop: native wheel pass-through, exact original/stitched pixels, selected width, no idle captures, cursor/focus retained, real {(kind == "table" ? "button" : "Ctrl+Enter")} completion; offset={offset:0}.");
+
+                if (kind == "sheet")
+                {
+                    stage = "sheet recovery"; fixture.Command(0); DesktopWindows.Activate(target); Pause(120);
+                    task = features.HandleAsync(new(original, region, SelectionAction.Scroll, BrowserCaptureMode.DesktopManual)); bar = Ready(task); vm = (ManualScrollCaptureViewModel)bar.DataContext;
+                    Move(pointer); Wheel(1); Wait(() => vm.Frames > 1, 6);
+                    int acceptedHeight = vm.Height, acceptedOffset = (int)fixture.State().Offset;
+                    fixture.Command(1800); Wheel(1); Wait(() => vm.CompleteText == "保存已采集", 6);
+                    fixture.Command(acceptedOffset + 24); WheelUp();
+                    Wait(() => vm.CompleteText == "完成" && vm.Status.Contains("已采集范围"), 6);
+                    Require(vm.Height == acceptedHeight, "Recovery duplicated rows already collected.");
+                    fixture.Command(acceptedOffset + 48); fixture.ChangeToolbar(); WheelUp(); Pause(550);
+                    Require(vm.CompleteText == "完成" && vm.Height == acceptedHeight, "Changed frozen toolbar kept the returned body paused.");
+                    for (int step = 0; step < 3; step++) { int before = vm.Frames; Wheel(1); Wait(() => vm.Frames > before, 6); }
+                    int finalOffset = (int)fixture.State().Offset;
+                    HotkeyChecks.Press(0x11, 0x0D); Wait(() => task.IsCompleted, 8); task.GetAwaiter().GetResult();
+                    editor = app.Windows.OfType<EditorWindow>().Single(); result = (EditorViewModel)editor.DataContext;
+                    Require(result.PixelHeight == region.Height + finalOffset && !result.Status.Contains("最后一段"), "Recovered capture remained partial or lost rows.");
+                    AssertPixels(result.Image, fixture.Page, finalOffset, state, original.Image); editor.CancelScreenshot();
+                    Console.WriteLine("PASS sparse sheet recovery: pause, native upward wheel inside collected range, changed frozen toolbar, resume and exact whole output without duplicated rows.");
+                }
 
                 if (kind == "table")
                 {
@@ -147,7 +168,8 @@ internal static class DesktopScrollChecks
                 CleanCaptureWithoutOwnUi = true, NativeButtonCompletion = true, NativeCtrlEnterCompletion = true,
                 UnmatchedTailExcluded = true, PartialResultNotice = true, EscapeCancels = true, HooksRemoved = true,
                 ResizeStopsCapture = true, FocusChangeCancels = true, UiResponsive = true, TechnicalDiagnosticsOnly = true,
-                LargeFrozenHeader = true, NativeSingleWheelStep = true, FrozenHeaderFooterOnce = true, ContinuousWheelWithoutPauses = true
+                LargeFrozenHeader = true, NativeSingleWheelStep = true, FrozenHeaderFooterOnce = true, ContinuousWheelWithoutPauses = true,
+                SparseSpreadsheet = true, ReturnInsideRangeRecovers = true, ChangedToolbarRecovers = true, ResumeWithoutDuplicateRows = true, RapidWheel25Milliseconds = true
             }, new JsonSerializerOptions { WriteIndented = true }));
             File.WriteAllText("artifacts/validation/desktop-scroll-performance.json", JsonSerializer.Serialize(new { UiPulses = pulses, MaxUiPulseGapMilliseconds = Math.Round(maxGap, 2), CapturedReads = desktop.Reads }));
             Console.WriteLine($"PASS desktop manual capture integration; UI pulses={pulses}, max gap={maxGap:F1}ms; no Excel/ChatGPT application-specific claim."); return 0;
@@ -170,10 +192,11 @@ internal static class DesktopScrollChecks
         RenderOptions.SetBitmapScalingMode(image, BitmapScalingMode.NearestNeighbor);
         var scroll = new ScrollViewer { Content = image, VerticalScrollBarVisibility = ScrollBarVisibility.Visible, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, CanContentScroll = false, Width = 620, Height = 430, HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Top };
         var grid = new Grid { Margin = new Thickness(40, 80, 20, 20), Children = { scroll }, VerticalAlignment = VerticalAlignment.Top };
-        if (kind == "frozen")
+        Border? header = null;
+        if (kind is "frozen" or "sheet")
         {
             grid.Height = 430; grid.RowDefinitions.Add(new() { Height = new(220) }); grid.RowDefinitions.Add(new() { Height = new(180) }); grid.RowDefinitions.Add(new() { Height = new(30) });
-            var header = new Border { Width = 620, HorizontalAlignment = HorizontalAlignment.Left, Background = Brushes.LightBlue, Child = new TextBlock { Text = "Public fixed toolbar / 冻结表头\n\nDocument title and editing controls\n\nColumn A     Column B     Column C\n\nFrozen row 1\n\nFrozen row 2", Margin = new(12), FontSize = 16 } };
+            header = new Border { Width = 620, HorizontalAlignment = HorizontalAlignment.Left, Background = Brushes.LightBlue, Child = new TextBlock { Text = "Public fixed toolbar / 冻结表头\n\nDocument title and editing controls\n\nColumn A     Column B     Column C\n\nFrozen row 1\n\nFrozen row 2", Margin = new(12), FontSize = 16 } };
             grid.Children.Add(header); scroll.Height = 180; Grid.SetRow(scroll, 1);
             var footer = new Border { Width = 620, HorizontalAlignment = HorizontalAlignment.Left, Background = Brushes.LightGray, Child = new TextBlock { Text = "Public sheet tabs / 固定状态栏", Margin = new(10, 4, 0, 0) } }; Grid.SetRow(footer, 2); grid.Children.Add(footer);
         }
@@ -186,7 +209,7 @@ internal static class DesktopScrollChecks
             {
                 var p = image.PointToScreen(new Point(16, 12)); var q = image.PointToScreen(new Point(496, 392));
                 if (kind == "continuous") q = image.PointToScreen(new Point(496, 192));
-                if (kind == "frozen")
+                if (kind is "frozen" or "sheet")
                 {
                     p.Y = grid.PointToScreen(new Point(0, 12)).Y; q.Y = grid.PointToScreen(new Point(0, 422)).Y;
                     fixedHeader = (int)Math.Round(image.PointToScreen(new Point()).Y - p.Y);
@@ -201,6 +224,7 @@ internal static class DesktopScrollChecks
         {
             if (message == 0x8053) { scroll.ScrollToVerticalOffset(w.ToInt32()); handled = true; }
             if (message == 0x8054) { window.Width += 30; handled = true; }
+            if (message == 0x8055 && header is not null) { header.Background = Brushes.LemonChiffon; handled = true; }
             return IntPtr.Zero;
         });
         scroll.ScrollChanged += (_, _) => State();
@@ -217,14 +241,14 @@ internal static class DesktopScrollChecks
             for (int row = 0; row < 60; row++)
             {
                 double y = row * 60;
-                if (kind is "table" or "frozen")
+                if (kind is "table" or "frozen" or "sheet")
                 {
-                    dc.DrawRectangle(row % 2 == 0 ? Brushes.AliceBlue : Brushes.White, new Pen(Brushes.LightGray, 1), new Rect(0, y, 600, 60));
+                    dc.DrawRectangle(kind != "sheet" && row % 2 == 0 ? Brushes.AliceBlue : Brushes.White, new Pen(Brushes.LightGray, 1), new Rect(0, y, 600, 60));
                     foreach (int x in new[] { 60, 260, 440 }) dc.DrawLine(new Pen(Brushes.LightGray, 1), new Point(x, y), new Point(x, y + 60));
                 }
-                var text = new FormattedText($"{row + 1:00}   {(kind == "table" ? "Record / 项目" : "Answer / 内容")}   {random.Next(10000, 99999)}", CultureInfo.InvariantCulture, FlowDirection.LeftToRight, new Typeface("Segoe UI"), 17, Brushes.DarkSlateGray, 1);
+                var text = new FormattedText(kind == "sheet" ? $"{row + 1:00} 项目 {random.Next(10000, 99999)}" : $"{row + 1:00}   {(kind == "table" ? "Record / 项目" : "Answer / 内容")}   {random.Next(10000, 99999)}", CultureInfo.InvariantCulture, FlowDirection.LeftToRight, new Typeface("Segoe UI"), kind == "sheet" ? 13 : 17, Brushes.DarkSlateGray, 1);
                 dc.DrawText(text, new Point(12, y + 8));
-                for (int x = 24; x < 580; x += 21)
+                for (int x = 24; kind != "sheet" && x < 580; x += 21)
                 { var color = Color.FromRgb((byte)random.Next(30, 170), (byte)random.Next(60, 190), (byte)random.Next(60, 190)); dc.DrawRectangle(new SolidColorBrush(color), null, new Rect(x, y + 39, random.Next(5, 18), 4)); }
             }
         }
@@ -254,6 +278,7 @@ internal static class DesktopScrollChecks
         }
         public void Command(int offset) { SendMessageTimeout(new(State().Handle), 0x8053, new(offset), IntPtr.Zero, 2, 1000, out _); Pause(200); }
         public void Resize() { SendMessageTimeout(new(State().Handle), 0x8054, IntPtr.Zero, IntPtr.Zero, 2, 1000, out _); Pause(160); }
+        public void ChangeToolbar() { SendMessageTimeout(new(State().Handle), 0x8055, IntPtr.Zero, IntPtr.Zero, 2, 1000, out _); Pause(160); }
         public void Dispose() { stop.Set(); if (!process.WaitForExit(2000)) process.Kill(true); process.Dispose(); stop.Dispose(); }
     }
     private static void AssertPixels(BitmapSource result, BitmapSource page, int offset, FixtureState? state = null, BitmapSource? initial = null)
@@ -296,6 +321,7 @@ internal static class DesktopScrollChecks
     private static byte[] Pixels(BitmapSource image) { var bitmap = new FormatConvertedBitmap(image, PixelFormats.Bgra32, null, 0); byte[] b = new byte[bitmap.PixelWidth * bitmap.PixelHeight * 4]; bitmap.CopyPixels(b, bitmap.PixelWidth * 4, 0); return b; }
     private static void Move(PixelPoint p) { Require(SetPhysicalCursorPos((int)p.X, (int)p.Y), "Native pointer rejected."); Pause(60); }
     private static void Wheel(int count) => Send(Enumerable.Range(0, count).Select(_ => new Input { Data = new() { Mouse = new() { Wheel = unchecked((uint)-120), Flags = 0x0800 } } }).ToArray());
+    private static void WheelUp() => Send([new() { Data = new() { Mouse = new() { Wheel = 120, Flags = 0x0800 } } }]);
     private static void Click(Button b) { var p = b.PointToScreen(new Point(b.ActualWidth / 2, b.ActualHeight / 2)); Move(new(p.X, p.Y)); Send([new() { Data = new() { Mouse = new() { Flags = 2 } } }, new() { Data = new() { Mouse = new() { Flags = 4 } } }]); }
     private static void Send(Input[] input) => Require(SendInput((uint)input.Length, input, Marshal.SizeOf<Input>()) == input.Length, "Native mouse input rejected.");
     private static void Pause(int ms) { var task = Task.Delay(ms); Wait(() => task.IsCompleted, 3); }

@@ -472,7 +472,7 @@ internal static class ChromeCaptureCheck
             for (int step = 0; step < 5; step++)
             {
                 Send([new() { Type = 0, Data = new() { Mouse = new() { Wheel = unchecked((uint)-120), Flags = 0x0800 } } }]);
-                Pause(90);
+                Pause(25);
             }
             Pause(650);
             var title = Title(window.Handle); int index = title.IndexOf("|offset=", StringComparison.Ordinal);
@@ -491,7 +491,7 @@ internal static class ChromeCaptureCheck
             editor.CancelScreenshot();
             Directory.CreateDirectory("artifacts/validation");
             var evidence = new { NativeChromeWheel = true, DesktopManualMode = true, ContinuousWithoutFrameWaits = true, ExactWholeResultPixels = true,
-                OffsetPixels = offset, Frames = vm.Frames, ElapsedMilliseconds = Math.Round(clock.Elapsed.TotalMilliseconds, 2) };
+                WheelIntervalMilliseconds = 25, OffsetPixels = offset, Frames = vm.Frames, ElapsedMilliseconds = Math.Round(clock.Elapsed.TotalMilliseconds, 2) };
             File.WriteAllText("artifacts/validation/desktop-chrome-continuous.json", System.Text.Json.JsonSerializer.Serialize(evidence));
             Console.WriteLine("PASS desktop manual real Chrome continuous wheel, exact entire result pixels: " + System.Text.Json.JsonSerializer.Serialize(evidence));
         }

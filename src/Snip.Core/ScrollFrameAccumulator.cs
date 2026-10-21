@@ -4,14 +4,16 @@ namespace Snip.Core;
 public sealed class ScrollFrameAccumulator : IDisposable
 {
     private readonly MemoryStream body = new();
-    private readonly int width, viewportHeight, stride;
+    private readonly int width, viewportHeight, stride, maximumFrames;
     private int header, footer, origin;
     public PixelFrame Last { get; private set; }
     public int FrameCount { get; private set; } = 1;
     public int Height => viewportHeight + origin;
     public long RetainedBytes => body.Capacity + Last.Bgra.Length;
-    public ScrollFrameAccumulator(PixelFrame first)
+    public ScrollFrameAccumulator(PixelFrame first, int maximumFrames = 160)
     {
+        if (maximumFrames is < 1 or > 1024) throw new ArgumentOutOfRangeException(nameof(maximumFrames));
+        this.maximumFrames = maximumFrames;
         if (first.Width <= 0 || first.Height <= 0 || first.Bgra.Length != (long)first.Width * first.Height * 4)
             throw new ArgumentException("截图像素数据无效。");
         width = first.Width; viewportHeight = first.Height; stride = checked(width * 4); Last = first;
@@ -25,7 +27,7 @@ public sealed class ScrollFrameAccumulator : IDisposable
         int nextHeader = FrameCount == 1 ? match.Header : header, nextFooter = FrameCount == 1 ? match.Footer : footer;
         if (match.Offset <= 0 || match.Offset > viewportHeight - nextHeader - nextFooter || nextHeader < 0 || nextFooter < 0)
             throw new InvalidOperationException("滚动距离过大，请保留更多重叠内容并减慢滚动。");
-        if (FrameCount >= 160 || Height + match.Offset > 24000 || (long)(Height + match.Offset) * width > 60_000_000)
+        if (FrameCount >= maximumFrames || Height + match.Offset > 24000 || (long)(Height + match.Offset) * width > 60_000_000)
             throw new InvalidOperationException("长图达到采集大小上限，请完成后分段截图。");
         if (FrameCount == 1)
         {

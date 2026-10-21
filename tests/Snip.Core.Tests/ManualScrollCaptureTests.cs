@@ -80,6 +80,17 @@ public sealed class ManualScrollCaptureTests
         Assert.Equal(source.Page.AsSpan(0, 392 * 120 * 4).ToArray(), result.Bgra);
         Assert.False(progress.Last!.Partial); Assert.Equal(0, source.AutomaticInputs);
     }
+    [Fact]
+    public async Task FasterSmallStepsDoNotPrematurelyStopAtTheOldFrameCount()
+    {
+        using var control = new ManualCaptureControl();
+        var positions = Enumerable.Range(0, 201).Select(i => i * 32).Concat([6400, 6400]).ToArray();
+        var source = new ManualSource(control, positions); var progress = new InlineProgress();
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        var result = await new ManualScrollCaptureSession(TimeSpan.Zero).CaptureAsync(source, control, progress, deadline.Token, desktopMode: true);
+        Assert.Equal(6600, result.Height); Assert.Equal(source.Page.AsSpan(0, 6600 * 120 * 4).ToArray(), result.Bgra);
+        Assert.False(progress.Last!.Partial); Assert.Equal(0, source.AutomaticInputs);
+    }
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -111,13 +122,13 @@ public sealed class ManualScrollCaptureTests
         {
             token.ThrowIfCancellationRequested();
             int y = positions[Math.Min(reads, positions.Length - 1)]; reads++;
-            if (reads == 1) control.RequestFrame();
+            control.RequestFrame();
             if (reads >= positions.Length - 1) control.RequestFinish();
             return Task.FromResult(new PixelFrame(120, 200, Page.AsSpan(y * 120 * 4, 200 * 120 * 4).ToArray()));
         }
         public Task<PixelFrame> ScrollAsync(int units, CancellationToken token)
         { AutomaticInputs++; throw new InvalidOperationException("Manual capture must not inject input."); }
-        private static byte[] CreatePage() { var page = new byte[120 * 800 * 4]; new Random(8).NextBytes(page); return page; }
+        private static byte[] CreatePage() { var page = new byte[120 * 8000 * 4]; new Random(8).NextBytes(page); return page; }
     }
     private sealed class IdleSource : IScrollCaptureSource
     {

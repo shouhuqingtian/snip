@@ -39,6 +39,80 @@ public sealed class DesktopScrollMatchingTests
         Assert.Null(DesktopScrollMatching.Match(Repeated(0), Repeated(16)));
     }
     [Fact]
+    public void SparseSpreadsheetTextIsNotOutvotedByRepeatedGridLines()
+    {
+        var match = DesktopScrollMatching.Match(Sheet(0), Sheet(120));
+        Assert.NotNull(match); Assert.Equal(120, match.Offset);
+    }
+    [Fact]
+    public void RepeatedGridCannotFalselyConfirmReturnToAnotherTextRow()
+        => Assert.False(DesktopScrollMatching.AlignedBody(Sheet(0), Sheet(80), 180, 20));
+    [Fact]
+    public async Task ReturningInsideCollectedRangeClearsPauseAndResumesWithoutDuplicatingRows()
+    {
+        using var control = new ManualCaptureControl();
+        // Stop past all overlap, return slightly ABOVE the accepted end, then continue.
+        int[] positions = [0, 32, 32, 32, 600, 600, 600, 600, 16, 16, 16, 16, 64, 96, 96, 96];
+        var progress = new Trace(); var source = new RecoverySource(control, positions);
+        var result = await new ManualScrollCaptureSession(TimeSpan.Zero).CaptureAsync(source, control, progress, CancellationToken.None, desktopMode: true);
+        Assert.Contains(progress.Values, p => p.Partial);
+        Assert.Contains(progress.Values.SkipWhile(p => !p.Partial), p => !p.Partial && p.Height == 632);
+        Assert.False(progress.Values[^1].Partial); Assert.Equal(696, result.Height);
+        Assert.Equal(Expected(96), result.Bgra);
+    }
+    [Fact]
+    public async Task ReturningToSameContentWithChangedFrozenToolbarClearsPauseBeforeFurtherScrolling()
+    {
+        using var control = new ManualCaptureControl();
+        int[] positions = [0, 32, 32, 32, 600, 600, 600, 600, 32, 32, 32, 32];
+        var progress = new Trace(); var source = new RecoverySource(control, positions, changeToolbar: true);
+        var result = await new ManualScrollCaptureSession(TimeSpan.Zero).CaptureAsync(source, control, progress, CancellationToken.None, desktopMode: true);
+        Assert.Contains(progress.Values, p => p.Partial);
+        Assert.False(progress.Values[^1].Partial); Assert.Equal(632, result.Height);
+        Assert.Equal(Expected(32), result.Bgra);
+    }
+    private static byte[] Expected(int offset)
+    {
+        var result = new byte[Width * (Height + offset) * 4]; var first = Frame(0);
+        Buffer.BlockCopy(first.Bgra, 0, result, 0, Header * Width * 4);
+        Buffer.BlockCopy(page, 0, result, Header * Width * 4, (Body + offset) * Width * 4);
+        Buffer.BlockCopy(first.Bgra, (Height - Footer) * Width * 4, result, (Header + Body + offset) * Width * 4, Footer * Width * 4);
+        return result;
+    }
+    internal static PixelFrame Sheet(int offset, bool changedToolbar = false)
+    {
+        const int w = 1600, h = 600, head = 180, foot = 20;
+        var b = new byte[w * h * 4]; Array.Fill(b, (byte)255);
+        void Dot(int x, int y, byte value) { int i = (y * w + x) * 4; b[i] = b[i + 1] = b[i + 2] = value; }
+        for (int y = 0; y < h; y++) for (int x = 0; x < w; x++)
+        {
+            if (y < head || y >= h - foot) { Dot(x, y, (byte)(changedToolbar ? 210 : 220)); continue; }
+            int py = y - head + offset, line = py % 80;
+            if (x % 160 == 0 || line == 0) Dot(x, y, 170);
+            // Unique compact text in a single cell; most columns are empty white grids.
+            if (x is >= 20 and < 92 && line is >= 14 and < 28)
+            {
+                int glyph = (x - 20) / 8, gx = (x - 20) % 8, gy = line - 14;
+                uint bits = unchecked((uint)((py / 80 + 1) * 2654435761L + glyph * 2246822519L));
+                if (gx < 5 && gy < 10 && ((bits >> ((gx + gy * 5) % 31)) & 1) != 0) Dot(x, y, 35);
+            }
+        }
+        return new(w, h, b);
+    }
+    private sealed class RecoverySource(ManualCaptureControl control, int[] positions, bool changeToolbar = false) : IScrollCaptureSource
+    {
+        private int reads;
+        public Task<PixelFrame> ReadAsync(CancellationToken token)
+        {
+            token.ThrowIfCancellationRequested(); int index = Math.Min(reads++, positions.Length - 1);
+            control.RequestFrame(); if (reads >= positions.Length) control.RequestFinish();
+            var frame = Frame(positions[index]);
+            if (changeToolbar && index >= 8) Array.Fill(frame.Bgra, (byte)220, 0, Header * Width * 4);
+            return Task.FromResult(frame);
+        }
+        public Task<PixelFrame> ScrollAsync(int units, CancellationToken token) => throw new InvalidOperationException("Manual capture must not inject scrolling.");
+    }
+    [Fact]
     public async Task SmallStepsThroughLargeFrozenHeaderRemainContinuousAndKeepHeaderOnce()
     {
         using var control = new ManualCaptureControl();

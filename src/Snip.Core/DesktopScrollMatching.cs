@@ -8,10 +8,14 @@ public static class DesktopScrollMatching
         token.ThrowIfCancellationRequested();
         if (previous.Width != next.Width || previous.Height != next.Height || previous.Height < 120) return null;
         int width = previous.Width, height = previous.Height;
+        var changed = new byte[width][];
         bool Changed(int x, int y)
         {
+            var column = changed[x] ??= new byte[height];
+            if (column[y] != 0) return column[y] == 2;
             int error = 0;
             for (int c = 0; c < 3; c++) error += Math.Abs(previous.At(x, y, c) - next.At(x, y, c));
+            column[y] = error >= 18 ? (byte)2 : (byte)1;
             return error >= 18;
         }
         var anchors = new List<(int X, int Y)>();
@@ -25,9 +29,7 @@ public static class DesktopScrollMatching
                 for (int x = left; x < Math.Min(left + 32, width - 3) && selected < 4; x += 3)
                 {
                     if (!Changed(x, y)) continue;
-                    int contrast = 0;
-                    for (int c = 0; c < 3; c++) contrast += Math.Abs(previous.At(x, y, c) - previous.At(x + 2, y, c)) + Math.Abs(previous.At(x, y, c) - previous.At(x, y + 2, c));
-                    if (contrast >= 45) { anchors.Add((x, y)); selected++; }
+                    if (Textured(previous, x, y)) { anchors.Add((x, y)); selected++; }
                 }
             }
         }
@@ -39,8 +41,35 @@ public static class DesktopScrollMatching
         if (anchors.Count < 12) return Reject("too-few-anchors");
         // Bound matching work while retaining anchors spread throughout the moving content.
         var points = anchors.Count <= 512 ? anchors.ToArray() : Enumerable.Range(0, 512).Select(i => anchors[i * (anchors.Count - 1) / 511]).ToArray();
+        int range = (int)(height * .8);
+        var votes = new Dictionary<int, int>(); var distinct = new List<(int X, int Y)>();
+        // Index patches once per sampled column. Repeated grid intersections cannot
+        // outvote distinctive glyphs/row numbers, or dominate the candidate score.
+        foreach (var column in points.GroupBy(p => p.X))
+        {
+            token.ThrowIfCancellationRequested();
+            var keys = column.Select(p => Signature(previous, p.X, p.Y)).Distinct().ToDictionary(key => key, _ => new List<int>());
+            for (int y = 3; y < height - 3; y++)
+            {
+                ulong key = Signature(next, column.Key, y);
+                if (keys.TryGetValue(key, out var hits) && hits.Count <= 8) hits.Add(y);
+            }
+            foreach (var point in column)
+            {
+                var hits = keys[Signature(previous, point.X, point.Y)];
+                if (hits.Count is 0 or > 8) continue;
+                distinct.Add(point);
+                foreach (int y in hits)
+                {
+                    int shift = point.Y - y;
+                    if (shift != 0 && Math.Abs(shift) <= range && Changed(point.X, y)) votes[shift] = votes.GetValueOrDefault(shift) + 1;
+                }
+            }
+        }
+        points = distinct.ToArray();
+        if (points.Length < 12) return Reject("too-few-distinct-anchors");
         var candidates = new List<(int Shift, double Error)>();
-        int minimum = Math.Max(12, points.Length / 6), range = (int)(height * .8);
+        int minimum = Math.Max(12, points.Length / 6);
         double Patch(int x, int y, int shift)
         {
             double error = 0;
@@ -52,10 +81,11 @@ public static class DesktopScrollMatching
             }
             return error / 9;
         }
-        for (int shift = -range; shift <= range; shift++)
+        var shifts = votes.Where(p => p.Value >= 3).OrderByDescending(p => p.Value).Take(32)
+            .SelectMany(p => Enumerable.Range(p.Key - 2, 5)).Where(shift => shift != 0 && Math.Abs(shift) <= range).Distinct();
+        foreach (int shift in shifts)
         {
-            if ((shift & 31) == 0) token.ThrowIfCancellationRequested();
-            if (shift == 0) continue;
+            token.ThrowIfCancellationRequested();
             double sum = 0; int count = 0;
             foreach (var (x, y) in points)
             {
@@ -88,5 +118,49 @@ public static class DesktopScrollMatching
         if (height - header - footer <= Math.Abs(best.Shift)) return Reject("moving-area-too-small", candidates.Count, best.Error, alternative - best.Error, best.Shift, header, footer);
         diagnostics?.Stage("desktop-overlap-evaluated", new { Reason = "accepted", Anchors = anchors.Count, Candidates = candidates.Count, Offset = best.Shift, best.Error, Gap = alternative - best.Error, Header = header, Footer = footer });
         return new(best.Shift, header, footer, best.Error);
+    }
+
+    /// <summary>Confirm saved body alignment without requiring fixed controls/carets to be identical.</summary>
+    public static bool AlignedBody(PixelFrame previous, PixelFrame next, int header, int footer, CancellationToken token = default)
+    {
+        if (previous.Width != next.Width || previous.Height != next.Height || header < 0 || footer < 0) return false;
+        int count = 0, different = 0;
+        for (int top = header + 3; top < previous.Height - footer - 3; top += 24)
+        {
+            token.ThrowIfCancellationRequested();
+            for (int left = 3; left < previous.Width - 3; left += 32)
+            {
+                int selected = 0;
+                for (int y = top; y < Math.Min(top + 24, previous.Height - footer - 3) && selected < 4; y += 3)
+                for (int x = left; x < Math.Min(left + 32, previous.Width - 3) && selected < 4; x += 3)
+                {
+                    if (!Textured(previous, x, y)) continue;
+                    selected++; count++;
+                    if (Signature(previous, x, y) != Signature(next, x, y)) different++;
+                }
+            }
+        }
+        return count >= 16 && different <= Math.Max(1, count / 100);
+    }
+    private static bool Textured(PixelFrame frame, int x, int y)
+    {
+        int horizontal = 0, vertical = 0;
+        for (int c = 0; c < 3; c++)
+        {
+            horizontal += Math.Abs(frame.At(x, y, c) - frame.At(x + 2, y, c));
+            vertical += Math.Abs(frame.At(x, y, c) - frame.At(x, y + 2, c));
+        }
+        return horizontal >= 18 && vertical >= 18 && horizontal + vertical >= 45;
+    }
+    private static ulong Signature(PixelFrame frame, int x, int y)
+    {
+        ulong hash = 0;
+        Add(x, y); Add(x + 2, y); Add(x - 2, y); Add(x, y + 2); Add(x, y - 2); Add(x + 3, y + 3); Add(x - 3, y - 3);
+        return hash;
+        void Add(int px, int py)
+        {
+            int index = (py * frame.Width + px) * 4;
+            for (int c = 0; c < 3; c++) hash = (hash << 3) | (uint)(frame.Bgra[index + c] >> 5);
+        }
     }
 }
