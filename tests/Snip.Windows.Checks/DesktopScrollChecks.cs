@@ -101,10 +101,15 @@ internal static class DesktopScrollChecks
                     Move(pointer); Wheel(1); Wait(() => vm.Frames > 1, 6);
                     int acceptedHeight = vm.Height, acceptedOffset = (int)fixture.State().Offset;
                     fixture.Command(1800); Wheel(1); Wait(() => vm.CompleteText == "保存已采集", 6);
+                    // Let the input-driven sampler go idle before arranging the next native
+                    // input. Otherwise our fixture command can legitimately add valid rows.
+                    Pause(650);
                     fixture.Command(acceptedOffset + 24); WheelUp();
                     Wait(() => vm.CompleteText == "完成" && vm.Status.Contains("已采集范围"), 6);
                     Require(vm.Height == acceptedHeight, "Recovery duplicated rows already collected.");
+                    Pause(650);
                     fixture.Command(acceptedOffset + 48); fixture.ChangeToolbar(); WheelUp(); Pause(550);
+                    Console.WriteLine($"Sheet return state: accepted-offset={acceptedOffset}; current-offset={fixture.State().Offset}; accepted-height={acceptedHeight}; current-height={vm.Height}; frames={vm.Frames}; complete={vm.CompleteText}.");
                     Require(vm.CompleteText == "完成" && vm.Height == acceptedHeight, "Changed frozen toolbar kept the returned body paused.");
                     for (int step = 0; step < 3; step++) { int before = vm.Frames; Wheel(1); Wait(() => vm.Frames > before, 6); }
                     int finalOffset = (int)fixture.State().Offset;

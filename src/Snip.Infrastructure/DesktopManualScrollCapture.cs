@@ -45,7 +45,7 @@ public sealed class DesktopManualScrollCapture(IDesktopCaptureService capture)
                 var source = new Source(async cancellation =>
                 {
                     Check();
-                    bool changeUi = requiresCaptureUiChange?.Invoke() ?? previewVisibility is not null;
+                    bool changeUi = requiresCaptureUiChange?.Invoke() ?? true;
                     if (changeUi && previewVisibility is not null) await previewVisibility(false).ConfigureAwait(false);
                     try
                     {

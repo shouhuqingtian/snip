@@ -456,10 +456,24 @@ internal static class ChromeCaptureCheck
             var page = BrowserPageGeometry.Snapshot(window).PageBounds ?? throw new InvalidOperationException("Fixture renderer geometry unavailable.");
             var region = new PixelRect(page.X + 40, page.Y + 30, 450, 280);
             void Pause(int milliseconds) { var delay = Task.Delay(milliseconds); TextWindowChecks.PumpUntil(() => delay.IsCompleted, TimeSpan.FromSeconds(3)); }
-            Wheel(region, 12000); Pause(650);
-            var originalImage = desktop.CaptureRegion(region);
             var expectedTop = new CroppedBitmap(entire, new Int32Rect(40, 30, 450, 280));
-            if (!Pixels(originalImage).SequenceEqual(Pixels(expectedTop))) throw new InvalidOperationException("Chrome fixture reference differs before desktop capture.");
+            var expectedTopBytes = Pixels(expectedTop);
+            BitmapSource originalImage = desktop.CaptureRegion(region);
+            // Optional UIA restoration from the preceding automatic-capture fixture can
+            // finish late. Arrange the independent desktop test from actual settled pixels.
+            int stable = 0; var preparation = Stopwatch.StartNew();
+            while (stable < 3 && preparation.Elapsed < TimeSpan.FromSeconds(8))
+            {
+                originalImage = desktop.CaptureRegion(region);
+                if (Pixels(originalImage).SequenceEqual(expectedTopBytes)) { stable++; Pause(150); }
+                else { stable = 0; Wheel(region, 12000); Pause(350); }
+            }
+            if (stable < 3)
+            {
+                export.SavePng(originalImage, Path.Combine(output, "desktop-before.png"));
+                export.SavePng(expectedTop, Path.Combine(output, "desktop-expected.png"));
+                throw new InvalidOperationException("Chrome fixture reference differs before desktop capture.");
+            }
             var renderer = new AnnotationRenderer(); using var pins = new PinManager(export);
             var features = new FeatureHub(renderer, export, desktop, pins, diagnostics, captureFailure: System.Runtime.ExceptionServices.ExceptionDispatchInfo.Throw);
             var original = new EditorViewModel(originalImage, renderer, export, new EditorDialogs(() => null));

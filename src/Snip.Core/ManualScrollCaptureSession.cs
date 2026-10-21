@@ -33,8 +33,8 @@ public sealed class ManualScrollCaptureSession(TimeSpan? sampleDelay = null)
     public async Task<PixelFrame> CaptureAsync(IScrollCaptureSource source, ManualCaptureControl control, IProgress<ManualCaptureProgress>? progress,
         CancellationToken token, DiagnosticOperation? diagnostics = null, bool desktopMode = false)
     {
-        var first = await source.ReadAsync(token).ConfigureAwait(false);
         if (desktopMode) DesktopScrollMatching.Prepare(token);
+        var first = await source.ReadAsync(token).ConfigureAwait(false);
         int maximumFrames = desktopMode ? 1024 : 160;
         using var frames = new ScrollFrameAccumulator(first, maximumFrames);
         var position = source.Position; bool positionReliable = true, gap = false;
