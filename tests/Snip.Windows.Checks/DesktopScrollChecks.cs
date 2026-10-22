@@ -98,7 +98,7 @@ internal static class DesktopScrollChecks
                 if (kind == "full")
                 {
                     Require(desktop.ContinuousReads > continuousBefore, "In-selection toolbar never allowed continuous reads while scrolling.");
-                    Pause(600); Require(bar.IsVisible, "In-selection toolbar did not return after scrolling stopped.");
+                    Wait(() => bar.IsVisible, 3); Require(bar.IsVisible, "In-selection toolbar did not return after scrolling stopped.");
                 }
                 if (kind != "full") SavePreview("46-desktop-manual-" + kind, region, bar, desktop.Inner);
                 if (kind == "table") Click(TextWindowChecks.Descendants<Button>(bar).Single(b => b.Name == "CompleteManualButton"));
@@ -129,15 +129,16 @@ internal static class DesktopScrollChecks
                         Console.WriteLine($"Recovery entry state: offset={fixture.State().Offset}; frames={vm.Frames}; reads={desktop.Reads}; foreground={DesktopWindows.Foreground == target}; status={vm.Status}.");
                         throw;
                     }
+                    WaitForSamplerIdle(desktop, task);
                     int acceptedHeight = vm.Height, acceptedOffset = (int)fixture.State().Offset;
                     fixture.Command(1800); Wheel(1); Wait(() => vm.CompleteText == "保存已采集", 6);
                     // Let the input-driven sampler go idle before arranging the next native
                     // input. Otherwise our fixture command can legitimately add valid rows.
-                    Pause(650);
+                    WaitForSamplerIdle(desktop, task);
                     fixture.Command(acceptedOffset + 24); WheelUp();
                     Wait(() => vm.CompleteText == "完成" && vm.Status.Contains("已采集范围"), 6);
                     Require(vm.Height == acceptedHeight, "Recovery duplicated rows already collected.");
-                    Pause(650);
+                    WaitForSamplerIdle(desktop, task);
                     fixture.Command(acceptedOffset + 48); fixture.ChangeToolbar(); WheelUp(); Pause(550);
                     Console.WriteLine($"Sheet return state: accepted-offset={acceptedOffset}; current-offset={fixture.State().Offset}; accepted-height={acceptedHeight}; current-height={vm.Height}; frames={vm.Frames}; complete={vm.CompleteText}.");
                     Require(vm.CompleteText == "完成" && vm.Height == acceptedHeight, "Changed frozen toolbar kept the returned body paused.");
@@ -413,6 +414,18 @@ internal static class DesktopScrollChecks
         var sending = Task.Run(() => SendInput((uint)input.Length, input, Marshal.SizeOf<Input>()));
         Wait(() => sending.IsCompleted, 3);
         Require(sending.GetAwaiter().GetResult() == input.Length, "Native mouse input rejected.");
+    }
+    private static void WaitForSamplerIdle(CountingCapture capture, Task operation)
+    {
+        // Fixture commands are not user input. Do not arrange intermediate offsets while
+        // a previous wheel's legitimate sampling burst can still photograph them.
+        int previous = capture.Reads; var quiet = Stopwatch.StartNew(); var elapsed = Stopwatch.StartNew();
+        Wait(() =>
+        {
+            if (operation.IsCompleted) { operation.GetAwaiter().GetResult(); throw new InvalidOperationException("Capture ended before fixture setup."); }
+            if (capture.Reads != previous) { previous = capture.Reads; quiet.Restart(); }
+            return elapsed.ElapsedMilliseconds >= 750 && quiet.ElapsedMilliseconds >= 400;
+        }, 8);
     }
     private static void Pause(int ms) { var task = Task.Delay(ms); Wait(() => task.IsCompleted, 3); }
     private static void Wait(Func<bool> done, int seconds) => TextWindowChecks.PumpUntil(done, TimeSpan.FromSeconds(seconds));

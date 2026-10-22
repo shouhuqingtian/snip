@@ -213,8 +213,15 @@ internal static class ChromeCaptureCheck
                 var bar = app.Windows.OfType<ManualScrollCaptureWindow>().Single(); var viewport = bar.Viewport;
                 int ReadFixtureOffset()
                 {
-                    var caption = Title(selectedWindow.Handle);
-                    return int.Parse(new string(caption[(caption.LastIndexOf("|offset=", StringComparison.Ordinal) + 8)..].TakeWhile(char.IsAsciiDigit).ToArray()), System.Globalization.CultureInfo.InvariantCulture);
+                    int offset = 0;
+                    TextWindowChecks.PumpUntil(() =>
+                    {
+                        var caption = Title(selectedWindow.Handle);
+                        int marker = caption.LastIndexOf("|offset=", StringComparison.Ordinal);
+                        return marker >= 0 && int.TryParse(new string(caption[(marker + 8)..].TakeWhile(char.IsAsciiDigit).ToArray()),
+                            System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out offset);
+                    }, TimeSpan.FromSeconds(3));
+                    return offset;
                 }
                 int initialDocumentOffset = ReadFixtureOffset();
                 int Hit(double x, double y)
