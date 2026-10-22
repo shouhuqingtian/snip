@@ -45,7 +45,7 @@ public sealed class TextResultViewModel : ObservableObject, IDisposable
     private readonly DispatcherTimer heartbeat = new() { Interval = TimeSpan.FromSeconds(1) };
     private readonly Stopwatch elapsed = new();
     private string stage = "", source = "", translated = "", status = "正在准备文字识别…", direction = "auto";
-    private string languageNotes = "", resultDirection = "";
+    private string languageNotes = "", resultDirection = "", vocabularySpeechText = "";
     private string? language;
     private IReadOnlyList<string> languages = [];
     private bool busy, downloading, disposed, initialized, userCancelled;
@@ -259,7 +259,16 @@ public sealed class TextResultViewModel : ObservableObject, IDisposable
     }
     public string SourceToggleText => SourceExpanded ? "收起原文" : "展开原文";
     public bool ShowOptions { get => showOptions; set => Set(ref showOptions, value); }
-    public int ResultTab { get => resultTab; set { if (value is 0 or 1) Set(ref resultTab, value); } }
+    public int ResultTab
+    {
+        get => resultTab;
+        set
+        {
+            if (value is not (0 or 1) || !Set(ref resultTab, value)) return;
+            if (Speaking && !speakingOriginal) StopSpeech(clearStatus: true);
+            RefreshSpeechActions();
+        }
+    }
     public bool ShowLocalCompute => Mode == TranslationMode.Offline;
     public string SourceSummary => "识别文字 · " + sourceCharacterCount + " 字";
     public bool SupportsSpeechModes => speech is IConfigurableTextSpeechService;
@@ -284,9 +293,10 @@ public sealed class TextResultViewModel : ObservableObject, IDisposable
     }
     public string SpeechStatus { get => speechStatus; private set => Set(ref speechStatus, value); }
     public bool Speaking { get => speaking; private set { if (Set(ref speaking, value)) RefreshSpeechActions(); } }
-    public string SpeechActionText => Speaking && !speakingOriginal ? "停止朗读" : "朗读译文";
+    public string SpeechActionText => Speaking && !speakingOriginal ? "停止朗读" : ResultTab == 1 ? "朗读词汇" : "朗读译文";
     public string SourceSpeechActionText => Speaking && speakingOriginal ? "停止朗读" : "朗读原文";
-    public bool ShowSpeechButton => !string.IsNullOrWhiteSpace(Translated);
+    private string ResultSpeechText => ResultTab == 1 ? vocabularySpeechText : Translated;
+    public bool ShowSpeechButton => !string.IsNullOrWhiteSpace(ResultSpeechText);
     public bool ShowSourceSpeechButton => !string.IsNullOrWhiteSpace(Source);
     private void RefreshSpeechActions()
     {
@@ -428,11 +438,15 @@ public sealed class TextResultViewModel : ObservableObject, IDisposable
         if (!TranslationSourceIsCurrent(revision)) return;
         translatedMode = selectedMode; Notify(nameof(TranslationResultTitle));
         bool firstTranslation = Translated.Length == 0;
+        // Keep structured vocabulary separate from display notes: never speak IPA, labels or meanings.
+        vocabularySpeechText = online ? string.Join(". ", result.Words.Take(8)
+            .Select(word => word.English.Trim()).Where(word => word.Length > 0)) : "";
         Translated = result.Translation;
         if (firstTranslation) SourceExpanded = savedSourceExpanded ?? false;
         ResultTab = 0;
         ResultDirection = selectedDirection == "zh-en" ? "本次：中文 → 英文" : "本次：英文 → 中文";
         LanguageNotes = online ? FormatNotes(result) : "";
+        RefreshSpeechActions();
         CopyStatus = "";
         Status = basic ? "基础查词完成，未收录词语已标明；结果为词义参考。" : online ? "在线翻译完成。" + result.Notice : "离线翻译完成。";
     }
@@ -520,11 +534,12 @@ public sealed class TextResultViewModel : ObservableObject, IDisposable
         using var current = new CancellationTokenSource(TimeSpan.FromMinutes(20));
         speechOperation = current;
         int generation = ++speechGeneration;
-        string text = original ? Source : Translated;
+        string text = original ? Source : ResultSpeechText;
+        string contentName = original ? "原文" : ResultTab == 1 ? "词汇" : "译文";
         string speechLanguage = SpeechText.Language(text);
         speakingOriginal = original;
         Speaking = true; RefreshSpeechActions();
-        SpeechStatus = "正在朗读" + (original ? "原文" : "译文") + (VoiceMode == SpeechMode.Online ? "（在线 AI 语音，将发送对应文字）" : "（Windows " + (speechLanguage == "zh" ? "中文" : "英语") + "语音）") + "；再次点击喇叭可停止。";
+        SpeechStatus = "正在朗读" + contentName + (VoiceMode == SpeechMode.Online ? "（在线 AI 语音，将发送对应文字）" : "（Windows " + (speechLanguage == "zh" ? "中文" : "英语") + "语音）") + "；再次点击喇叭可停止。";
         using var log = diagnostics?.Begin("text-speech", new { CharacterCount = text.Length, Language = speechLanguage, Original = original, VoiceMode = VoiceMode.ToString() });
         try
         {
