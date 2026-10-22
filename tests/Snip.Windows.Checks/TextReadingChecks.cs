@@ -65,6 +65,7 @@ internal static class TextReadingChecks
         Require(((TextBox)reading.FindName("ReadingTranslation")).FontSize==24,"Reading font size did not apply.");
         vm.CopyTranslationCommand.Execute(null);TextWindowChecks.PumpUntil(()=>clipboard.Text.Length>0,TimeSpan.FromSeconds(3));
         Require(clipboard.Text==Translation.Body,"Copying includes pronunciation notes.");
+        ((TabItem)window.FindName("TranslationBodyTab")).IsSelected=true;window.UpdateLayout();
         Require(speech.Calls==0 && vm.ShowSpeechButton,"Speech started without a click or English online result has no speaker.");
         Click(window,"SpeakTranslationButton");TextWindowChecks.PumpUntil(()=>speech.Calls==1,TimeSpan.FromSeconds(3));
         Require(vm.Speaking && speech.Text==Translation.Body,"Speaker did not use only the full English translation.");
@@ -85,6 +86,7 @@ internal static class TextReadingChecks
         journal.FlushAsync().GetAwaiter().GetResult();
         string log=File.ReadAllText(Path.Combine(folder,"reading-diagnostics","events.jsonl"));
         Require(log.Contains("text-speech") && !log.Contains("PUBLIC-READING") && !log.Contains("PUBLIC-SOURCE") && !log.Contains("中文长文示例") && !log.Contains("VOICE-PRIVATE"),"Speech/source text or native error leaked into diagnostics.");
+        VocabularySpeechChecks.Run(folder, image);
         BilingualReadingChecks.Run(folder, image);
         OnlineSpeechSettingsChecks.Run(folder, image);
         Console.WriteLine("PASS actual long-result layout, original expansion, separate notes tab, shared reading window/font/copy; English speaker click/stop/missing voice/reading close/result close and log privacy.");
