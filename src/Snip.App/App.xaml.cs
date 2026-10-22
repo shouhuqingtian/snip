@@ -32,8 +32,9 @@ public partial class App : Application
     private TranslationPreferencesStore? translationPreferences;
     private FeatureHub? features;
     private CopyNotificationService? copyNotifications;
+    private ConfigurationTransferWindow? configurationTransfer;
 
-    protected override void OnStartup(StartupEventArgs e)
+    protected override async void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
         if (e.Args.Length == 2 && e.Args[0] == "--ocr-worker") { RunOcrWorker(e.Args[1]); return; }
@@ -62,6 +63,7 @@ public partial class App : Application
         }
         try
         {
+            await Task.Run(() => new SettingsConfigurationTransfer(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SelfSnip")).RecoverInterruptedImport());
             // Explicit constructor injection keeps Windows concerns outside ViewModels.
             var capture = new DesktopCaptureService();
             desktop = capture;
@@ -73,7 +75,7 @@ public partial class App : Application
             translationPreferences = new TranslationPreferencesStore();
             features = new FeatureHub(renderer, export, capture, pins, diagnostics, translationPreferences:translationPreferences);
             coordinator = new CaptureCoordinator(capture, renderer, export, features, diagnostics, copyNotifications.Hide);
-            main = new MainWindow { Title = "自用截图 " + DesktopDiagnostics.Version.Split('+')[0], DataContext = new MainViewModel(coordinator.CaptureAsync, ShowError, ExportDiagnosticsAsync, () => features.ShowOnlineSettings(), ShowHotkeySettings, ShowApplicationSettings) };
+            main = new MainWindow { Title = "自用截图 " + DesktopDiagnostics.Version.Split('+')[0], DataContext = new MainViewModel(coordinator.CaptureAsync, ShowError, ExportDiagnosticsAsync, () => features.ShowOnlineSettings(), ShowHotkeySettings, ShowApplicationSettings, ShowConfigurationTransfer) };
             MainWindow = main;
             hotkey = new HotkeyService(); tray = new TrayService();
             hotkeyStore = new HotkeySettingsStore();
@@ -167,6 +169,29 @@ public partial class App : Application
         applicationSettings = new ApplicationSettingsWindow(vm) { Owner = main?.IsVisible == true ? main : null };
         applicationSettings.Closed += (_, _) => applicationSettings = null;
         applicationSettings.Show();
+    }
+
+    private void ShowConfigurationTransfer()
+    {
+        if (configurationTransfer is not null) { configurationTransfer.Activate(); return; }
+        var transfer = new SettingsConfigurationTransfer(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SelfSnip"));
+        string? ChooseExport()
+        {
+            var dialog = new Microsoft.Win32.SaveFileDialog { Title = "导出加密配置", Filter = "加密配置 (*.snipconfig)|*.snipconfig", DefaultExt = ".snipconfig", FileName = $"自用截图-配置-{DateTime.Now:yyyyMMdd-HHmmss}.snipconfig" };
+            return dialog.ShowDialog(configurationTransfer) == true ? dialog.FileName : null;
+        }
+        string? ChooseImport()
+        {
+            var dialog = new Microsoft.Win32.OpenFileDialog { Title = "导入加密配置", Filter = "加密配置 (*.snipconfig)|*.snipconfig", DefaultExt = ".snipconfig", CheckFileExists = true };
+            return dialog.ShowDialog(configurationTransfer) == true ? dialog.FileName : null;
+        }
+        var vm = new ConfigurationTransferViewModel(transfer, ChooseExport, ChooseImport,
+            () => !Windows.Cast<Window>().Any(window => window is OnlineTranslationSettingsWindow or OnlineSpeechSettingsWindow or ApplicationSettingsWindow or HotkeySettingsWindow or PinHotkeySettingsWindow or TextResultWindow),
+            () => { if (main?.DataContext is MainViewModel model) model.Status = "配置已导入，请从托盘退出并重启软件，使全部设置生效。"; },
+            error => diagnostics?.Record("configuration-transfer", "operation-failed", error: error));
+        configurationTransfer = new ConfigurationTransferWindow(vm) { Owner = main?.IsVisible == true ? main : null };
+        configurationTransfer.Closed += (_, _) => configurationTransfer = null;
+        configurationTransfer.Show();
     }
 
     private async void StartCapture()

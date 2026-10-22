@@ -47,6 +47,7 @@ internal static class Program
         if (args.Contains("--enhanced-ocr")) return EnhancedOcrChecks.Run(args.Contains("--worker-executable") ? args[Array.IndexOf(args, "--worker-executable") + 1] : null);
         if (args.Contains("--speech-native")) return NativeSpeechCheck.Run();
         if (args.Contains("--pins")) return PinChecks.Run();
+        if (args.Contains("--configuration-transfer")) return ConfigurationTransferChecks.Run();
         if (args.Contains("--text-ui")) return TextWindowChecks.Run();
         int passed = 0, failed = 0;
         var renderer = new AnnotationRenderer();

@@ -1,0 +1,34 @@
+<Window x:Class="Snip.App.Views.ConfigurationTransferWindow" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+ xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" Title="自用截图 · 配置迁移" Width="740" Height="820" MinWidth="560" MinHeight="520" WindowStartupLocation="CenterScreen">
+ <Grid Margin="28">
+  <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+  <StackPanel Margin="0,0,0,18"><TextBlock Text="配置迁移" Style="{StaticResource PageTitle}"/>
+   <TextBlock Text="把当前配置加密带走，在另一台电脑导入即可继续使用。" Style="{StaticResource Subtitle}" TextWrapping="Wrap" Margin="0,8,0,0"/></StackPanel>
+  <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Padding="0,0,8,0">
+   <StackPanel>
+    <Border Style="{StaticResource Card}" Padding="22" Margin="0,0,0,16"><StackPanel>
+     <TextBlock Text="导出这台电脑的配置" FontSize="19" FontWeight="SemiBold"/>
+     <TextBlock Text="包含翻译、在线 OCR、AI 发音的服务和密钥、模型与音色、默认方式、原文展开状态及截图 / 贴图快捷键。" Style="{StaticResource Subtitle}" TextWrapping="Wrap" Margin="0,8,0,14"/>
+     <Grid IsEnabled="{Binding CanEdit}"><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/></Grid.ColumnDefinitions>
+      <StackPanel Margin="0,0,7,0"><TextBlock Text="加密密码" Margin="0,0,0,6"/><PasswordBox x:Name="ExportPasswordBox" MaxLength="256" PasswordChanged="ExportPasswordChanged" Padding="10" ToolTip="8–256 位，建议至少 12 位；此密码只用于迁移文件"/></StackPanel>
+      <StackPanel Grid.Column="1" Margin="7,0,0,0"><TextBlock Text="再次输入密码" Margin="0,0,0,6"/><PasswordBox x:Name="ExportConfirmationBox" MaxLength="256" PasswordChanged="ExportConfirmationChanged" Padding="10"/></StackPanel>
+     </Grid>
+     <Button x:Name="ExportConfigurationButton" Content="导出加密配置…" Command="{Binding ExportCommand}" HorizontalAlignment="Left" Margin="0,14,0,0"/>
+    </StackPanel></Border>
+    <Border Style="{StaticResource Card}" Padding="22" Margin="0,0,0,16"><StackPanel>
+     <TextBlock Text="导入另一台电脑的配置" FontSize="19" FontWeight="SemiBold"/>
+     <TextBlock Text="输入导出时的密码，再选择 .snipconfig 文件。先预览，确认后才替换本机配置；可以先导出本机配置作备份。" Style="{StaticResource Subtitle}" TextWrapping="Wrap" Margin="0,8,0,14"/>
+     <TextBlock Text="文件的加密密码" Margin="0,0,0,6"/>
+     <PasswordBox x:Name="ImportPasswordBox" MaxLength="256" PasswordChanged="ImportPasswordChanged" Padding="10" IsEnabled="{Binding CanEdit}"/>
+     <WrapPanel Margin="0,14,0,12"><Button x:Name="PreviewConfigurationButton" Content="选择文件并预览…" Command="{Binding PreviewCommand}"/><Button x:Name="ApplyConfigurationButton" Content="导入并应用" Command="{Binding ApplyCommand}" Style="{StaticResource PrimaryButton}" Margin="10,0,0,0"/></WrapPanel>
+     <TextBlock x:Name="ImportSummary" Text="{Binding Preview}" TextWrapping="Wrap" Style="{StaticResource Subtitle}"/>
+    </StackPanel></Border>
+    <TextBlock Text="不包含截图、识别 / 翻译文本、模型文件、日志或开机自启。离线模型需在另一台电脑单独下载；忘记迁移密码无法解密文件。" Style="{StaticResource Subtitle}" TextWrapping="Wrap" FontSize="12" Margin="0,0,0,8"/>
+   </StackPanel>
+  </ScrollViewer>
+  <Grid Grid.Row="2" Margin="0,18,0,0"><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+   <TextBlock x:Name="TransferStatus" Text="{Binding Status}" TextWrapping="Wrap" Style="{StaticResource Subtitle}" VerticalAlignment="Center" Margin="0,0,16,0"/>
+   <Button Grid.Column="1" Click="CloseClick" Style="{StaticResource QuietButton}" VerticalAlignment="Bottom"><StackPanel Orientation="Horizontal"><TextBlock Text="关闭"/><TextBlock Text="Esc" Foreground="{StaticResource MutedBrush}" FontSize="11" Margin="8,2,0,0"/></StackPanel></Button>
+  </Grid>
+ </Grid>
+</Window>
