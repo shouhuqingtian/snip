@@ -121,7 +121,7 @@ internal static class AccountSyncChecks
             using (var locked = new FileStream(Path.Combine(home, "online-speech.json"), FileMode.Open, FileAccess.Read, FileShare.Read))
             {
                 try { transfer.Apply(prepared, before.Fingerprint); throw new InvalidOperationException("Locked settings replacement was accepted."); }
-                catch (IOException) { }
+                catch (Exception error) when (error is IOException or UnauthorizedAccessException) { }
             }
             transfer.RecoverInterruptedImport();
             Require(transfer.Capture().Fingerprint == before.Fingerprint && homeTranslation.ReadCredentials().ApiKey == "PUBLIC-NEW-KEY", "Transaction recovery lost the previous credentials.");
