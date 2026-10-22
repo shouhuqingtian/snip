@@ -136,6 +136,12 @@ jobs:
             exit $checkExit
           }
           $global:LASTEXITCODE = 0
+      - name: Verify private account sync, Windows protection and conflict controls early
+        shell: pwsh
+        timeout-minutes: 3
+        run: |
+          dotnet run --project tests/Snip.Windows.Checks/Snip.Windows.Checks.csproj -c Release --no-build -- --account-sync
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Verify long translation reading and speech controls
         shell: pwsh
         timeout-minutes: 3
@@ -189,6 +195,9 @@ jobs:
           $version = ([xml](Get-Content Directory.Build.props -Raw)).Project.PropertyGroup.Version
           if ($channel -eq 'Stable' -and $env:GITHUB_REF -ne "refs/tags/v$version") { throw 'Tag and project version disagree.' }
           ./packaging/Publish.ps1 -SkipChecks -Channel $channel
+          ./packaging/PublishSyncServer.ps1
+          dotnet run --project tests/Snip.Sync.Checks/Snip.Sync.Checks.csproj -c Release --no-build -- --server "$PWD/artifacts/sync-server/app/Snip.Sync.Server.dll" *> artifacts/validation/packaged-sync-server.log
+          if ($LASTEXITCODE -ne 0) { Get-Content artifacts/validation/packaged-sync-server.log; exit $LASTEXITCODE }
       - name: Smoke test the actual single-file EXE diagnostic export
         shell: pwsh
         run: |

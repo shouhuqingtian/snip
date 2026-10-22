@@ -1,0 +1,4 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net8.0</TargetFramework></PropertyGroup>
+  <ItemGroup><ProjectReference Include="../../src/Snip.Core/Snip.Core.csproj" /><ProjectReference Include="../../src/Snip.Sync.Server/Snip.Sync.Server.csproj" ReferenceOutputAssembly="false" /></ItemGroup>
+</Project>

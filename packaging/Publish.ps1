@@ -72,6 +72,8 @@ try {
     $zipName = if ($Channel -eq 'Preview') { 'self-snip-preview-win-x64.zip' } else { "self-snip-$version-win-x64.zip" }
     $deliverables = @((Join-Path $artifactRoot $zipName), (Join-Path $artifactRoot 'self-snip-source.zip'))
     if (Test-Path (Join-Path $artifactRoot 'ui-previews.zip')) { $deliverables += Join-Path $artifactRoot 'ui-previews.zip' }
+    $syncServer = Join-Path $artifactRoot "self-snip-sync-server-$version.zip"
+    if (Test-Path $syncServer) { $deliverables += $syncServer }
     if ($Installer) { $deliverables += Join-Path $artifactRoot "installer/SelfSnip-$version-Setup-x64.exe" }
     $deliverables | Where-Object { Test-Path $_ } | ForEach-Object {
         $relative = [System.IO.Path]::GetFileName($_)

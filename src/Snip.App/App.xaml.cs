@@ -23,6 +23,8 @@ public partial class App : Application
     private PinHotkeySettingsStore? pinHotkeyStore;
     private PinHotkeySettingsWindow? pinHotkeySettings;
     private MainWindow? main;
+    private AccountSyncService? accountSync;
+    private AccountSyncWindow? accountSyncWindow;
     private bool ownsMutex;
     private DiagnosticJournal? diagnostics;
     private IDesktopCaptureService? desktop;
@@ -33,7 +35,7 @@ public partial class App : Application
     private FeatureHub? features;
     private CopyNotificationService? copyNotifications;
 
-    protected override void OnStartup(StartupEventArgs e)
+    protected override async void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
         if (e.Args.Length == 2 && e.Args[0] == "--ocr-worker") { RunOcrWorker(e.Args[1]); return; }
@@ -72,8 +74,12 @@ public partial class App : Application
             pins = new PinManager(export, ShowPinHotkeySettings);
             translationPreferences = new TranslationPreferencesStore();
             features = new FeatureHub(renderer, export, capture, pins, diagnostics, translationPreferences:translationPreferences);
+            accountSync = new AccountSyncService(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SelfSnip"), Dispatcher,
+                () => !Windows.OfType<OnlineTranslationSettingsWindow>().Any() && !Windows.OfType<OnlineSpeechSettingsWindow>().Any() && !Windows.OfType<ApplicationSettingsWindow>().Any(),
+                features.RefreshAccountConfiguration, diagnostics);
+            await accountSync.StartAsync();
             coordinator = new CaptureCoordinator(capture, renderer, export, features, diagnostics, copyNotifications.Hide);
-            main = new MainWindow { Title = "自用截图 " + DesktopDiagnostics.Version.Split('+')[0], DataContext = new MainViewModel(coordinator.CaptureAsync, ShowError, ExportDiagnosticsAsync, () => features.ShowOnlineSettings(), ShowHotkeySettings, ShowApplicationSettings) };
+            main = new MainWindow { Title = "自用截图 " + DesktopDiagnostics.Version.Split('+')[0], DataContext = new MainViewModel(coordinator.CaptureAsync, ShowError, ExportDiagnosticsAsync, () => features.ShowOnlineSettings(), ShowHotkeySettings, ShowApplicationSettings, ShowAccountSync) };
             MainWindow = main;
             hotkey = new HotkeyService(); tray = new TrayService();
             hotkeyStore = new HotkeySettingsStore();
@@ -159,6 +165,14 @@ public partial class App : Application
         pinHotkeySettings.Show();
     }
 
+    private void ShowAccountSync()
+    {
+        if (accountSync is null) return;
+        if (accountSyncWindow is not null) { accountSyncWindow.Show(); accountSyncWindow.Activate(); return; }
+        accountSyncWindow = new AccountSyncWindow(new AccountSyncViewModel(accountSync, Dispatcher));
+        accountSyncWindow.Closed += (_, _) => accountSyncWindow = null;
+        accountSyncWindow.Show(); accountSyncWindow.Activate();
+    }
     private void ShowApplicationSettings()
     {
         if (applicationSettings is not null) { applicationSettings.Activate(); return; }
@@ -224,6 +238,7 @@ public partial class App : Application
     protected override void OnExit(ExitEventArgs e)
     {
         diagnostics?.Record("app", "exiting", new { e.ApplicationExitCode });
+        accountSync?.Dispose();
         activationListener?.Unregister(null); copyNotifications?.Dispose(); coordinator?.Dispose(); pins?.Dispose(); pinHotkeys?.Dispose(); hotkey?.Dispose(); tray?.Dispose();
         if (ownsMutex) instance?.ReleaseMutex(); instance?.Dispose(); activation?.Dispose();
         diagnostics?.Dispose();

@@ -34,11 +34,13 @@ try {
     }
     if ($Scope -in 'Core','All') {
         Check 'core' @('test','tests/Snip.Core.Tests/Snip.Core.Tests.csproj','-c','Release','--no-build','--logger','trx','--results-directory',$output)
+        Check 'account-sync-server' @('run','--project','tests/Snip.Sync.Checks/Snip.Sync.Checks.csproj','-c','Release','--no-build')
         Check 'online-protocol' @('run','--project','tests/Snip.Translation.Checks/Snip.Translation.Checks.csproj','-c','Release','--no-build','--','--online')
     }
     if (($Scope -in 'Desktop','All') -and $IsWindows) {
         # Independent checks all run, with their real exit codes preserved.
         Check 'windows' @('run','--project','tests/Snip.Windows.Checks/Snip.Windows.Checks.csproj','-c','Release','--no-build')
+        Check 'account-sync' @('run','--project','tests/Snip.Windows.Checks/Snip.Windows.Checks.csproj','-c','Release','--no-build','--','--account-sync')
         Check 'desktop-scroll' @('run','--project','tests/Snip.Windows.Checks/Snip.Windows.Checks.csproj','-c','Release','--no-build','--','--desktop-scroll')
         Check 'editor-performance' @('run','--project','tests/Snip.Windows.Checks/Snip.Windows.Checks.csproj','-c','Release','--no-build','--','--editor-performance')
         Check 'share-ui' @('run','--project','tests/Snip.Windows.Checks/Snip.Windows.Checks.csproj','-c','Release','--no-build','--','--share-ui')

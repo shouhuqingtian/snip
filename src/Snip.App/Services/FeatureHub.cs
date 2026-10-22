@@ -123,6 +123,7 @@ public sealed class FeatureHub
         if (saved is not null) vm.Saved += (_, _) => saved();
         var window = new OnlineTranslationSettingsWindow(vm); window.Show(); window.Activate(); return window;
     }
+    public void RefreshAccountConfiguration() => RefreshVoiceModes();
     private void RefreshVoiceModes()
     {
         foreach (var result in Application.Current.Windows.OfType<TextResultWindow>())
