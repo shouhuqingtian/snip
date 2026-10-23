@@ -69,16 +69,25 @@ jobs:
               if 'chrome-check' in path.parts and path.stat().st_size<3500:
                   print('::notice title=Public Chrome initial image::'+base64.b64encode(path.read_bytes()).decode())
 
+      - name: Prepare public preview inspection
+        run: python -m pip install --disable-pip-version-check pillow==11.3.0
       - name: Surface bounded public image text previews
         shell: python
         run: |
-          import base64
+          import base64, io
           from pathlib import Path
+          from PIL import Image
           for name in ['49-image-text-selection.png', '50-pin-edit-text-selection.png']:
               for path in Path('saved-validation').rglob(name):
-                  if path.stat().st_size > 256000:
-                      print('::notice title=Image text preview size::'+name+': exceeds bounded annotation size; use the original artifact.')
-                      continue
-                  encoded = base64.b64encode(path.read_bytes()).decode()
+                  original = Image.open(path).convert('RGB')
+                  width = min(760, original.width)
+                  while True:
+                      thumbnail = original.resize((width, round(original.height * width / original.width)))
+                      output = io.BytesIO()
+                      thumbnail.save(output, format='JPEG', quality=45, optimize=True)
+                      if len(output.getvalue()) <= 10000 or width <= 240:
+                          break
+                      width = round(width * .85)
+                  encoded = base64.b64encode(output.getvalue()).decode()
                   for index, offset in enumerate(range(0, len(encoded), 3500)):
-                      print('::notice title=Image text preview '+name+' part '+str(index).zfill(2)+'::'+encoded[offset:offset+3500])
+                      print('::notice title=Image text preview '+name.replace('.png','.jpg')+' part '+str(index).zfill(2)+'::'+encoded[offset:offset+3500])
