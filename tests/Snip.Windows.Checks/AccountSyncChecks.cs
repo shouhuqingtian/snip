@@ -215,11 +215,25 @@ internal static class AccountSyncChecks
     }
     private static void Preview(Window window, string name)
     {
-        window.UpdateLayout(); var a = window.PointToScreen(new Point()); var b = window.PointToScreen(new Point(window.ActualWidth, window.ActualHeight));
-        var display = new DesktopCaptureService(); var bounds = PixelRect.FromPoints(new(a.X, a.Y), new(b.X, b.Y));
-        var screen = display.GetDisplays().First(d => d.Primary).Bounds; bounds = bounds.Intersect(screen);
+        // Wait for binding/render work, then render the actual WPF tree. A desktop grab here
+        // can still contain the previous compositor frame (e.g. "logging in").
+        var painted = Task.Delay(100); TextWindowChecks.PumpUntil(() => painted.IsCompleted, TimeSpan.FromSeconds(3));
+        window.UpdateLayout();
+        var vm = (AccountSyncViewModel)window.DataContext;
+        Require(((TextBlock)window.FindName("AuthFeedbackTitle")).Text == vm.FeedbackTitle, "Visible authentication heading is stale.");
+        Require(((TextBlock)window.FindName("AuthFeedbackDetail")).Text == vm.FeedbackDetail, "Visible authentication detail is stale.");
+        Require(((TextBlock)window.FindName("SyncStatus")).Text == vm.Status, "Visible sync result is stale.");
+        var content = (FrameworkElement)window.Content;
+        var drawing = new DrawingVisual();
+        using (var dc = drawing.RenderOpen())
+        {
+            dc.DrawRectangle(window.Background, null, new Rect(0, 0, content.ActualWidth + 32, content.ActualHeight + 32));
+            dc.DrawRectangle(new VisualBrush(content), null, new Rect(16, 16, content.ActualWidth, content.ActualHeight));
+        }
+        var bitmap = new System.Windows.Media.Imaging.RenderTargetBitmap((int)Math.Ceiling(content.ActualWidth + 32), (int)Math.Ceiling(content.ActualHeight + 32), 96, 96, System.Windows.Media.PixelFormats.Pbgra32);
+        bitmap.Render(drawing); bitmap.Freeze();
         Directory.CreateDirectory("artifacts/validation/ui-previews");
-        new ImageExportService().SavePng(display.CaptureRegion(bounds), "artifacts/validation/ui-previews/" + name + ".png");
+        new ImageExportService().SavePng(bitmap, "artifacts/validation/ui-previews/" + name + ".png");
     }
     private sealed class NoAudio : ISpeechAudioPlayer { public Task PlayAsync(SpeechAudio audio, double speed, CancellationToken token) => throw new InvalidOperationException("No provider request expected."); }
     private sealed class Server : IDisposable
