@@ -4,7 +4,7 @@ on:
     inputs:
       check:
         type: choice
-        options: [clipboard, chrome, enhanced-ocr, editor-zoom, manual-preview, window-placement, text-ui, ui-gallery, hotkey, annotation-ui, editor-interaction, smart-selection, inline-text, capture-feedback, image-clipboard, desktop-scroll, configuration-transfer]
+        options: [clipboard, chrome, enhanced-ocr, editor-zoom, manual-preview, window-placement, text-ui, ui-gallery, hotkey, annotation-ui, editor-interaction, smart-selection, inline-text, capture-feedback, image-clipboard, desktop-scroll, configuration-transfer, image-text-selection]
         default: clipboard
         required: true
       rounds:
@@ -38,7 +38,7 @@ jobs:
           CHECK: ${{ inputs.check }}
           ROUNDS: ${{ inputs.rounds }}
         run: |
-          $flag = switch ($env:CHECK) { 'clipboard' { '--clipboard-ui' }; 'chrome' { '--chrome' }; 'enhanced-ocr' { '--enhanced-ocr' }; 'editor-zoom' { '--editor-zoom' }; 'manual-preview' { '--manual-preview' }; 'window-placement' { '--window-placement' }; 'text-ui' { '--text-ui' }; 'ui-gallery' { '--ui-gallery' }; 'hotkey' { '--hotkey' }; 'annotation-ui' { '--annotation-ui' }; 'editor-interaction' { '--editor-performance' }; 'smart-selection' { '--smart-selection' }; 'inline-text' { '--inline-text' }; 'capture-feedback' { '--capture-feedback' }; 'image-clipboard' { '--image-clipboard' }; 'desktop-scroll' { '--desktop-scroll' }; 'configuration-transfer' { '--configuration-transfer' }; default { throw 'Unsupported check.' } }
+          $flag = switch ($env:CHECK) { 'clipboard' { '--clipboard-ui' }; 'chrome' { '--chrome' }; 'enhanced-ocr' { '--enhanced-ocr' }; 'editor-zoom' { '--editor-zoom' }; 'manual-preview' { '--manual-preview' }; 'window-placement' { '--window-placement' }; 'text-ui' { '--text-ui' }; 'ui-gallery' { '--ui-gallery' }; 'hotkey' { '--hotkey' }; 'annotation-ui' { '--annotation-ui' }; 'editor-interaction' { '--editor-performance' }; 'smart-selection' { '--smart-selection' }; 'inline-text' { '--inline-text' }; 'capture-feedback' { '--capture-feedback' }; 'image-clipboard' { '--image-clipboard' }; 'desktop-scroll' { '--desktop-scroll' }; 'configuration-transfer' { '--configuration-transfer' }; 'image-text-selection' { '--image-text-selection' }; default { throw 'Unsupported check.' } }
           $rounds = [Math]::Clamp([int]$env:ROUNDS,1,5)
           New-Item -ItemType Directory -Path artifacts/validation -Force | Out-Null
           foreach ($round in 1..$rounds) {

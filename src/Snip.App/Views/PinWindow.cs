@@ -22,7 +22,7 @@ public sealed class PinWindow : Window
     public string Description => $"贴图 {bitmap.PixelWidth}×{bitmap.PixelHeight}";
     [DllImport("user32.dll", EntryPoint = "GetWindowLongPtrW")] private static extern IntPtr GetStyle(IntPtr hwnd, int index);
     [DllImport("user32.dll", EntryPoint = "SetWindowLongPtrW")] private static extern IntPtr SetStyle(IntPtr hwnd, int index, IntPtr style);
-    public PinWindow(BitmapSource bitmap, IImageExportService export)
+    public PinWindow(BitmapSource bitmap, IImageExportService export, Action<PinWindow, BitmapSource>? edit = null)
     {
         Ui.ApplyWindow(this);
         this.bitmap = bitmap; Title = "自用截图 · 贴图"; WindowStyle = WindowStyle.None; ResizeMode = ResizeMode.NoResize;
@@ -33,6 +33,7 @@ public sealed class PinWindow : Window
         Content = new Border { Child = image, Background = Brushes.White, BorderBrush = Ui.Brush("AccentBrush"), BorderThickness = new Thickness(2), CornerRadius = new CornerRadius(6) };
         var menu = new ContextMenu(); ContextMenu = menu;
         void Add(string text, Action action) { var item = new MenuItem { Header = text }; item.Click += (_, _) => action(); menu.Items.Add(item); }
+        if (edit is not null) Add("编辑（副本）…", () => edit(this, bitmap));
         Add("复制图片", async () => { try { await export.CopyAsync(bitmap); } catch (Exception e) { MessageBox.Show(e.Message); } });
         Add("保存 PNG…", () => { var path = new EditorDialogs(() => this).ChoosePngPath(); if (path is null) return; try { export.SavePng(bitmap, path); } catch (Exception e) { MessageBox.Show(e.Message); } });
         Add("透明度 100%", () => image.Opacity = 1); Add("透明度 70%", () => image.Opacity = .7); Add("透明度 40%", () => image.Opacity = .4);

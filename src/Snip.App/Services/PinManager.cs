@@ -24,6 +24,7 @@ public sealed class PinManager : IDisposable
         this.export=export;this.historyLimit=historyLimit;this.historyBudget=historyBudget;
         ViewModel=new(entries,RestoreLast,()=>Cycle(-1),()=>Cycle(1),ClearHistory,settings);
     }
+    public event Action<PinWindow, BitmapSource>? EditRequested;
     public PinManagerViewModel ViewModel { get; }
     public void Add(BitmapSource image)
     {
@@ -43,7 +44,7 @@ public sealed class PinManager : IDisposable
             if(existing.WindowState==WindowState.Minimized)existing.WindowState=WindowState.Normal;
             existing.SetClickThrough(false);PinWindowPlacement.Fit(existing);existing.Show();existing.Activate();SetCurrent(entry);return;
         }
-        var window=new PinWindow(entry.Image,export);
+        var window=new PinWindow(entry.Image,export, (source, image) => EditRequested?.Invoke(source, image));
         windows.Add(entry,window);
         window.Activated+=(_,_)=>SetCurrent(entry);
         window.InteractionChanged+=(_,_)=>{entry.ClickThrough=window.IsClickThrough;ViewModel.Refresh();};

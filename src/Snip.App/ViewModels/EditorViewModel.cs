@@ -53,6 +53,9 @@ public sealed class EditorViewModel : ObservableObject
     public Annotation? InlineText { get; private set; }
     public bool UseInlineText { get; set; }
     public BitmapSource Image { get; }
+    public IReadOnlyList<Annotation> CommittedAnnotations => history.Current;
+    private ImageTextSelectionViewModel? textSelection;
+    public ImageTextSelectionViewModel? TextSelection { get => textSelection; set => Set(ref textSelection, value); }
     public int PixelWidth => Image.PixelWidth;
     public int PixelHeight => Image.PixelHeight;
     public string SizeText => $"{PixelWidth} × {PixelHeight} 像素";

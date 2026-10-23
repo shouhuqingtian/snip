@@ -53,7 +53,8 @@ public sealed class OfflineOcrService : IOcrService
         var retry = await RecognizeSourceAsync(prepared, engine, token).ConfigureAwait(false);
         var bounds = new PixelRect(0, 0, source.PixelWidth, source.PixelHeight);
         return new(retry.Regions.Select(region => region with { Bounds = new PixelRect((region.Bounds.X - padding) / scale,
-            (region.Bounds.Y - padding) / scale, region.Bounds.Width / scale, region.Bounds.Height / scale).Intersect(bounds) })
+            (region.Bounds.Y - padding) / scale, region.Bounds.Width / scale, region.Bounds.Height / scale).Intersect(bounds),
+            Words = region.Words?.Select(word => word with { Bounds = new PixelRect((word.Bounds.X - padding) / scale, (word.Bounds.Y - padding) / scale, word.Bounds.Width / scale, word.Bounds.Height / scale).Intersect(bounds) }).Where(word => !word.Bounds.IsEmpty).ToArray() })
             .Where(region => !region.Bounds.IsEmpty).ToArray());
     }
 
@@ -81,7 +82,8 @@ public sealed class OfflineOcrService : IOcrService
                 if (x > 0 && centerX < 60 || y > 0 && centerY < 60) continue;
                 if (x + width < source.PixelWidth && centerX >= width - 60 || y + height < source.PixelHeight && centerY >= height - 60) continue;
                 double right = line.Words.Max(w => w.BoundingRect.Right), bottom = line.Words.Max(w => w.BoundingRect.Bottom);
-                results.Add(new(line.Text, new PixelRect(x + left, y + top, right - left, bottom - top), null));
+                results.Add(new(line.Text, new PixelRect(x + left, y + top, right - left, bottom - top), null,
+                    line.Words.Select(word => new Snip.Core.OcrWord(word.Text, new PixelRect(x + word.BoundingRect.X, y + word.BoundingRect.Y, word.BoundingRect.Width, word.BoundingRect.Height))).ToArray()));
             }
         }
         return new(results.OrderBy(r => Math.Round(r.Bounds.Y / 12)).ThenBy(r => r.Bounds.X).ToArray());

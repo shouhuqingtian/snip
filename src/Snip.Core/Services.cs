@@ -21,7 +21,8 @@ public interface ITrayService : IDisposable
 }
 
 public sealed record ImagePayload(ReadOnlyMemory<byte> PngBytes, int Width, int Height);
-public sealed record OcrTextRegion(string Text, PixelRect Bounds, double? Confidence);
+public sealed record OcrWord(string Text, PixelRect Bounds);
+public sealed record OcrTextRegion(string Text, PixelRect Bounds, double? Confidence, IReadOnlyList<OcrWord>? Words = null);
 public sealed record OcrResult(IReadOnlyList<OcrTextRegion> Regions, string? LayoutText = null);
 public sealed record AiImageResult(string Text);
 

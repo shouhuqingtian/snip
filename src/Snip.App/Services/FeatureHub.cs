@@ -37,6 +37,7 @@ public sealed class FeatureHub
         this.renderer = renderer; this.export = export; this.capture = capture; this.pins = pins; this.diagnostics = diagnostics;
         this.ocr = ocr ?? new EnhancedOcrService(systemOcr, new OcrModelStore(System.IO.Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SelfSnip", "Ocr", "PP-OCRv6-small")), WorkerHost, diagnostics);
+        pins.EditRequested += OpenPinEditor;
         this.models = models ?? new(System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SelfSnip", "Models"));
         this.translator = translator ?? new OfflineTranslator(this.models); this.shareFactory = shareFactory;
         if (this.translator is OfflineTranslator native)
@@ -136,9 +137,41 @@ public sealed class FeatureHub
         vm.Saved += (_, _) => RefreshVoiceModes();
         var window = new OnlineSpeechSettingsWindow(vm); window.Show(); window.Activate(); return window;
     }
+    private void OpenPinEditor(PinWindow source, System.Windows.Media.Imaging.BitmapSource image)
+    {
+        var window = OpenEditor(new EditorViewModel(image, renderer, export, new EditorDialogs(() => null)));
+        // Keep the active editor above the topmost source pin without hiding/changing it.
+        // Detach before source closure so the independent copy survives that closure.
+        window.Owner = source;
+        System.ComponentModel.CancelEventHandler detach = (_, _) => window.Owner = null;
+        source.Closing += detach; window.Closed += (_, _) => source.Closing -= detach;
+        window.Activate();
+    }
+    private IOcrService LocalSelectionOcr()
+    {
+        // Point selection needs local geometry. Never reuse the online visual model implicitly.
+        if (ocr is EnhancedOcrService enhanced)
+        {
+            OcrMode? saved = null;
+            try { saved = ocrPreferences.Read(); } catch (InvalidOperationException error) { diagnostics?.Record("ocr-preferences", "invalid-configuration", error:error); }
+            if (enhanced.IsInstalled && (saved == OcrMode.EnhancedOffline || saved is null && enhanced.Enabled)) return new LocalEnhancedSelectionOcr(enhanced);
+            return systemOcr;
+        }
+        return ocr;
+    }
+    private sealed class LocalEnhancedSelectionOcr(EnhancedOcrService enhanced) : IOcrService, IOcrEnhancement
+    {
+        public IReadOnlyList<string> Languages => ["zh-Hans-CN", "en-US"];
+        public bool Enabled { get => true; set { } }
+        public bool IsInstalled => enhanced.IsInstalled;
+        public string EngineDescription => enhanced.EngineDescription;
+        public Task InstallAsync(IProgress<OcrDownloadProgress>? progress, CancellationToken token) => enhanced.InstallAsync(progress, token);
+        public Task<OcrResult> RecognizeAsync(ImagePayload image, CancellationToken token) => enhanced.RecognizeEnhancedAsync(image, null, token);
+        public Task<OcrResult> RecognizeAsync(ImagePayload image, string? language, CancellationToken token) => enhanced.RecognizeEnhancedAsync(image, language, token);
+    }
     public EditorWindow OpenEditor(EditorViewModel vm)
     {
-        var window = new EditorWindow(); vm.RebindDialogs(new EditorDialogs(() => window));
+        var window = new EditorWindow(LocalSelectionOcr(), diagnostics: diagnostics); vm.RebindDialogs(new EditorDialogs(() => window));
         window.DataContext = vm;
         window.Toolbar.StickerRequested += (_, _) =>
         {

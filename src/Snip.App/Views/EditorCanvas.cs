@@ -21,6 +21,9 @@ public sealed class EditorCanvas : FrameworkElement
     private Guid? editingId;
     private bool changingText;
     private Size inlineEditorSize;
+    private bool selectingText;
+    public bool IsSelectingText => selectingText;
+    public event EventHandler? TextDragChanged;
     public PixelRect? VisibleImageBounds { get; set; }
     public EditorCanvas()
     {
@@ -123,6 +126,12 @@ public sealed class EditorCanvas : FrameworkElement
             cached = renderer.BuildDrawing(vm.Image, vm.BaseAnnotations); renderedRevision = vm.BaseRevision;
         }
         context.DrawDrawing(cached);
+        if (vm.TextSelection is { IsActive: true } selection)
+        {
+            var fill = new SolidColorBrush(Color.FromArgb(95, 30, 130, 230)); fill.Freeze();
+            foreach (var bounds in selection.Highlights) context.DrawRectangle(fill, null, AnnotationRenderer.Rect(bounds));
+            return;
+        }
         if (vm.Preview is not null) renderer.DrawAnnotation(context, vm.Preview);
         if (vm.Selected is { } selected)
         {
@@ -140,7 +149,9 @@ public sealed class EditorCanvas : FrameworkElement
     }
     private double InteractionScale => Math.Max(0.000001, Math.Abs(LayoutTransform.Value.M11));
     private PixelPoint Position(MouseEventArgs e) { var p = e.GetPosition(this); return new(p.X, p.Y); }
-    private Cursor PointerCursor(MouseEventArgs e) => vm?.PointerHandle(Position(e), InteractionScale) switch
+    private Cursor PointerCursor(MouseEventArgs e) => vm?.TextSelection is { IsActive: true } text
+        ? (text.Document?.Hit(Position(e)) is not null ? Cursors.IBeam : Cursors.Arrow)
+        : vm?.PointerHandle(Position(e), InteractionScale) switch
     {
         SelectionHandle.Move => Cursors.SizeAll,
         SelectionHandle.Left or SelectionHandle.Right => Cursors.SizeWE,
@@ -151,21 +162,46 @@ public sealed class EditorCanvas : FrameworkElement
     };
     protected override void OnMouseLeftButtonDown(MouseButtonEventArgs e)
     {
-        CommitText(this, EventArgs.Empty); Focus();
+        Focus();
+        if (vm?.TextSelection is { IsActive: true } text)
+        {
+            selectingText = text.Begin(Position(e), e.ClickCount > 1);
+            if (selectingText) { CaptureMouse(); TextDragChanged?.Invoke(this, EventArgs.Empty); } e.Handled = true; return;
+        }
+        CommitText(this, EventArgs.Empty);
         Cursor = PointerCursor(e);
         if (vm?.BeginPointer(Position(e), e.ClickCount > 1, InteractionScale) == true) CaptureMouse();
         e.Handled = true;
     }
     protected override void OnMouseMove(MouseEventArgs e)
     {
-        if (IsMouseCaptured) { vm?.MovePointer(Position(e)); e.Handled = true; }
+        if (selectingText) { vm?.TextSelection?.Move(Position(e)); e.Handled = true; }
+        else if (IsMouseCaptured) { vm?.MovePointer(Position(e)); e.Handled = true; }
         else Cursor = PointerCursor(e);
     }
     protected override void OnMouseLeftButtonUp(MouseButtonEventArgs e)
     {
         if (!IsMouseCaptured) return;
+        if (selectingText) { vm?.TextSelection?.Move(Position(e)); vm?.TextSelection?.End(); ReleaseMouseCapture(); selectingText = false; e.Handled = true; return; }
         vm?.EndPointer(Position(e)); ReleaseMouseCapture(); e.Handled = true;
     }
-    protected override void OnLostMouseCapture(MouseEventArgs e) { vm?.CancelGesture(); base.OnLostMouseCapture(e); }
-    protected override void OnMouseRightButtonDown(MouseButtonEventArgs e) { vm?.CancelGesture(); if (IsMouseCaptured) ReleaseMouseCapture(); e.Handled = true; }
+    public void UpdateTextSelection() { if (selectingText) { var p = Mouse.GetPosition(this); vm?.TextSelection?.Move(new(p.X, p.Y)); } }
+    public void EndTextSelection() { if (selectingText) { vm?.TextSelection?.End(); ReleaseMouseCapture(); selectingText = false; TextDragChanged?.Invoke(this, EventArgs.Empty); } }
+    protected override void OnLostMouseCapture(MouseEventArgs e)
+    { if (selectingText) { vm?.TextSelection?.End(); selectingText = false; TextDragChanged?.Invoke(this, EventArgs.Empty); } else vm?.CancelGesture(); base.OnLostMouseCapture(e); }
+    protected override void OnMouseRightButtonDown(MouseButtonEventArgs e)
+    {
+        if (vm?.TextSelection is { IsActive: true } text)
+        {
+            EndTextSelection();
+            var menu = new ContextMenu();
+            menu.InputBindings.Add(new KeyBinding(text.CopyCommand, Key.C, ModifierKeys.Control));
+            menu.InputBindings.Add(new KeyBinding(text.SelectAllCommand, Key.A, ModifierKeys.Control));
+            menu.Items.Add(new MenuItem { Header = "复制文字", InputGestureText = "Ctrl+C", Command = text.CopyCommand });
+            menu.Items.Add(new MenuItem { Header = "全选文字", InputGestureText = "Ctrl+A", Command = text.SelectAllCommand });
+            var exit = new MenuItem { Header = "返回标注", InputGestureText = "Esc" }; exit.Click += (_, _) => text.Deactivate(); menu.Items.Add(exit);
+            ContextMenu = menu; menu.PlacementTarget = this; menu.IsOpen = true; e.Handled = true; return;
+        }
+        ContextMenu = null; vm?.CancelGesture(); if (IsMouseCaptured) ReleaseMouseCapture(); e.Handled = true;
+    }
 }

@@ -13,6 +13,11 @@
     <local:EditorToolbar x:Name="ToolbarControl" DockPanel.Dock="Top" Margin="16,12,16,12"/>
     <Border DockPanel.Dock="Bottom" Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource StrokeBrush}" BorderThickness="0,1,0,0" Padding="16,8">
       <DockPanel>
+        <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" Margin="0,0,10,0">
+          <ToggleButton x:Name="SelectImageTextButton" Content="选取文字" Command="{Binding TextSelection.ToggleCommand}" IsChecked="{Binding TextSelection.IsActive, Mode=OneWay}" Padding="10,5" ToolTip="在图片上拖选文字，Ctrl+C 复制；只使用本机 OCR"/>
+          <Button x:Name="CopyImageTextButton" Content="复制文字" Command="{Binding TextSelection.CopyCommand}" Padding="10,5" Margin="6,0,0,0"/>
+          <Button x:Name="RetryImageTextButton" Content="↻" Command="{Binding TextSelection.RetryCommand}" Padding="8,5" ToolTip="重新识别图片文字"/>
+        </StackPanel>
         <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
           <Button Content="−" Command="{Binding ZoomOutCommand}" Padding="10,3"/>
           <TextBlock Text="{Binding ZoomText}" VerticalAlignment="Center" Margin="8,0"/>
@@ -24,12 +29,14 @@
             <Button.Style><Style TargetType="Button" BasedOn="{StaticResource {x:Type Button}}"><Style.Triggers><DataTrigger Binding="{Binding IsFitWidth}" Value="True"><Setter Property="Background" Value="{StaticResource AccentSoftBrush}"/><Setter Property="Foreground" Value="{StaticResource AccentBrush}"/></DataTrigger></Style.Triggers></Style></Button.Style>
           </Button>
         </StackPanel>
-        <TextBlock Text="{Binding Status}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" Foreground="{StaticResource MutedBrush}" Margin="0,0,10,0"/>
+        <TextBlock VerticalAlignment="Center" TextTrimming="CharacterEllipsis" Foreground="{StaticResource MutedBrush}" Margin="0,0,10,0" ToolTip="{Binding TextSelection.Status}">
+          <TextBlock.Style><Style TargetType="TextBlock"><Setter Property="Text" Value="{Binding Status}"/><Style.Triggers><DataTrigger Binding="{Binding TextSelection.IsActive}" Value="True"><Setter Property="Text" Value="{Binding TextSelection.Status}"/></DataTrigger></Style.Triggers></Style></TextBlock.Style>
+        </TextBlock>
       </DockPanel>
     </Border>
     <ScrollViewer x:Name="Viewport" HorizontalScrollBarVisibility="Auto" Background="{StaticResource CanvasBrush}" Padding="24">
       <ScrollViewer.Style><Style TargetType="ScrollViewer"><Setter Property="VerticalScrollBarVisibility" Value="Auto"/><Style.Triggers><DataTrigger Binding="{Binding IsFitWidth}" Value="True"><Setter Property="VerticalScrollBarVisibility" Value="Visible"/></DataTrigger></Style.Triggers></Style></ScrollViewer.Style>
-      <local:EditorCanvas HorizontalAlignment="Left" VerticalAlignment="Top">
+      <local:EditorCanvas x:Name="EditorSurface" HorizontalAlignment="Left" VerticalAlignment="Top">
         <local:EditorCanvas.LayoutTransform><ScaleTransform ScaleX="{Binding Zoom}" ScaleY="{Binding Zoom}"/></local:EditorCanvas.LayoutTransform>
       </local:EditorCanvas>
     </ScrollViewer>
