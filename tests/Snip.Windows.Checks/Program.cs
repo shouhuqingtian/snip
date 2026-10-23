@@ -47,6 +47,8 @@ internal static class Program
         if (args.Contains("--enhanced-ocr")) return EnhancedOcrChecks.Run(args.Contains("--worker-executable") ? args[Array.IndexOf(args, "--worker-executable") + 1] : null);
         if (args.Contains("--speech-native")) return NativeSpeechCheck.Run();
         if (args.Contains("--pins")) return PinChecks.Run();
+        if (args.Contains("--annotation-style")) return AnnotationStyleChecks.Run();
+        if (args.Contains("--account-sync")) return AccountSyncChecks.Run();
         if (args.Contains("--image-text-selection")) return ImageTextSelectionChecks.Run();
         if (args.Contains("--configuration-transfer")) return ConfigurationTransferChecks.Run();
         if (args.Contains("--text-ui")) return TextWindowChecks.Run();

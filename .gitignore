@@ -6,3 +6,8 @@ artifacts/
 *.suo
 TestResults/
 .model-cache/
+
+# Private account sync deployment state
+packaging/account-sync/.env
+packaging/account-sync/data/
+sync-data/

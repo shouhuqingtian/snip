@@ -10,10 +10,12 @@ using Snip.Core;
 namespace Snip.Infrastructure;
 
 /// <summary>Only explicitly listed service settings are transferable. Temporary/journal files contain Windows-protected keys, never plaintext API keys.</summary>
-public sealed class SettingsConfigurationTransfer(string directory)
+public sealed class SettingsConfigurationTransfer(string directory, bool includeDeviceSettings = true)
 {
-    private static readonly string[] Names = ["online-translation.json", "online-speech.json", "translation-preferences.json", "ocr-preferences.json", "text-reading-preferences.json", "hotkey.json", "pin-hotkeys.json"];
-    private string JournalPath => Path.Combine(directory, "configuration-transfer-transaction.json");
+    private static readonly string[] DeviceNames = ["online-translation.json", "online-speech.json", "translation-preferences.json", "ocr-preferences.json", "text-reading-preferences.json", "hotkey.json", "pin-hotkeys.json"];
+    private static readonly string[] ServiceNames = DeviceNames[..4];
+    private string[] Names => includeDeviceSettings ? DeviceNames : ServiceNames;
+    private string JournalPath => Path.Combine(directory, includeDeviceSettings ? "configuration-transfer-transaction.json" : "account-sync-transaction.json");
     public sealed record Snapshot(string Fingerprint, IReadOnlyDictionary<string, byte[]?> Files);
     public sealed record Prepared(IReadOnlyDictionary<string, byte[]?> Files, int TranslationProfiles, int SpeechProfiles);
     private sealed class TranslationProfile
@@ -31,6 +33,7 @@ public sealed class SettingsConfigurationTransfer(string directory)
     private sealed class Bundle
     {
         public int Version { get; set; } = 1;
+        public long CloudRevision { get; set; }
         public List<TranslationProfile> Translation { get; set; } = [];
         public string? ActiveTranslation { get; set; }
         public List<SpeechProfile> Speech { get; set; } = [];
@@ -49,7 +52,10 @@ public sealed class SettingsConfigurationTransfer(string directory)
         if (Fingerprint(first) != Fingerprint(second)) throw new InvalidOperationException("配置正在保存，请稍后重试。");
         return new(Fingerprint(first), first);
     }
-    public byte[] Encrypt(Snapshot snapshot, string password)
+    public bool HasProfiles(Snapshot snapshot) => Shadow(snapshot.Files, folder =>
+        new OnlineTranslationSettingsStore(Path.Combine(folder, Names[0])).ReadProfiles().Count > 0 ||
+        new OnlineSpeechSettingsStore(new OnlineTranslationSettingsStore(Path.Combine(folder, Names[0])), Path.Combine(folder, Names[1])).ReadProfiles().Count > 0);
+    public byte[] Encrypt(Snapshot snapshot, string password, long cloudRevision = 0)
     {
         return Shadow(snapshot.Files, folder =>
         {
@@ -57,12 +63,12 @@ public sealed class SettingsConfigurationTransfer(string directory)
             var speech = new OnlineSpeechSettingsStore(translation, Path.Combine(folder, Names[1]));
             var bundle = new Bundle
             {
-                ActiveTranslation = translation.Read()?.Provider, ActiveSpeech = speech.Read()?.Provider, SpeechMode = speech.ReadMode(),
+                CloudRevision = cloudRevision, ActiveTranslation = translation.Read()?.Provider, ActiveSpeech = speech.Read()?.Provider, SpeechMode = speech.ReadMode(),
                 TranslationPreferences = new TranslationPreferencesStore(Path.Combine(folder, Names[2])).Read(),
                 OcrMode = new OcrPreferencesStore(Path.Combine(folder, Names[3])).Read(),
-                SourceExpanded = new TextReadingPreferencesStore(Path.Combine(folder, Names[4])).ReadSourceExpanded(),
-                CaptureHotkey = new HotkeySettingsStore(Path.Combine(folder, Names[5])).Read(),
-                PinHotkeys = new PinHotkeySettingsStore(Path.Combine(folder, Names[6])).Read()
+                SourceExpanded = !includeDeviceSettings ? null : new TextReadingPreferencesStore(Path.Combine(folder, Names[4])).ReadSourceExpanded(),
+                CaptureHotkey = !includeDeviceSettings ? null : new HotkeySettingsStore(Path.Combine(folder, Names[5])).Read(),
+                PinHotkeys = !includeDeviceSettings ? null : new PinHotkeySettingsStore(Path.Combine(folder, Names[6])).Read()
             };
             foreach (var profile in translation.ReadProfiles())
                 bundle.Translation.Add(new() { Settings = profile, ApiKey = profile.HasApiKey ? translation.ReadCredentials(profile.Provider).ApiKey : "" });
@@ -86,13 +92,13 @@ public sealed class SettingsConfigurationTransfer(string directory)
         var archive = new byte[checked((int)file.Length)]; file.ReadExactly(archive);
         return Decrypt(archive, password);
     }
-    public Prepared Decrypt(byte[] archive, string password)
+    public Prepared Decrypt(byte[] archive, string password, long? expectedRevision = null)
     {
         byte[] plaintext = EncryptedConfigurationArchive.Decrypt(archive, password);
         try
         {
             var bundle = JsonSerializer.Deserialize<Bundle>(plaintext, new JsonSerializerOptions { MaxDepth = 12 }) ?? throw new InvalidDataException();
-            if (bundle.Version != 1 || bundle.Translation is null || bundle.Speech is null || bundle.Translation.Count > 32 || bundle.Speech.Count > 32 || !Enum.IsDefined(bundle.SpeechMode) ||
+            if (bundle.Version != 1 || expectedRevision is { } revision && bundle.CloudRevision != revision || bundle.Translation is null || bundle.Speech is null || bundle.Translation.Count > 32 || bundle.Speech.Count > 32 || !Enum.IsDefined(bundle.SpeechMode) ||
                 bundle.Translation.Any(p => p is null || p.Settings is null || p.Settings.Provider is null || p.Settings.Endpoint is null || p.Settings.Model is null || p.Settings.VisionModel is null || p.ApiKey is null) || bundle.Speech.Any(p => p is null || p.Settings is null || p.ApiKey is null) ||
                 bundle.Translation.Select(p => p.Settings.Provider).Distinct().Count() != bundle.Translation.Count || bundle.Speech.Select(p => p.Settings.Provider).Distinct().Count() != bundle.Speech.Count ||
                 bundle.Translation.Count > 0 && !bundle.Translation.Any(p => p.Settings.Provider == bundle.ActiveTranslation) ||
@@ -114,9 +120,9 @@ public sealed class SettingsConfigurationTransfer(string directory)
                     speech.Save(profile.Settings, profile.ApiKey, profile.Settings.Provider == bundle.ActiveSpeech ? bundle.SpeechMode : SpeechMode.System, removeKey: profile.ApiKey.Length == 0);
                 if (bundle.TranslationPreferences is { } prefs) new TranslationPreferencesStore(Path.Combine(folder, Names[2])).Save(prefs);
                 if (bundle.OcrMode is { } ocr) new OcrPreferencesStore(Path.Combine(folder, Names[3])).Save(ocr);
-                if (bundle.SourceExpanded is { } expanded) new TextReadingPreferencesStore(Path.Combine(folder, Names[4])).SaveSourceExpanded(expanded);
-                if (bundle.CaptureHotkey is { } capture) new HotkeySettingsStore(Path.Combine(folder, Names[5])).Save(capture);
-                if (bundle.PinHotkeys is { } pinKeys) new PinHotkeySettingsStore(Path.Combine(folder, Names[6])).Save(pinKeys);
+                if (includeDeviceSettings && bundle.SourceExpanded is { } expanded) new TextReadingPreferencesStore(Path.Combine(folder, Names[4])).SaveSourceExpanded(expanded);
+                if (includeDeviceSettings && bundle.CaptureHotkey is { } capture) new HotkeySettingsStore(Path.Combine(folder, Names[5])).Save(capture);
+                if (includeDeviceSettings && bundle.PinHotkeys is { } pinKeys) new PinHotkeySettingsStore(Path.Combine(folder, Names[6])).Save(pinKeys);
                 return new Prepared(ReadFiles(folder), bundle.Translation.Count, bundle.Speech.Count);
             });
         }
@@ -156,7 +162,7 @@ public sealed class SettingsConfigurationTransfer(string directory)
     }
     private void Replace(string name, byte[]? contents)
     { if (contents is null) File.Delete(Path.Combine(directory, name)); else WriteAtomic(Path.Combine(directory, name), contents); }
-    private static Dictionary<string, byte[]?> ReadFiles(string folder)
+    private Dictionary<string, byte[]?> ReadFiles(string folder)
     {
         var files = new Dictionary<string, byte[]?>();
         foreach (string name in Names)
@@ -179,7 +185,7 @@ public sealed class SettingsConfigurationTransfer(string directory)
         }
         finally { Directory.Delete(work, true); }
     }
-    private static string Fingerprint(IReadOnlyDictionary<string, byte[]?> files)
+    private string Fingerprint(IReadOnlyDictionary<string, byte[]?> files)
     {
         using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
         foreach (string name in Names)

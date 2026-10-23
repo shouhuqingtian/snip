@@ -1,0 +1,26 @@
+services:
+  selfsnip-sync:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${SELF_SNIP_PORT:-5080}:8080"
+    environment:
+      ASPNETCORE_URLS: http://+:8080
+      SELF_SNIP_DATA: /data
+      SELF_SNIP_REGISTER_INVITE: ${SELF_SNIP_REGISTER_INVITE:?Run setup.sh first}
+    volumes:
+      - ./data:/data
+    read_only: true
+    tmpfs:
+      - /tmp:size=32m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 256m
+    cpus: 0.5
+    logging:
+      driver: json-file
+      options:
+        max-size: 5m
+        max-file: "2"

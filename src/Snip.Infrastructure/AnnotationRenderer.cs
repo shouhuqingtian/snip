@@ -120,21 +120,24 @@ public sealed class AnnotationRenderer
 
     public void DrawAnnotation(DrawingContext context, Annotation annotation)
     {
-        var brush = ColorBrush(annotation.Color);
+        var brush = ColorBrush(annotation.Color); brush.Freeze();
         var pen = new System.Windows.Media.Pen(brush, annotation.StrokeWidth) { StartLineCap = PenLineCap.Round, EndLineCap = PenLineCap.Round, LineJoin = PenLineJoin.Round };
+        pen.Freeze();
         switch (annotation.Tool)
         {
-            case AnnotationTool.Rectangle: context.DrawRectangle(annotation.Filled ? brush : null, pen, Rect(annotation.Bounds)); break;
+            case AnnotationTool.Rectangle:
+                var box = Rect(annotation.Bounds);
+                // Small optical corner radius keeps the box precise without heavy square joins.
+                double corner = Math.Min(Math.Min(box.Width, box.Height) / 2, Math.Clamp(annotation.StrokeWidth * .45, 1, 4));
+                context.DrawRoundedRectangle(annotation.Filled ? brush : null, pen, box, corner, corner);
+                break;
             case AnnotationTool.Ellipse:
                 var r = annotation.Bounds;
                 context.DrawEllipse(annotation.Filled ? brush : null, pen, new Point(r.X + r.Width / 2, r.Y + r.Height / 2), r.Width / 2, r.Height / 2);
                 break;
             case AnnotationTool.Arrow:
-                context.DrawLine(pen, Point(annotation.Start), Point(annotation.End));
-                var angle = Math.Atan2(annotation.End.Y - annotation.Start.Y, annotation.End.X - annotation.Start.X);
-                var length = Math.Max(12, annotation.StrokeWidth * 4);
-                context.DrawLine(pen, Point(annotation.End), new Point(annotation.End.X - length * Math.Cos(angle - Math.PI / 6), annotation.End.Y - length * Math.Sin(angle - Math.PI / 6)));
-                context.DrawLine(pen, Point(annotation.End), new Point(annotation.End.X - length * Math.Cos(angle + Math.PI / 6), annotation.End.Y - length * Math.Sin(angle + Math.PI / 6)));
+                // One silhouette avoids three overlapping strokes and an oversized V-shaped tip.
+                context.DrawGeometry(brush, null, ArrowGeometry(annotation));
                 break;
             case AnnotationTool.Pen:
                 if (annotation.Points.Count == 0) break;
@@ -165,6 +168,39 @@ public sealed class AnnotationRenderer
         }
     }
 
+    private static Geometry ArrowGeometry(Annotation a)
+    {
+        double dx = a.End.X - a.Start.X, dy = a.End.Y - a.Start.Y;
+        double distance = Math.Sqrt(dx * dx + dy * dy), width = Math.Max(.5, a.StrokeWidth);
+        if (distance < .5)
+        {
+            var dot = new EllipseGeometry(Point(a.Start), width / 2, width / 2); dot.Freeze(); return dot;
+        }
+        double ux = dx / distance, uy = dy / distance;
+        Point Map(double x, double y) => new(a.Start.X + ux * x - uy * y, a.Start.Y + uy * x + ux * y);
+        // Head scales with line width, but never consumes the entire short arrow.
+        double head = Math.Min(distance * .62, Math.Max(11, width * 3.1));
+        double halfHead = Math.Min(head * .48, Math.Max(4.5, width * 1.4));
+        double halfShaft = Math.Min(width / 2, halfHead * .48);
+        double neck = distance - head * .76, back = distance - head;
+        double tail = Math.Min(halfShaft, neck * .5);
+        var shape = new StreamGeometry();
+        using (var path = shape.Open())
+        {
+            path.BeginFigure(Map(tail, -halfShaft), true, true);
+            path.LineTo(Map(neck, -halfShaft), true, false);
+            path.LineTo(Map(back, -halfHead), true, false);
+            path.LineTo(Map(distance, 0), true, false);
+            path.LineTo(Map(back, halfHead), true, false);
+            path.LineTo(Map(neck, halfShaft), true, false);
+            path.LineTo(Map(tail, halfShaft), true, false);
+            // Two quadratic segments form a rounded tail, with no extension behind the drag start.
+            path.QuadraticBezierTo(Map(0, halfShaft), Map(0, 0), true, false);
+            path.QuadraticBezierTo(Map(0, -halfShaft), Map(tail, -halfShaft), true, false);
+        }
+        shape.Freeze(); return shape;
+    }
+
     private static BitmapSource StickerImage(ReadOnlyMemory<byte> png)
     {
         if (!MemoryMarshal.TryGetArray(png, out ArraySegment<byte> bytes)) bytes = new(png.ToArray());
@@ -185,6 +221,11 @@ public sealed class AnnotationRenderer
 
     public PixelRect GetBounds(Annotation a)
     {
+        if (a.Tool == AnnotationTool.Arrow)
+        {
+            var bounds = ArrowGeometry(a).Bounds;
+            return new(bounds.X, bounds.Y, bounds.Width, bounds.Height);
+        }
         if (a.Tool != AnnotationTool.Text) return a.Bounds;
         var text = FormatText(a);
         return new(a.Start.X, a.Start.Y, text.WidthIncludingTrailingWhitespace, text.Height);
@@ -195,7 +236,11 @@ public sealed class AnnotationRenderer
         var r = GetBounds(a);
         if (a.Tool is AnnotationTool.Text or AnnotationTool.Mosaic or AnnotationTool.Sticker || (a.Filled && a.Tool == AnnotationTool.Rectangle)) return r.Contains(p);
         var limit = tolerance + a.StrokeWidth / 2;
-        if (a.Tool == AnnotationTool.Arrow) return SegmentDistance(p, a.Start, a.End) <= limit;
+        if (a.Tool == AnnotationTool.Arrow)
+        {
+            var shape = ArrowGeometry(a);
+            return shape.FillContains(Point(p)) || shape.StrokeContains(new System.Windows.Media.Pen(Brushes.Black, tolerance * 2), Point(p));
+        }
         if (a.Tool == AnnotationTool.Pen)
         {
             if (a.Points.Count == 1) return SegmentDistance(p, a.Points[0], a.Points[0]) <= limit;

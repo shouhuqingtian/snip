@@ -28,6 +28,7 @@ public sealed class EditorCanvas : FrameworkElement
     public EditorCanvas()
     {
         children = new VisualCollection(this);
+        RenderOptions.SetEdgeMode(this, EdgeMode.Unspecified);
         Focusable = true; ClipToBounds = true; Cursor = Cursors.Cross;
         DataContextChanged += (_, _) =>
         {

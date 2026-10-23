@@ -33,6 +33,8 @@ public partial class App : Application
     private FeatureHub? features;
     private CopyNotificationService? copyNotifications;
     private ConfigurationTransferWindow? configurationTransfer;
+    private AccountSyncService? accountSync;
+    private AccountSyncWindow? accountSyncWindow;
 
     protected override async void OnStartup(StartupEventArgs e)
     {
@@ -64,6 +66,7 @@ public partial class App : Application
         try
         {
             await Task.Run(() => new SettingsConfigurationTransfer(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SelfSnip")).RecoverInterruptedImport());
+            await Task.Run(() => new SettingsConfigurationTransfer(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SelfSnip"), includeDeviceSettings: false).RecoverInterruptedImport());
             // Explicit constructor injection keeps Windows concerns outside ViewModels.
             var capture = new DesktopCaptureService();
             desktop = capture;
@@ -74,8 +77,12 @@ public partial class App : Application
             pins = new PinManager(export, ShowPinHotkeySettings);
             translationPreferences = new TranslationPreferencesStore();
             features = new FeatureHub(renderer, export, capture, pins, diagnostics, translationPreferences:translationPreferences);
+            accountSync = new AccountSyncService(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SelfSnip"), Dispatcher,
+                () => !Windows.Cast<Window>().Any(window => window is OnlineTranslationSettingsWindow or OnlineSpeechSettingsWindow or ApplicationSettingsWindow or ConfigurationTransferWindow),
+                features.RefreshAccountConfiguration, diagnostics);
+            await accountSync.StartAsync();
             coordinator = new CaptureCoordinator(capture, renderer, export, features, diagnostics, copyNotifications.Hide);
-            main = new MainWindow { Title = "自用截图 " + DesktopDiagnostics.Version.Split('+')[0], DataContext = new MainViewModel(coordinator.CaptureAsync, ShowError, ExportDiagnosticsAsync, () => features.ShowOnlineSettings(), ShowHotkeySettings, ShowApplicationSettings, ShowConfigurationTransfer) };
+            main = new MainWindow { Title = "自用截图 " + DesktopDiagnostics.Version.Split('+')[0], DataContext = new MainViewModel(coordinator.CaptureAsync, ShowError, ExportDiagnosticsAsync, () => features.ShowOnlineSettings(), ShowHotkeySettings, ShowApplicationSettings, ShowConfigurationTransfer, ShowAccountSync) };
             MainWindow = main;
             hotkey = new HotkeyService(); tray = new TrayService();
             hotkeyStore = new HotkeySettingsStore();
@@ -171,6 +178,15 @@ public partial class App : Application
         applicationSettings.Show();
     }
 
+    private void ShowAccountSync()
+    {
+        if (accountSync is null) return;
+        if (accountSyncWindow is not null) { accountSyncWindow.Show(); accountSyncWindow.Activate(); return; }
+        accountSyncWindow = new AccountSyncWindow(new AccountSyncViewModel(accountSync, Dispatcher));
+        accountSyncWindow.Closed += (_, _) => accountSyncWindow = null;
+        accountSyncWindow.Show(); accountSyncWindow.Activate();
+    }
+
     private void ShowConfigurationTransfer()
     {
         if (configurationTransfer is not null) { configurationTransfer.Activate(); return; }
@@ -249,6 +265,7 @@ public partial class App : Application
     protected override void OnExit(ExitEventArgs e)
     {
         diagnostics?.Record("app", "exiting", new { e.ApplicationExitCode });
+        accountSync?.Dispose();
         activationListener?.Unregister(null); copyNotifications?.Dispose(); coordinator?.Dispose(); pins?.Dispose(); pinHotkeys?.Dispose(); hotkey?.Dispose(); tray?.Dispose();
         if (ownsMutex) instance?.ReleaseMutex(); instance?.Dispose(); activation?.Dispose();
         diagnostics?.Dispose();
