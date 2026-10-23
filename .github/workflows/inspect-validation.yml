@@ -11,6 +11,11 @@ on:
         default: Windows-validation
         required: true
         type: string
+      previews:
+        description: Public fixture preview group
+        type: choice
+        options: [image-text, annotations-and-sync]
+        default: image-text
 permissions:
   contents: read
   actions: read
@@ -71,13 +76,16 @@ jobs:
 
       - name: Prepare public preview inspection
         run: python -m pip install --disable-pip-version-check pillow==11.3.0
-      - name: Surface bounded public image text previews
+      - name: Surface bounded public fixture previews
         shell: python
+        env:
+          PREVIEW_GROUP: ${{ inputs.previews }}
         run: |
-          import base64, io
+          import base64, io, os
           from pathlib import Path
           from PIL import Image
-          for name in ['49-image-text-selection.png', '50-pin-edit-text-selection.png']:
+          names = ['51-annotation-styles.png', '52-account-sync-login.png'] if os.environ.get('PREVIEW_GROUP') == 'annotations-and-sync' else ['49-image-text-selection.png', '50-pin-edit-text-selection.png']
+          for name in names:
               for path in Path('saved-validation').rglob(name):
                   original = Image.open(path).convert('RGB')
                   width = min(760, original.width)
