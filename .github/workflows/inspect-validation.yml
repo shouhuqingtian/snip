@@ -72,11 +72,17 @@ jobs:
       - name: Surface bounded public image text previews
         shell: python
         run: |
-          import base64
+          import base64, shutil, subprocess
           from pathlib import Path
           for name in ['49-image-text-selection.png', '50-pin-edit-text-selection.png']:
               for path in Path('saved-validation').rglob(name):
-                  if path.stat().st_size <= 45000:
-                      print('::notice title=Image text preview '+name+'::'+base64.b64encode(path.read_bytes()).decode())
+                  preview = path.read_bytes()
+                  converter = shutil.which('magick') or shutil.which('convert')
+                  if len(preview) > 45000 and converter:
+                      resized = subprocess.run([converter, str(path), '-resize', '65%', '-colors', '64', '-strip', 'png:-'], capture_output=True, timeout=20)
+                      if resized.returncode == 0:
+                          preview = resized.stdout
+                  if len(preview) <= 45000:
+                      print('::notice title=Image text preview '+name+'::'+base64.b64encode(preview).decode())
                   else:
                       print('::notice title=Image text preview size::'+name+': '+str(path.stat().st_size)+' bytes; use the artifact for the full image.')
