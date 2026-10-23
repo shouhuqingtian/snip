@@ -11,7 +11,13 @@ using Snip.Core;
 namespace Snip.Infrastructure;
 
 public enum AccountSyncResolution { Automatic, UseCloud, UseLocal }
-public sealed record AccountSyncState(bool SignedIn, string Server, string UserName, bool Automatic, bool Conflict, string Status);
+public enum AccountNoticeKind { Working, Success, Warning, Error }
+public sealed record AccountAuthenticationNotice(AccountNoticeKind Kind, string Title, string Detail);
+public sealed record AccountSyncState(bool SignedIn, string Server, string UserName, bool Automatic, bool Conflict, string Status)
+{
+    public AccountAuthenticationNotice? Authentication { get; init; }
+    public bool SynchronizationFailed { get; init; }
+}
 
 public sealed class AccountSyncService : IDisposable
 {
@@ -29,6 +35,8 @@ public sealed class AccountSyncService : IDisposable
     private Session? session;
     private Task? loop;
     private int started, failures;
+    private bool synchronizationFailed;
+    private AccountAuthenticationNotice? authentication;
     private DateTimeOffset nextAttempt;
     private AccountSyncState state = new(false, "", "", true, false, "登录同一个自用截图账号，即可在两台电脑同步密钥和服务配置。");
     private sealed class Stored
@@ -87,13 +95,16 @@ public sealed class AccountSyncService : IDisposable
         }
         loop = Task.Run(LoopAsync);
     });
-    public Task AuthenticateAsync(string serverAddress, string userName, string password, string inviteCode, bool register, CancellationToken token = default)
+    public Task AuthenticateAsync(string serverAddress, string userName, string password, bool register, CancellationToken token = default)
     {
         long current = Interlocked.Read(ref generation);
         return Task.Run(async () =>
         {
             await gate.WaitAsync(token).ConfigureAwait(false);
             using var running = CancellationTokenSource.CreateLinkedTokenSource(token, lifetime.Token); operation = running;
+            bool accountCreated = false, authenticated = false;
+            authentication = new(AccountNoticeKind.Working, register ? "正在注册…" : "正在登录…", "正在验证账号，请稍候。");
+            Publish("账号验证完成后开始同步配置。", conflict: false);
             try
             {
                 var server = AccountSyncProtocol.Server(serverAddress); string name = AccountSyncProtocol.UserName(userName);
@@ -101,8 +112,9 @@ public sealed class AccountSyncService : IDisposable
                 string salt = register ? Convert.ToBase64String(RandomNumberGenerator.GetBytes(16)) : (await api.ParametersAsync(name, running.Token).ConfigureAwait(false)).Salt;
                 var secrets = AccountSyncProtocol.Derive(password, salt);
                 var response = register
-                    ? await api.RegisterAsync(new() { UserName = name, Salt = salt, AuthSecret = secrets.AuthSecret, InviteCode = inviteCode }, running.Token).ConfigureAwait(false)
+                    ? await api.RegisterAsync(new() { UserName = name, Salt = salt, AuthSecret = secrets.AuthSecret }, running.Token).ConfigureAwait(false)
                     : await api.LoginAsync(new() { UserName = name, AuthSecret = secrets.AuthSecret }, running.Token).ConfigureAwait(false);
+                accountCreated = register;
                 EnsureCurrent(current, running.Token);
                 bool sameAccount = stored?.Server == server.AbsoluteUri && stored.UserName == name;
                 var next = new Stored
@@ -111,11 +123,33 @@ public sealed class AccountSyncService : IDisposable
                     Automatic = stored?.Automatic ?? true, Revision = sameAccount ? stored!.Revision : -1, Fingerprint = sameAccount ? stored!.Fingerprint : ""
                 };
                 Save(next); stored = next; session = new(response.Token, secrets.VaultPassword);
+                authenticated = true;
+                authentication = new(AccountNoticeKind.Success, register ? "注册成功，已自动登录" : "登录成功",
+                    register ? "账号已创建并登录此设备。配置同步结果显示在下方。" : "已登录此设备。配置同步结果显示在下方。");
                 Publish("已登录，正在同步配置。", conflict: false);
                 await SynchronizeLockedAsync(AccountSyncResolution.Automatic, current, running.Token).ConfigureAwait(false);
             }
-            catch (OperationCanceledException) { if (!lifetime.IsCancellationRequested) Publish("操作已取消，本机配置保留。"); }
-            catch (Exception error) { Fail(error, "账号操作未完成，本机配置保留。"); }
+            catch (OperationCanceledException)
+            {
+                if (!lifetime.IsCancellationRequested && current == Interlocked.Read(ref generation))
+                {
+                    if (!authenticated) authentication = new(AccountNoticeKind.Warning, accountCreated ? "注册成功，登录已取消" : "操作已取消",
+                        accountCreated ? "账号已创建，下次请选择登录。" : "尚未确认账号操作是否完成；可以尝试直接登录。");
+                    Publish("操作已取消，本机配置保留。");
+                }
+            }
+            catch (Exception error)
+            {
+                if (!authenticated)
+                {
+                    bool unconfirmed = error is AccountSyncException { StatusCode: 0 or >= 500 };
+                    authentication = new(accountCreated ? AccountNoticeKind.Warning : unconfirmed ? AccountNoticeKind.Warning : AccountNoticeKind.Error,
+                        accountCreated ? "注册成功，本机登录状态未保存" : unconfirmed ? register ? "注册结果未确认" : "登录未完成" : register ? "注册失败" : "登录失败",
+                        accountCreated ? "账号已创建，请选择登录后重试；本机配置保留。" : SafeError(error, "请检查服务器地址和网络后重试。") +
+                        (unconfirmed && register ? " 如果刚才已经提交，可切换到登录尝试，无需重复注册。" : ""));
+                }
+                Fail(error, authenticated ? "配置同步未完成，本机配置保留；可点击立即同步重试。" : "账号操作未完成，本机配置保留。");
+            }
             finally { if (operation == running) operation = null; gate.Release(); }
         }, token);
     }
@@ -137,6 +171,8 @@ public sealed class AccountSyncService : IDisposable
         if (stored is null || session is null) return;
         EnsureCurrent(current, token);
         if (resolution == AccountSyncResolution.Automatic && State.Conflict) return;
+        synchronizationFailed = false;
+        Publish("正在检查本机与云端配置。");
         var api = new AccountSyncApi(AccountSyncProtocol.Server(stored.Server));
         var local = transfer.Capture();
         var remote = await api.GetAsync(session.Token, resolution == AccountSyncResolution.Automatic && stored.Revision >= 0 ? stored.Revision : null, token).ConfigureAwait(false);
@@ -209,6 +245,9 @@ public sealed class AccountSyncService : IDisposable
             bool cleared = true;
             try { await Task.Run(() => { if (File.Exists(path)) File.Delete(path); }).ConfigureAwait(false); }
             catch (Exception error) { cleared = false; diagnostics?.Record("account-sync", "local-session-delete-failed", error: error); }
+            synchronizationFailed = false;
+            authentication = new(cleared ? AccountNoticeKind.Success : AccountNoticeKind.Warning,
+                cleared ? "已退出登录" : "退出未完全完成", cleared ? "本机翻译、OCR 和语音配置保留。" : "本次运行已停止同步，但本机会话文件未能删除，请检查目录权限。");
             Publish(cleared ? "已退出此设备的同步账号；本机翻译、OCR 和语音配置保留。" : "已停止本次运行的同步，但本机会话文件未能删除；请检查目录权限后再次退出，避免重启后恢复登录。", conflict: false);
             if (oldSession is not null && oldStored is not null)
             {
@@ -234,25 +273,29 @@ public sealed class AccountSyncService : IDisposable
     }
     private void Publish(string status, bool? conflict = null)
     {
-        Volatile.Write(ref state, new(session is not null, stored?.Server ?? "", stored?.UserName ?? "", stored?.Automatic ?? true, conflict ?? State.Conflict, status));
+        Volatile.Write(ref state, new(session is not null, stored?.Server ?? "", stored?.UserName ?? "", stored?.Automatic ?? true, conflict ?? State.Conflict, status) { Authentication = authentication, SynchronizationFailed = synchronizationFailed });
         Changed?.Invoke(this, EventArgs.Empty);
     }
     private void Fail(Exception error, string fallback)
     {
         diagnostics?.Record("account-sync", "operation-failed", error: error);
         failures = Math.Min(failures + 1, 4); nextAttempt = DateTimeOffset.UtcNow.AddSeconds(Math.Min(300, 30 * (1 << failures)));
+        synchronizationFailed = session is not null;
         if (error is AccountSyncException { Unauthorized: true })
         {
-            session = null;
+            if (session is not null) authentication = new(AccountNoticeKind.Warning, "登录已失效", "请重新登录；本机服务配置保留。");
+            session = null; synchronizationFailed = false;
             if (stored is not null)
             {
                 stored.ProtectedToken = ""; stored.ProtectedVaultPassword = "";
                 try { Save(stored); } catch (Exception) { }
             }
         }
-        Publish(error is AccountSyncException or ArgumentException or CryptographicException or InvalidOperationException ? error.Message : fallback,
+        Publish(SafeError(error, fallback),
             error is AccountSyncException { Conflict: true } ? true : null);
     }
+    private static string SafeError(Exception error, string fallback) =>
+        error is AccountSyncException or ArgumentException or CryptographicException or InvalidOperationException ? error.Message : fallback;
     private void CancelRunning()
     {
         try { Volatile.Read(ref operation)?.Cancel(); }

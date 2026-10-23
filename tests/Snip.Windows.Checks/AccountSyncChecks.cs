@@ -17,7 +17,7 @@ namespace Snip.Windows.Checks;
 
 internal static class AccountSyncChecks
 {
-    private const string User = "public-owner", Password = "PUBLIC Account Password 12345", Invite = "PUBLIC-REGISTRATION-INVITE-123456789";
+    private const string User = "public-owner", Password = "PUBLIC Account Password 12345";
     public static int Run()
     {
         var app = Application.Current ?? new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
@@ -49,18 +49,31 @@ internal static class AccountSyncChecks
             using var journal = new DiagnosticJournal(Path.Combine(folder, "diagnostics"));
             office = new(work, app.Dispatcher, () => true, () => { }, journal); Await(office.StartAsync());
             var officeVm = new AccountSyncViewModel(office, app.Dispatcher); var officeWindow = new AccountSyncWindow(officeVm); officeWindow.Show(); officeWindow.UpdateLayout();
-            officeVm.Server = server.Address.AbsoluteUri; officeVm.UserName = User;
-            ((CheckBox)officeWindow.FindName("SyncRegisterBox")).IsChecked = true;
+            Require(officeVm.Server == AccountSyncProtocol.DefaultServer && officeVm.CanEdit, "Default editable sync server is missing.");
+            Require(officeWindow.FindName("SyncInviteBox") is null, "Invitation input is still required.");
+            officeVm.Server = new Uri(server.Address, "health").AbsoluteUri; officeVm.UserName = User;
+            ((RadioButton)officeWindow.FindName("SyncRegisterBox")).IsChecked = true;
             ((PasswordBox)officeWindow.FindName("SyncPasswordBox")).Password = Password;
             ((PasswordBox)officeWindow.FindName("SyncConfirmationBox")).Password = "PUBLIC mismatch password";
-            ((PasswordBox)officeWindow.FindName("SyncInviteBox")).Password = Invite;
             Click(officeWindow, "SyncLoginButton"); Wait(() => !officeVm.Busy);
-            Require(!office.State.SignedIn && officeVm.Status.Contains("不一致"), "Registration ignored mismatched password confirmation.");
+            Require(!office.State.SignedIn && officeVm.FeedbackError && officeVm.FeedbackDetail.Contains("不一致"), "Registration ignored mismatched password confirmation.");
             ((PasswordBox)officeWindow.FindName("SyncConfirmationBox")).Password = Password;
             Preview(officeWindow, "52-account-sync-login");
             stage = "register from actual controls";
-            Click(officeWindow, "SyncLoginButton"); Wait(() => office.State.SignedIn && !officeVm.Busy && office.State.Status.Contains("已加密同步"));
-            Require(((PasswordBox)officeWindow.FindName("SyncPasswordBox")).Password.Length == 0 && ((PasswordBox)officeWindow.FindName("SyncInviteBox")).Password.Length == 0, "Login retained password/invite controls.");
+            bool interruptAfterRegistration = true;
+            office.Changed += (_, _) =>
+            {
+                if (interruptAfterRegistration && office.State.SignedIn && office.State.Authentication?.Kind == AccountNoticeKind.Success)
+                { interruptAfterRegistration = false; server.Stop(); }
+            };
+            Click(officeWindow, "SyncLoginButton"); Wait(() => office.State.SignedIn && !officeVm.Busy);
+            Require(officeVm.FeedbackSuccess && officeVm.FeedbackTitle.Contains("注册成功") && officeVm.SyncProblem && !officeVm.Status.Contains("已加密同步"), "First sync failure hid or falsified successful registration.");
+            Require(officeVm.Server == server.Address.AbsoluteUri, "Health URL was not normalized to the service root.");
+            Preview(officeWindow, "54-registration-success-sync-failure");
+            Await(server.StartAsync());
+            Click(officeWindow, "SyncNowButton"); Wait(() => !officeVm.Busy && office.State.Status.Contains("已加密同步"));
+            Require(officeVm.FeedbackSuccess && officeVm.FeedbackTitle.Contains("注册成功"), "Sync retry overwrote persistent registration feedback.");
+            Require(((PasswordBox)officeWindow.FindName("SyncPasswordBox")).Password.Length == 0 && ((PasswordBox)officeWindow.FindName("SyncConfirmationBox")).Password.Length == 0, "Successful login retained password controls.");
             ((CheckBox)officeWindow.FindName("AutomaticSyncBox")).IsChecked = false; Wait(() => !office.State.Automatic && !officeVm.Busy);
             var homeTranslation = new OnlineTranslationSettingsStore(Path.Combine(home, "online-translation.json"));
             var homeVoice = new OnlineSpeechSettingsStore(homeTranslation, Path.Combine(home, "online-speech.json"));
@@ -68,9 +81,21 @@ internal static class AccountSyncChecks
             house = new(home, app.Dispatcher, () => !app.Windows.OfType<OnlineSpeechSettingsWindow>().Any(), () => refreshed++, journal); Await(house.StartAsync());
             var homeVm = new AccountSyncViewModel(house, app.Dispatcher); var homeWindow = new AccountSyncWindow(homeVm); homeWindow.Show();
             homeVm.Server = server.Address.AbsoluteUri; homeVm.UserName = User;
+            ((RadioButton)homeWindow.FindName("SyncRegisterBox")).IsChecked = true;
+            ((PasswordBox)homeWindow.FindName("SyncPasswordBox")).Password = Password;
+            ((PasswordBox)homeWindow.FindName("SyncConfirmationBox")).Password = Password;
+            Click(homeWindow, "SyncLoginButton"); Wait(() => !homeVm.Busy);
+            Require(!homeVm.SignedIn && homeVm.FeedbackError && homeVm.FeedbackTitle == "注册失败" && homeVm.FeedbackDetail.Contains("账号已存在") && homeVm.Password == Password, "Duplicate registration is silent or clears retry input.");
+            ((RadioButton)homeWindow.FindName("SyncLoginMode")).IsChecked = true;
+            ((PasswordBox)homeWindow.FindName("SyncPasswordBox")).Password = "PUBLIC Wrong Password 12345";
+            Click(homeWindow, "SyncLoginButton"); Wait(() => !homeVm.Busy);
+            Require(!homeVm.SignedIn && homeVm.FeedbackError && homeVm.FeedbackTitle == "登录失败" && homeVm.FeedbackDetail.Contains("密码") && homeVm.Password.Length > 0, "Wrong password is silent or clears retry input.");
+            Preview(homeWindow, "55-login-error");
             ((PasswordBox)homeWindow.FindName("SyncPasswordBox")).Password = Password;
             stage = "home login and Windows re-protection";
             Click(homeWindow, "SyncLoginButton"); Wait(() => house.State.SignedIn && !homeVm.Busy && refreshed > 0);
+            Require(homeVm.FeedbackSuccess && homeVm.FeedbackTitle == "登录成功", "Successful login has no persistent success feedback.");
+            Preview(homeWindow, "56-login-success");
             ((CheckBox)homeWindow.FindName("AutomaticSyncBox")).IsChecked = false; Wait(() => !house.State.Automatic && !homeVm.Busy);
             Require(homeTranslation.ReadCredentials().ApiKey == "PUBLIC-WORK-TRANSLATION-KEY" && homeTranslation.Read()!.VisionModel == "PUBLIC-VISION" && homeTranslation.ReadProfiles().Count == 2, "Home translation/OCR configuration or empty-key profile was lost.");
             Require(homeVoice.ReadCredentials().ApiKey == "PUBLIC-WORK-VOICE-KEY" && homeVoice.ReadCredentials("PUBLIC-SHARED").ApiKey == "PUBLIC-WORK-TRANSLATION-KEY" && homeVoice.ReadMode() == SpeechMode.Online && homeVoice.Read()!.Speed == 1.25, "Home voice settings/shared key/default were not restored.");
@@ -84,7 +109,7 @@ internal static class AccountSyncChecks
             byte[] clear = EncryptedConfigurationArchive.Decrypt(remote.Archive!, keys.VaultPassword);
             try { Require(!Encoding.UTF8.GetString(clear).Contains("PUBLIC-SHOULD-NOT-UPLOAD"), "Snapshot/history sentinel entered the sync archive."); }
             finally { CryptographicOperations.ZeroMemory(clear); }
-            Console.WriteLine("PASS actual account login/registration controls, password clearing, home-device DPAPI re-protection, independent/shared voice keys, empty-key profiles, OCR/models/defaults and strict configuration-only scope.");
+            Console.WriteLine("PASS actual account login/registration controls, persistent registration/login feedback, health URL correction, failure retry input, password clearing, home-device DPAPI re-protection, independent/shared voice keys, empty-key profiles, OCR/models/defaults and strict configuration-only scope.");
 
             stage = "ordinary upload and download";
             translation.Save(translation.Read()! with { Model = "PUBLIC-MODEL-NEW" }, "PUBLIC-NEW-KEY");
@@ -206,7 +231,7 @@ internal static class AccountSyncChecks
         {
             var start = new ProcessStartInfo("dotnet") { UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true, WorkingDirectory = folder };
             start.ArgumentList.Add(Path.GetFullPath("src/Snip.Sync.Server/bin/Release/net8.0/Snip.Sync.Server.dll"));
-            start.Environment["ASPNETCORE_URLS"] = Address.AbsoluteUri.TrimEnd('/'); start.Environment["SELF_SNIP_DATA"] = Path.Combine(folder, "data"); start.Environment["SELF_SNIP_REGISTER_INVITE"] = Invite;
+            start.Environment["ASPNETCORE_URLS"] = Address.AbsoluteUri.TrimEnd('/'); start.Environment["SELF_SNIP_DATA"] = Path.Combine(folder, "data"); start.Environment["SELF_SNIP_ALLOW_REGISTRATION"] = "true";
             process = Process.Start(start)!; _ = process.StandardOutput.ReadToEndAsync(); _ = process.StandardError.ReadToEndAsync();
             using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(1) };
             for (int i = 0; i < 100; i++)
@@ -217,6 +242,7 @@ internal static class AccountSyncChecks
             }
             throw new TimeoutException("Public server readiness timed out.");
         }
-        public void Dispose() { if (process is { HasExited: false }) { process.Kill(true); process.WaitForExit(5000); } process?.Dispose(); }
+        public void Stop() { if (process is { HasExited: false }) { process.Kill(true); process.WaitForExit(5000); } process?.Dispose(); process = null; }
+        public void Dispose() => Stop();
     }
 }

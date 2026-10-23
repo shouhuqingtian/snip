@@ -8,7 +8,7 @@ fi
 if [[ $(uname -m) != x86_64 || ! -f linux-x64/Snip.Sync.Server ]]; then
   echo '需要 x86_64 Linux 和完整的 linux-x64/ 部署文件。'; exit 1
 fi
-for sync_tool in systemctl curl openssl; do
+for sync_tool in systemctl curl; do
   if ! command -v "$sync_tool" >/dev/null; then echo "缺少命令：$sync_tool"; exit 1; fi
 done
 umask 077
@@ -16,14 +16,12 @@ sync_root=/opt/selfsnip-sync
 sync_data=/var/lib/selfsnip-sync
 sync_env=/etc/selfsnip-sync.env
 if ! id selfsnip-sync >/dev/null 2>&1; then
-  useradd --system --home-dir "$sync_data" --no-create-home --shell /usr/sbin/nologin selfsnip-sync
+  useradd --system --user-group --home-dir "$sync_data" --no-create-home --shell /usr/sbin/nologin selfsnip-sync
 fi
 install -d -m 755 "$sync_root" "$sync_root/releases"
 install -d -o selfsnip-sync -g selfsnip-sync -m 700 "$sync_data"
 if [[ ! -f $sync_env ]]; then
-  sync_invite=$(openssl rand -hex 24)
-  printf 'ASPNETCORE_URLS=http://127.0.0.1:5080\nSELF_SNIP_DATA=%s\nSELF_SNIP_REGISTER_INVITE=%s\n' "$sync_data" "$sync_invite" > "$sync_env"
-  unset sync_invite
+  printf 'ASPNETCORE_URLS=http://127.0.0.1:5080\nSELF_SNIP_DATA=%s\nSELF_SNIP_ALLOW_REGISTRATION=true\n' "$sync_data" > "$sync_env"
 fi
 chmod 600 "$sync_env"
 sync_release=$(mktemp -d "$sync_root/releases/release-XXXXXXXX")
@@ -54,5 +52,5 @@ fi
 printf '\n同步服务已启动，只监听 127.0.0.1:5080。\n'
 printf '下一步：把 nginx-location.conf 加入已有 HTTPS 网站，nginx -t 成功后再 reload。\n'
 printf '客户端地址：https://你的域名/selfsnip/\n'
-printf '注册邀请码保存在 /etc/selfsnip-sync.env；仅在服务器本机查看，不要发送此文件。\n'
-printf '更新仍可运行本脚本；保留账号数据、邀请码及之前的应用版本。\n'
+printf '新账号可直接注册；注册开关可在 /etc/selfsnip-sync.env 设置。\n'
+printf '更新仍可运行本脚本；保留账号数据、设置及之前的应用版本。\n'

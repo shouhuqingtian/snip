@@ -38,6 +38,13 @@ public sealed class AccountSyncTests
         Assert.Throws<ArgumentException>(() => AccountSyncProtocol.UserName("../escape"));
         Assert.Throws<ArgumentException>(() => AccountSyncProtocol.UserName("x"));
     }
+    [Theory]
+    [InlineData("https://bilibilil.online/selfsnip/health", "https://bilibilil.online/selfsnip/")]
+    [InlineData("https://example.com/prefix/health/", "https://example.com/prefix/")]
+    [InlineData("http://127.0.0.1:5080/health", "http://127.0.0.1:5080/")]
+    [InlineData("https://example.com/prefix/", "https://example.com/prefix/")]
+    public void HealthAddressIsNormalizedWithoutChangingTheServicePrefix(string input, string expected)
+        => Assert.Equal(expected, AccountSyncProtocol.Server(input).AbsoluteUri);
     [Fact]
     public async Task ClientDoesNotFollowRedirectsOrDiscloseServerErrorBodies()
     {

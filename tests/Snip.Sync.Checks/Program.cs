@@ -13,7 +13,8 @@ if (!File.Exists(server)) throw new InvalidOperationException("Build the release
 string work = Path.Combine(Path.GetTempPath(), "SelfSnip.PublicSyncCheck-" + Guid.NewGuid()); Directory.CreateDirectory(work);
 var listener = new TcpListener(IPAddress.Loopback, 0); listener.Start(); int port = ((IPEndPoint)listener.LocalEndpoint).Port; listener.Stop();
 var address = new Uri("http://127.0.0.1:" + port + "/");
-const string invite = "PUBLIC-REGISTRATION-INVITE-123456789", password = "PUBLIC Account Password 12345";
+const string password = "PUBLIC Account Password 12345";
+bool allowRegistration = true;
 Process? process = null; Task? outputReader = null, errorReader = null;
 int passed = 0;
 void Require(bool value, string message) { if (!value) throw new InvalidOperationException(message); }
@@ -22,7 +23,7 @@ async Task Start()
 {
     var start = new ProcessStartInfo(native ? server : "dotnet") { UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true, WorkingDirectory = work };
     if (!native) start.ArgumentList.Add(server); start.Environment["ASPNETCORE_URLS"] = address.AbsoluteUri.TrimEnd('/');
-    start.Environment["SELF_SNIP_DATA"] = Path.Combine(work, "data"); start.Environment["SELF_SNIP_REGISTER_INVITE"] = invite;
+    start.Environment["SELF_SNIP_DATA"] = Path.Combine(work, "data"); start.Environment["SELF_SNIP_ALLOW_REGISTRATION"] = allowRegistration.ToString();
     process = Process.Start(start)!;
     // Drain without printing provider/session data, even on failure.
     outputReader = process.StandardOutput.ReadToEndAsync(); errorReader = process.StandardError.ReadToEndAsync();
@@ -40,8 +41,8 @@ try
 {
     await Start(); var first = new AccountSyncApi(address); var second = new AccountSyncApi(address);
     string salt = Convert.ToBase64String(RandomNumberGenerator.GetBytes(16)); var secrets = AccountSyncProtocol.Derive(password, salt);
-    var registered = await first.RegisterAsync(new() { UserName = "public-owner", Salt = salt, AuthSecret = secrets.AuthSecret, InviteCode = invite }, CancellationToken.None);
-    Require(registered.ExpiresUtc > DateTimeOffset.UtcNow && registered.Token.Length > 32, "No valid registered session."); Pass("real server registration with derived authentication and private invite");
+    var registered = await first.RegisterAsync(new() { UserName = "public-owner", Salt = salt, AuthSecret = secrets.AuthSecret }, CancellationToken.None);
+    Require(registered.ExpiresUtc > DateTimeOffset.UtcNow && registered.Token.Length > 32, "No valid registered session."); Pass("real server registration with derived authentication and no invitation");
     var parameters = await second.ParametersAsync("PUBLIC-OWNER", CancellationToken.None);
     var homeSecrets = AccountSyncProtocol.Derive(password, parameters.Salt);
     Require(homeSecrets.VaultPassword == secrets.VaultPassword && homeSecrets.AuthSecret != homeSecrets.VaultPassword, "Device keys differ or key separation failed.");
@@ -62,13 +63,12 @@ try
     }));
     Require(uploads.Count(v => v) == 1, "Concurrent writes silently overwrote one another."); Pass("compare-and-swap admits one concurrent writer and rejects the stale version");
     string otherSalt = Convert.ToBase64String(RandomNumberGenerator.GetBytes(16)); var otherKeys = AccountSyncProtocol.Derive("PUBLIC Other Password 12345", otherSalt);
-    var other = await first.RegisterAsync(new() { UserName = "public-other", Salt = otherSalt, AuthSecret = otherKeys.AuthSecret, InviteCode = invite }, CancellationToken.None);
+    var other = await first.RegisterAsync(new() { UserName = "public-other", Salt = otherSalt, AuthSecret = otherKeys.AuthSecret }, CancellationToken.None);
     Require((await first.GetAsync(other.Token, null, CancellationToken.None)).Revision == 0, "Another account read the owner's vault.");
     await Reject(() => first.GetAsync("PUBLIC-INVALID-SESSION-TOKEN-123456789", null, CancellationToken.None), error => error.Unauthorized);
     Pass("account isolation and invalid bearer rejection");
-    await Reject(() => first.RegisterAsync(new() { UserName = "public-denied", Salt = otherSalt, AuthSecret = otherKeys.AuthSecret, InviteCode = "PUBLIC-WRONG-INVITE" }, CancellationToken.None));
-    await Reject(() => first.RegisterAsync(new() { UserName = "public-owner", Salt = otherSalt, AuthSecret = otherKeys.AuthSecret, InviteCode = invite }, CancellationToken.None));
-    Pass("closed registration rejects a wrong invite and duplicate account");
+    await Reject(() => first.RegisterAsync(new() { UserName = "public-owner", Salt = otherSalt, AuthSecret = otherKeys.AuthSecret }, CancellationToken.None));
+    Pass("duplicate registration is rejected with an explicit existing-account message");
     await first.LogoutAsync(registered.Token, CancellationToken.None);
     await Reject(() => first.GetAsync(registered.Token, null, CancellationToken.None), error => error.Unauthorized);
     Require((await second.GetAsync(home.Token, null, CancellationToken.None)).Revision == 2, "One-device logout revoked another device.");
@@ -89,6 +89,10 @@ try
         catch (OperationCanceledException) { }
     }
     Pass("caller cancellation stops network operations");
+    Stop(); allowRegistration = false; await Start();
+    await Reject(() => first.RegisterAsync(new() { UserName = "public-closed", Salt = otherSalt, AuthSecret = otherKeys.AuthSecret }, CancellationToken.None), error => error.StatusCode == 403 && error.Message.Contains("注册"));
+    Require((await second.GetAsync(home.Token, null, default)).Revision == 2, "Closing registration revoked existing accounts.");
+    Pass("optional server registration switch closes signup while existing sessions continue working");
     using (var http = new HttpClient())
     {
         var wrong = new SyncLoginRequest { UserName = "public-other", AuthSecret = secrets.AuthSecret };

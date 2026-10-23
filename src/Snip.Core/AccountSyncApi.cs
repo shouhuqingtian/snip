@@ -25,12 +25,18 @@ public sealed class AccountSyncApi(Uri server, HttpClient? client = null)
             using var response = await SendAsync(HttpMethod.Post, "api/v1/register", request, null, token).ConfigureAwait(false);
             return await SessionAsync(response, token).ConfigureAwait(false);
         }
-        catch (AccountSyncException error) when (error.Conflict) { throw new AccountSyncException("账号已存在，请取消首次注册，直接登录。"); }
+        catch (AccountSyncException error) when (error.Conflict) { throw new AccountSyncException("账号已存在，请切换到“登录”，使用原来的密码。", statusCode: 409); }
+        catch (AccountSyncException error) when (error.StatusCode == 403) { throw new AccountSyncException("服务器尚未开放免邀请码注册。请更新服务器部署包，或检查注册开关。", statusCode: 403); }
     }
     public async Task<SyncLoginResponse> LoginAsync(SyncLoginRequest request, CancellationToken token)
     {
-        using var response = await SendAsync(HttpMethod.Post, "api/v1/login", request, null, token).ConfigureAwait(false);
-        return await SessionAsync(response, token).ConfigureAwait(false);
+        try
+        {
+            using var response = await SendAsync(HttpMethod.Post, "api/v1/login", request, null, token).ConfigureAwait(false);
+            return await SessionAsync(response, token).ConfigureAwait(false);
+        }
+        catch (AccountSyncException error) when (error.Unauthorized)
+        { throw new AccountSyncException("账号或密码不正确，请检查后重新登录。", unauthorized: true, statusCode: 401); }
     }
     public async Task LogoutAsync(string bearer, CancellationToken token)
     { using var response = await SendAsync(HttpMethod.Post, "api/v1/logout", null, bearer, token).ConfigureAwait(false); }
@@ -77,14 +83,14 @@ public sealed class AccountSyncApi(Uri server, HttpClient? client = null)
             int code = (int)response.StatusCode; response.Dispose();
             throw code switch
             {
-                401 => new AccountSyncException("登录已过期，或账号认证不正确，请重新登录。", unauthorized: true),
-                403 => new AccountSyncException("注册邀请码不正确，或该账号暂时禁止登录。"),
-                404 => new AccountSyncException("账号不存在，或同步服务地址不正确。"),
-                409 or 412 => new AccountSyncException("云端已有更新，或账号已存在；同步时请选择保留哪份配置。", conflict: true),
-                413 => new AccountSyncException("同步配置超过服务器大小上限。"),
-                429 => new AccountSyncException("操作过于频繁，请稍后重试。"),
-                >= 300 and < 400 => new AccountSyncException("同步地址返回了重定向，请填写最终 HTTPS 地址。"),
-                _ => new AccountSyncException("同步服务未完成请求，请检查服务端部署和网络。")
+                401 => new AccountSyncException("登录已过期，或账号认证不正确，请重新登录。", unauthorized: true, statusCode: code),
+                403 => new AccountSyncException("服务器不允许此操作，请检查服务版本与注册设置。", statusCode: 403),
+                404 => new AccountSyncException("账号不存在，或同步服务地址不正确。", statusCode: code),
+                409 or 412 => new AccountSyncException("云端已有更新，或账号已存在；同步时请选择保留哪份配置。", conflict: true, statusCode: code),
+                413 => new AccountSyncException("同步配置超过服务器大小上限。", statusCode: code),
+                429 => new AccountSyncException("操作过于频繁，请稍后重试。", statusCode: code),
+                >= 300 and < 400 => new AccountSyncException("同步地址返回了重定向，请填写最终 HTTPS 地址。", statusCode: code),
+                _ => new AccountSyncException("同步服务未完成请求，请检查服务端部署和网络。", statusCode: code)
             };
         }
         catch (OperationCanceledException) when (!token.IsCancellationRequested) { throw new AccountSyncException("连接同步服务超时，本机配置保留。"); }

@@ -7,7 +7,7 @@ services:
     environment:
       ASPNETCORE_URLS: http://+:8080
       SELF_SNIP_DATA: /data
-      SELF_SNIP_REGISTER_INVITE: ${SELF_SNIP_REGISTER_INVITE:?Run setup.sh first}
+      SELF_SNIP_ALLOW_REGISTRATION: ${SELF_SNIP_ALLOW_REGISTRATION:-true}
     volumes:
       - ./data:/data
     read_only: true

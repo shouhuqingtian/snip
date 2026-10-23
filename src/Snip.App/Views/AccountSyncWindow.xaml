@@ -2,25 +2,39 @@
  Title="自用截图 · 账号与同步" Width="760" Height="830" MinWidth="540" MinHeight="480" WindowStartupLocation="CenterScreen">
  <Window.Resources><BooleanToVisibilityConverter x:Key="BoolVisibility"/></Window.Resources>
  <DockPanel Margin="24">
-  <StackPanel DockPanel.Dock="Top" Margin="0,0,0,18"><TextBlock Text="账号与同步" Style="{StaticResource PageTitle}"/><TextBlock Text="登录同一个账号，在工作和家里的电脑继续使用已保存的服务。" Style="{StaticResource Subtitle}" TextWrapping="Wrap" Margin="0,8,0,0"/></StackPanel>
-  <StackPanel DockPanel.Dock="Bottom" Margin="0,14,0,0"><ProgressBar IsIndeterminate="True" Height="3" Visibility="{Binding Busy,Converter={StaticResource BoolVisibility}}" Margin="0,0,0,8"/><TextBlock x:Name="SyncStatus" Text="{Binding Status}" Style="{StaticResource Subtitle}" TextWrapping="Wrap"/><WrapPanel HorizontalAlignment="Right" Margin="0,10,0,0"><Button Style="{StaticResource FooterCloseButton}" Click="CloseClick"/><Button x:Name="LogoutSyncButton" Content="退出此设备" Command="{Binding LogoutCommand}"/><Button x:Name="SyncNowButton" Content="立即同步" Command="{Binding SyncCommand}"/><Button x:Name="SyncLoginButton" Content="{Binding LoginText}" Command="{Binding LoginCommand}" Style="{StaticResource PrimaryButton}"/></WrapPanel></StackPanel>
+  <StackPanel DockPanel.Dock="Top" Margin="0,0,0,16">
+   <TextBlock Text="账号与同步" Style="{StaticResource PageTitle}"/>
+   <TextBlock Text="工作和家里的电脑，登录同一个账号即可同步服务配置。" Style="{StaticResource Subtitle}" TextWrapping="Wrap" Margin="0,8,0,16"/>
+   <Border x:Name="AuthFeedback" Padding="16" CornerRadius="12" BorderThickness="1">
+    <Border.Style><Style TargetType="Border"><Setter Property="Background" Value="#EDF4FA"/><Setter Property="BorderBrush" Value="#C9DDED"/>
+     <Style.Triggers><DataTrigger Binding="{Binding FeedbackSuccess}" Value="True"><Setter Property="Background" Value="#E7F5EE"/><Setter Property="BorderBrush" Value="#9ACFB6"/></DataTrigger><DataTrigger Binding="{Binding FeedbackError}" Value="True"><Setter Property="Background" Value="#FFF0EF"/><Setter Property="BorderBrush" Value="#E7A5A0"/></DataTrigger><DataTrigger Binding="{Binding FeedbackWarning}" Value="True"><Setter Property="Background" Value="#FFF6E7"/><Setter Property="BorderBrush" Value="#E2C28F"/></DataTrigger></Style.Triggers>
+    </Style></Border.Style>
+    <DockPanel><TextBlock Text="{Binding FeedbackSymbol}" FontSize="26" FontWeight="SemiBold" Margin="0,0,14,0" DockPanel.Dock="Left"/><StackPanel><TextBlock x:Name="AuthFeedbackTitle" Text="{Binding FeedbackTitle}" FontSize="18" FontWeight="SemiBold" TextWrapping="Wrap"/><TextBlock x:Name="AuthFeedbackDetail" Text="{Binding FeedbackDetail}" TextWrapping="Wrap" Margin="0,6,0,0"/></StackPanel></DockPanel>
+   </Border>
+  </StackPanel>
+  <StackPanel DockPanel.Dock="Bottom" Margin="0,14,0,0">
+   <ProgressBar IsIndeterminate="True" Height="3" Visibility="{Binding Busy,Converter={StaticResource BoolVisibility}}" Margin="0,0,0,10"/>
+   <Border BorderThickness="1" CornerRadius="10" Padding="12"><Border.Style><Style TargetType="Border"><Setter Property="Background" Value="White"/><Setter Property="BorderBrush" Value="{StaticResource StrokeBrush}"/><Style.Triggers><DataTrigger Binding="{Binding SyncProblem}" Value="True"><Setter Property="Background" Value="#FFF0EF"/><Setter Property="BorderBrush" Value="#E7A5A0"/></DataTrigger></Style.Triggers></Style></Border.Style><StackPanel><TextBlock Text="{Binding SyncHeading}" FontWeight="SemiBold" Margin="0,0,0,5"/><TextBlock x:Name="SyncStatus" Text="{Binding Status}" TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}"/></StackPanel></Border>
+   <WrapPanel HorizontalAlignment="Right" Margin="0,10,0,0"><Button Style="{StaticResource FooterCloseButton}" Click="CloseClick"/><Button x:Name="LogoutSyncButton" Content="退出此设备" Command="{Binding LogoutCommand}" Visibility="{Binding SignedIn,Converter={StaticResource BoolVisibility}}"/><Button x:Name="SyncNowButton" Content="立即同步" Command="{Binding SyncCommand}" Visibility="{Binding SignedIn,Converter={StaticResource BoolVisibility}}"/><Button x:Name="SyncLoginButton" Content="{Binding LoginText}" Command="{Binding LoginCommand}" Style="{StaticResource PrimaryButton}" Visibility="{Binding ShowCredentials,Converter={StaticResource BoolVisibility}}"/></WrapPanel>
+  </StackPanel>
   <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"><StackPanel>
    <Border Style="{StaticResource Card}" Margin="0,0,0,14"><StackPanel>
     <TextBlock Text="{Binding AccountSummary}" Style="{StaticResource SectionTitle}" TextWrapping="Wrap" Margin="0,0,0,12"/>
-    <StackPanel IsEnabled="{Binding CanEdit}">
-     <TextBlock Text="同步服务器" FontWeight="SemiBold"/><TextBox x:Name="SyncServerBox" Text="{Binding Server,UpdateSourceTrigger=PropertyChanged}" Margin="0,6,0,4"/><TextBlock Text="填写你的阿里云同步服务 HTTPS 地址，例如 https://你的域名/selfsnip/" Style="{StaticResource Subtitle}" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,12"/>
+    <StackPanel IsEnabled="{Binding CanEdit}" Visibility="{Binding ShowCredentials,Converter={StaticResource BoolVisibility}}">
+     <StackPanel Orientation="Horizontal" Margin="0,0,0,14"><RadioButton x:Name="SyncLoginMode" Content="登录" GroupName="AccountMode" IsChecked="{Binding LoggingIn}" Padding="16,8"/><RadioButton x:Name="SyncRegisterBox" Content="注册新账号" GroupName="AccountMode" IsChecked="{Binding Registering}" Padding="16,8"/></StackPanel>
+     <TextBlock Text="同步服务器" FontWeight="SemiBold"/><TextBox x:Name="SyncServerBox" Text="{Binding Server,UpdateSourceTrigger=PropertyChanged}" LostFocus="ServerLostFocus" Margin="0,6,0,4"/><TextBlock Text="已填写默认服务器，也可改用自己的地址；粘贴健康检查地址会自动调整。" Style="{StaticResource Subtitle}" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,12"/>
      <TextBlock Text="账号" FontWeight="SemiBold"/><TextBox x:Name="SyncUserBox" Text="{Binding UserName,UpdateSourceTrigger=PropertyChanged}" Margin="0,6,0,12"/>
      <TextBlock Text="密码" FontWeight="SemiBold"/><PasswordBox x:Name="SyncPasswordBox" PasswordChanged="PasswordChanged" Padding="10,8" Margin="0,6,0,6"/>
-     <TextBlock Text="密码至少 12 位，同时用于解密同步配置。原始密码不会上传；忘记后无法解密云端配置，本机已保存的密钥仍可使用。" Style="{StaticResource Subtitle}" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,12"/>
-     <CheckBox x:Name="SyncRegisterBox" Content="首次使用：注册新账号" IsChecked="{Binding Registering}" Margin="0,0,0,10"/>
-     <StackPanel Visibility="{Binding Registering,Converter={StaticResource BoolVisibility}}"><TextBlock Text="再次输入密码" FontWeight="SemiBold"/><PasswordBox x:Name="SyncConfirmationBox" PasswordChanged="ConfirmationChanged" Padding="10,8" Margin="0,6,0,12"/><TextBlock Text="注册邀请码" FontWeight="SemiBold"/><PasswordBox x:Name="SyncInviteBox" PasswordChanged="InviteChanged" Padding="10,8" Margin="0,6,0,4"/><TextBlock Text="部署同步服务时设置的邀请码；家里的电脑直接登录同一账号即可，无需再次注册。" Style="{StaticResource Subtitle}" FontSize="11" TextWrapping="Wrap"/></StackPanel>
+     <TextBlock Text="至少 12 位。密码也用于解密云端配置，请妥善保存。" Style="{StaticResource Subtitle}" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,12"/>
+     <StackPanel Visibility="{Binding Registering,Converter={StaticResource BoolVisibility}}"><TextBlock Text="再次输入密码" FontWeight="SemiBold"/><PasswordBox x:Name="SyncConfirmationBox" PasswordChanged="ConfirmationChanged" Padding="10,8" Margin="0,6,0,0"/></StackPanel>
     </StackPanel>
+    <StackPanel Visibility="{Binding SignedIn,Converter={StaticResource BoolVisibility}}"><TextBlock Text="同步服务器" FontWeight="SemiBold"/><TextBox Text="{Binding Server,Mode=OneWay}" IsReadOnly="True" ToolTip="退出此设备后可更改同步服务器" Margin="0,6,0,0"/></StackPanel>
     <CheckBox x:Name="AutomaticSyncBox" Content="自动同步（约每 30 秒检查一次）" IsChecked="{Binding Automatic}" IsEnabled="{Binding CanToggleAutomatic}" Margin="0,16,0,0"/>
    </StackPanel></Border>
    <Border Style="{StaticResource Card}" Margin="0,0,0,14" Visibility="{Binding Conflict,Converter={StaticResource BoolVisibility}}"><StackPanel>
-    <TextBlock Text="需要选择同步方向" Style="{StaticResource SectionTitle}"/><TextBlock Text="两边的配置不一致，自动同步已暂停。使用云端会替换本机同步范围内的配置；上传本机会替换账号中的云端配置。" Style="{StaticResource Subtitle}" TextWrapping="Wrap" Margin="0,8,0,12"/><WrapPanel><Button x:Name="UseCloudButton" Content="使用云端配置" Command="{Binding UseCloudCommand}"/><Button x:Name="UseLocalButton" Content="上传本机配置" Command="{Binding UseLocalCommand}"/></WrapPanel>
+    <TextBlock Text="需要选择同步方向" Style="{StaticResource SectionTitle}"/><TextBlock Text="两边的配置不一致，自动同步已暂停。选择你想保留的配置后继续。" Style="{StaticResource Subtitle}" TextWrapping="Wrap" Margin="0,8,0,12"/><WrapPanel><Button x:Name="UseCloudButton" Content="使用云端配置" Command="{Binding UseCloudCommand}"/><Button x:Name="UseLocalButton" Content="上传本机配置" Command="{Binding UseLocalCommand}"/></WrapPanel>
    </StackPanel></Border>
-   <Border Style="{StaticResource Card}"><StackPanel><TextBlock Text="同步哪些内容" Style="{StaticResource SectionTitle}"/><TextBlock Text="翻译与在线 OCR 的密钥、服务地址、模型；AI 语音的密钥、模型和音色；默认翻译、识别和发音方式。" Style="{StaticResource Subtitle}" TextWrapping="Wrap" Margin="0,8,0,8"/><TextBlock Text="不上传截图、识别文字、翻译历史或本地模型。配置在客户端加密后上传，下载后按当前 Windows 用户重新加密保存。退出同步账号保留本机配置。" Style="{StaticResource Subtitle}" FontSize="12" TextWrapping="Wrap"/></StackPanel></Border>
+   <Border Style="{StaticResource Card}"><StackPanel><TextBlock Text="同步哪些内容" Style="{StaticResource SectionTitle}"/><TextBlock Text="翻译、OCR 和 AI 语音的服务配置、密钥及默认方式。配置加密后上传；截图、识别文字和本地模型保留在本机。" Style="{StaticResource Subtitle}" TextWrapping="Wrap" Margin="0,8,0,0"/></StackPanel></Border>
   </StackPanel></ScrollViewer>
  </DockPanel>
 </Window>

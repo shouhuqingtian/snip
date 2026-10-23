@@ -7,6 +7,7 @@ namespace Snip.Core;
 public static partial class AccountSyncProtocol
 {
     public const int Version = 1;
+    public const string DefaultServer = "https://bilibilil.online/selfsnip/";
     public static string UserName(string value)
     {
         if (string.IsNullOrWhiteSpace(value)) throw new ArgumentException("请填写同步账号。");
@@ -18,9 +19,13 @@ public static partial class AccountSyncProtocol
     private static partial Regex NamePattern();
     public static Uri Server(string value)
     {
-        if (value.Length > 2048 || !Uri.TryCreate(value.Trim().TrimEnd('/') + "/", UriKind.Absolute, out var server) ||
+        if (value is null || value.Length > 2048 || !Uri.TryCreate(value.Trim().TrimEnd('/') + "/", UriKind.Absolute, out var server) ||
             !(server.Scheme == "https" || server.IsLoopback && server.Scheme == "http") || server.UserInfo.Length > 0 || server.Query.Length > 0 || server.Fragment.Length > 0)
             throw new ArgumentException("同步服务器须填写 HTTPS 地址；仅本机测试可使用 HTTP。不要在地址中填写密码或令牌。");
+        // A copied health-check URL identifies the same service root, not an API prefix.
+        string path = server.AbsolutePath.TrimEnd('/');
+        if (path.EndsWith("/health", StringComparison.OrdinalIgnoreCase))
+            server = new UriBuilder(server) { Path = path[..^"health".Length] }.Uri;
         return server;
     }
     public static bool ValidSalt(string salt) => Base64Bytes(salt, 16);
@@ -63,7 +68,6 @@ public sealed class SyncRegisterRequest
     public string UserName { get; set; } = "";
     public string Salt { get; set; } = "";
     public string AuthSecret { get; set; } = "";
-    public string InviteCode { get; set; } = "";
     public override string ToString() => "Registration (redacted)";
 }
 public sealed class SyncLoginRequest
@@ -81,8 +85,9 @@ public sealed class SyncLoginResponse
 }
 public sealed record SyncUserNameRequest(string UserName);
 public sealed record SyncRemoteVault(long Revision, byte[]? Archive, bool Unchanged = false);
-public sealed class AccountSyncException(string message, bool unauthorized = false, bool conflict = false) : InvalidOperationException(message)
+public sealed class AccountSyncException(string message, bool unauthorized = false, bool conflict = false, int statusCode = 0) : InvalidOperationException(message)
 {
     public bool Unauthorized { get; } = unauthorized;
     public bool Conflict { get; } = conflict;
+    public int StatusCode { get; } = statusCode;
 }

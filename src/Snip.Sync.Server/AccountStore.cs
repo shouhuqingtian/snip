@@ -10,7 +10,8 @@ namespace Snip.Sync.Server;
 /// <summary>A single-server, atomic-file store for a private deployment. No original passwords, API keys or raw session tokens are persisted.</summary>
 public sealed class AccountStore : IDisposable
 {
-    private readonly string directory, accountsPath, invite;
+    private readonly string directory, accountsPath;
+    private readonly bool allowRegistration;
     private readonly FileStream lease;
     private readonly SemaphoreSlim gate = new(1, 1);
     private readonly PasswordHasher<string> hasher = new();
@@ -29,8 +30,8 @@ public sealed class AccountStore : IDisposable
     private sealed record Session(string Hash, DateTimeOffset ExpiresUtc);
     public AccountStore(IConfiguration configuration)
     {
-        invite = configuration["SELF_SNIP_REGISTER_INVITE"] ?? "";
-        if (invite.Length is < 24 or > 256) throw new InvalidOperationException("Configure a registration invite of 24–256 characters.");
+        if (!bool.TryParse(configuration["SELF_SNIP_ALLOW_REGISTRATION"] ?? "true", out allowRegistration))
+            throw new InvalidOperationException("Registration setting must be true or false.");
         directory = Path.GetFullPath(configuration["SELF_SNIP_DATA"] ?? "sync-data");
         Directory.CreateDirectory(directory);
         if (!OperatingSystem.IsWindows()) File.SetUnixFileMode(directory, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
@@ -57,8 +58,8 @@ public sealed class AccountStore : IDisposable
     public async Task<(int Code, SyncLoginResponse? Response)> RegisterAsync(SyncRegisterRequest request, CancellationToken token)
     {
         string name = AccountSyncProtocol.UserName(request.UserName);
-        if (!AccountSyncProtocol.ValidSalt(request.Salt) || !AccountSyncProtocol.ValidAuthSecret(request.AuthSecret) || request.InviteCode is null || request.InviteCode.Length > 256) return (400, null);
-        if (!FixedEqual(request.InviteCode, invite)) return (403, null);
+        if (!AccountSyncProtocol.ValidSalt(request.Salt) || !AccountSyncProtocol.ValidAuthSecret(request.AuthSecret)) return (400, null);
+        if (!allowRegistration) return (403, null);
         await gate.WaitAsync(token);
         try
         {
