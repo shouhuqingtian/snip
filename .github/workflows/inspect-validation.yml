@@ -66,7 +66,7 @@ jobs:
               value=json.dumps(rows[-30:],ensure_ascii=False)
               print('::notice title=Public Chrome fixture stages::'+value.replace('%','%25').replace(chr(13),'%0D').replace(chr(10),'%0A'))
           for path in Path('saved-validation').rglob('initial.png'):
-              if 'chrome-check' in path.parts and path.stat().st_size<40000:
+              if 'chrome-check' in path.parts and path.stat().st_size<3500:
                   print('::notice title=Public Chrome initial image::'+base64.b64encode(path.read_bytes()).decode())
 
       - name: Surface bounded public image text previews
@@ -80,5 +80,5 @@ jobs:
                       print('::notice title=Image text preview size::'+name+': exceeds bounded annotation size; use the original artifact.')
                       continue
                   encoded = base64.b64encode(path.read_bytes()).decode()
-                  for index, offset in enumerate(range(0, len(encoded), 40000)):
-                      print('::notice title=Image text preview '+name+' part '+str(index).zfill(2)+'::'+encoded[offset:offset+40000])
+                  for index, offset in enumerate(range(0, len(encoded), 3500)):
+                      print('::notice title=Image text preview '+name+' part '+str(index).zfill(2)+'::'+encoded[offset:offset+3500])
