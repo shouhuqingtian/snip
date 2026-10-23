@@ -68,3 +68,15 @@ jobs:
           for path in Path('saved-validation').rglob('initial.png'):
               if 'chrome-check' in path.parts and path.stat().st_size<40000:
                   print('::notice title=Public Chrome initial image::'+base64.b64encode(path.read_bytes()).decode())
+
+      - name: Surface bounded public image text previews
+        shell: python
+        run: |
+          import base64
+          from pathlib import Path
+          for name in ['49-image-text-selection.png', '50-pin-edit-text-selection.png']:
+              for path in Path('saved-validation').rglob(name):
+                  if path.stat().st_size <= 45000:
+                      print('::notice title=Image text preview '+name+'::'+base64.b64encode(path.read_bytes()).decode())
+                  else:
+                      print('::notice title=Image text preview size::'+name+': '+str(path.stat().st_size)+' bytes; use the artifact for the full image.')
