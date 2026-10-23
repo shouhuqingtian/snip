@@ -212,7 +212,7 @@ internal static class AccountSyncChecks
             for (int i = 0; i < 100; i++)
             {
                 if (process.HasExited) throw new InvalidOperationException("Public server exited before ready.");
-                try { if ((await client.GetAsync(new Uri(Address, "health"))).IsSuccessStatusCode) return; } catch (HttpRequestException) { }
+                try { if ((await client.GetAsync(new Uri(Address, "health"))).IsSuccessStatusCode) return; } catch (HttpRequestException) { } catch (TaskCanceledException) { /* Retry this one-second readiness poll within the existing outer startup deadline. */ }
                 await Task.Delay(100);
             }
             throw new TimeoutException("Public server readiness timed out.");

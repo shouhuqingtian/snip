@@ -30,7 +30,7 @@ async Task Start()
     for (int i = 0; i < 100; i++)
     {
         if (process.HasExited) throw new InvalidOperationException("Sync server exited before readiness.");
-        try { if ((await http.GetAsync(new Uri(address, "health"))).IsSuccessStatusCode) return; } catch (HttpRequestException) { }
+        try { if ((await http.GetAsync(new Uri(address, "health"))).IsSuccessStatusCode) return; } catch (HttpRequestException) { } catch (TaskCanceledException) { /* Retry this one-second readiness poll within the existing outer startup deadline. */ }
         await Task.Delay(100);
     }
     throw new TimeoutException("Sync server did not become ready.");

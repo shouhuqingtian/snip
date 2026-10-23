@@ -6,7 +6,7 @@
 
 同步服务适合小规模自用；2 核、2 GiB 的 Ubuntu x64 服务器可以使用。本包带 Linux x64 自包含程序，运行时无需下载大模型、Docker 镜像或另装 .NET。Ubuntu 需有常规系统库（OpenSSL、ICU 等），以及 `curl`、`openssl`；这不表示已经验证了你的实际服务器。
 
-1. 下载 `self-snip-sync-server-2.0.61.zip`，上传到 Ubuntu 并解压。保留完整目录，尤其是 `linux-x64/`、`install-systemd.sh`、`selfsnip-sync.service` 和 `nginx-location.conf`。
+1. 下载 `self-snip-sync-server-2.0.62.zip`，上传到 Ubuntu 并解压。保留完整目录，尤其是 `linux-x64/`、`install-systemd.sh`、`selfsnip-sync.service` 和 `nginx-location.conf`。
 2. 进入解压目录，运行 `sudo bash install-systemd.sh`。脚本创建专用非登录系统用户，安装到 `/opt/selfsnip-sync/`，数据存放 `/var/lib/selfsnip-sync/`。生成的邀请码保存在仅 root 可读的 `/etc/selfsnip-sync.env`，不会在安装输出显示。
 3. 执行 `curl -fsS http://127.0.0.1:5080/health`，应得到 `{"status":"ok","version":1}`。服务只监听本机，不需要开放公网 5080 或数据库端口。
 4. 将 `nginx-location.conf` 的 location 段加入已有域名的 **HTTPS** `server { ... }` 块。先备份原站点配置，保留证书和其他 location，执行 `sudo nginx -t` 成功后再 `sudo systemctl reload nginx`。脚本不会修改现有网站、防火墙或阿里云安全组。
