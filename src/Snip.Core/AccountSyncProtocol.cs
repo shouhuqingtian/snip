@@ -7,7 +7,7 @@ namespace Snip.Core;
 public static partial class AccountSyncProtocol
 {
     public const int Version = 1;
-    public const string DefaultServer = "https://bilibilil.online/selfsnip/";
+    public const string DefaultServer = "https://8.148.242.29/selfsnip/";
     public static string UserName(string value)
     {
         if (string.IsNullOrWhiteSpace(value)) throw new ArgumentException("请填写同步账号。");
@@ -85,9 +85,11 @@ public sealed class SyncLoginResponse
 }
 public sealed record SyncUserNameRequest(string UserName);
 public sealed record SyncRemoteVault(long Revision, byte[]? Archive, bool Unchanged = false);
-public sealed class AccountSyncException(string message, bool unauthorized = false, bool conflict = false, int statusCode = 0) : InvalidOperationException(message)
+public sealed class AccountSyncException(string message, bool unauthorized = false, bool conflict = false, int statusCode = 0,
+    Exception? innerException = null, HttpRequestError? networkError = null) : InvalidOperationException(message, innerException)
 {
     public bool Unauthorized { get; } = unauthorized;
     public bool Conflict { get; } = conflict;
     public int StatusCode { get; } = statusCode;
+    public HttpRequestError? NetworkError { get; } = networkError;
 }

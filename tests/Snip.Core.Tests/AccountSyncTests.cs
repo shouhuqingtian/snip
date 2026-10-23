@@ -40,6 +40,7 @@ public sealed class AccountSyncTests
     }
     [Theory]
     [InlineData("https://bilibilil.online/selfsnip/health", "https://bilibilil.online/selfsnip/")]
+    [InlineData("https://8.148.242.29/selfsnip/health", "https://8.148.242.29/selfsnip/")]
     [InlineData("https://example.com/prefix/health/", "https://example.com/prefix/")]
     [InlineData("http://127.0.0.1:5080/health", "http://127.0.0.1:5080/")]
     [InlineData("https://example.com/prefix/", "https://example.com/prefix/")]
@@ -71,6 +72,36 @@ public sealed class AccountSyncTests
             response.Headers.ETag = new("\"1\""); return Task.FromResult(response);
         }));
         await Assert.ThrowsAsync<AccountSyncException>(() => new AccountSyncApi(new("https://example.com/selfsnip/"), client).GetAsync("PUBLIC-SESSION", null, default));
+    }
+    [Theory]
+    [InlineData(HttpRequestError.SecureConnectionError, "HTTPS", "IP")]
+    [InlineData(HttpRequestError.ProxyTunnelError, "代理", "代理")]
+    [InlineData(HttpRequestError.NameResolutionError, "解析", "DNS")]
+    [InlineData(HttpRequestError.ConnectionError, "连接", "代理")]
+    public async Task NetworkFailureKeepsTechnicalCauseAndRedactsPrivateMessages(HttpRequestError kind, string title, string detail)
+    {
+        var cause = new HttpRequestException(kind, "PRIVATE-URL PRIVATE-PROXY PRIVATE-KEY",
+            new System.Net.Sockets.SocketException((int)System.Net.Sockets.SocketError.ConnectionReset));
+        using var client = new HttpClient(new Handler((_, _) => Task.FromException<HttpResponseMessage>(cause)));
+        var error = await Assert.ThrowsAsync<AccountSyncException>(() => new AccountSyncApi(new("https://example.com/selfsnip/"), client).ParametersAsync("public-owner", default));
+        Assert.Same(cause, error.InnerException);
+        Assert.Equal(kind, error.NetworkError);
+        Assert.Contains(title, error.Message); Assert.Contains(detail, error.Message);
+        Assert.DoesNotContain("PRIVATE", error.Message);
+        string folder = Path.Combine(Path.GetTempPath(), "Snip.Sync.Error-" + Guid.NewGuid());
+        try
+        {
+            await using var journal = new DiagnosticJournal(folder);
+            journal.Record("account-sync", "operation-failed", new { error.StatusCode, NetworkError = error.NetworkError.ToString() }, error);
+            await journal.FlushAsync();
+            string log = await File.ReadAllTextAsync(Path.Combine(folder, "events.jsonl"));
+            Assert.Contains(kind.ToString(), log);
+            Assert.Contains(typeof(System.Net.Sockets.SocketException).FullName!, log);
+            Assert.DoesNotContain("PRIVATE", log);
+            Assert.DoesNotContain("public-owner", log);
+            Assert.DoesNotContain("example.com", log);
+        }
+        finally { Directory.Delete(folder, true); }
     }
     private sealed class Handler(Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> send) : HttpMessageHandler
     { protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken token) => send(request, token); }

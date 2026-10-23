@@ -6,7 +6,7 @@
 
 同步服务适合小规模自用；2 核、2 GiB 的 Ubuntu x64 服务器可以使用。本包带 Linux x64 自包含程序，运行时无需下载大模型、Docker 镜像或另装 .NET。Ubuntu 需有常规系统库（OpenSSL、ICU 等），以及 `curl`；这不表示已经验证了你的实际服务器。
 
-1. 下载 `self-snip-sync-server-2.0.64.zip`，上传到 Ubuntu 并解压。保留完整目录，尤其是 `linux-x64/`、`install-systemd.sh`、`selfsnip-sync.service` 和 `nginx-location.conf`。
+1. 下载 `self-snip-sync-server-2.0.65.zip`，上传到 Ubuntu 并解压。保留完整目录，尤其是 `linux-x64/`、`install-systemd.sh`、`selfsnip-sync.service` 和 `nginx-location.conf`。
 2. 进入解压目录，运行 `sudo bash install-systemd.sh`。脚本创建专用非登录系统用户，安装到 `/opt/selfsnip-sync/`，数据存放 `/var/lib/selfsnip-sync/`。服务配置保存在仅 root 可读的 `/etc/selfsnip-sync.env`。默认可直接注册，无需邀请码。
 3. 执行 `curl -fsS http://127.0.0.1:5080/health`，应得到 `{"status":"ok","version":1}`。服务只监听本机，不需要开放公网 5080 或数据库端口。
 4. 将 `nginx-location.conf` 的 location 段加入已有域名的 **HTTPS** `server { ... }` 块。先备份原站点配置，保留证书和其他 location，执行 `sudo nginx -t` 成功后再 `sudo systemctl reload nginx`。脚本不会修改现有网站、防火墙或阿里云安全组。
@@ -31,7 +31,7 @@ Docker 官方镜像能否下载取决于服务器网络；脚本不添加第三�
 2. 切换“注册新账号”，输入 3–64 位英文/数字账号、至少 12 位密码，再确认密码，无需邀请码。
 3. 点击“注册并登录”。顶部持续显示“注册成功，已自动登录”，下方单独显示配置同步状态；首次同步失败也保留注册成功结果，可点击立即同步重试。
 4. 家里电脑输入同一个服务地址、账号和密码，切换“登录”并提交，无需再次注册。
-5. 默认约每 30 秒检查变化，也可“立即同步”。本机和云端同时有修改时自动暂停，选择“使用云端配置”或“上传本机配置”。已有本机配置的设备首次登录也会提示选择方向。
+5. 默认约每 2 小时检查变化，也可“立即同步”。本机和云端同时有修改时自动暂停，选择“使用云端配置”或“上传本机配置”。已有本机配置的设备首次登录也会提示选择方向。
 6. 导入云端配置前，请关闭在线设置、AI 语音设置、通用设置窗口，以免覆盖未保存的编辑。退出同步账号只退出此设备，不删除本机模型密钥。
 
 ## 范围与数据保护
@@ -54,8 +54,12 @@ Docker 官方镜像能否下载取决于服务器网络；脚本不添加第三�
 
 ## 从 2.0.62 更新
 
-客户端默认地址为 `https://bilibilil.online/selfsnip/`，可以改成其他 HTTPS 地址；粘贴该服务的 `/health` 地址会自动调整为服务根地址。
+客户端默认地址为 `https://8.148.242.29/selfsnip/`，可以改成其他 HTTPS 地址；粘贴该服务的 `/health` 地址会自动调整为服务根地址。
 
 去除邀请码需要同时更新服务器程序，不能只升级 Windows 客户端。保留原 `/etc/selfsnip-sync.env` 和 `/var/lib/selfsnip-sync/`（Docker 为原 `.env` 和 `data/`），按原方式更新服务；旧账号、密码、会话与云端配置格式不变，无需重新注册。旧 `SELF_SNIP_REGISTER_INVITE` 配置不再使用，保留它不影响启动。
 
 如果新客户端注册提示服务器未开放免邀请码注册，检查是否仍在运行 2.0.62 的服务，或是否显式设置了 `SELF_SNIP_ALLOW_REGISTRATION=false`。
+
+## 使用 IP 地址的 HTTPS
+
+默认地址更换为 IP 仅影响新填表单，不自动迁移已保存的服务器和会话。手动填写的 HTTPS 地址继续保留。Nginx 需要将该 IP 请求匹配到同步服务所在站点；证书须受客户端信任且在 IP 地址 SAN 中包含 `8.148.242.29`。仅包含域名的证书不能用于 IP 地址。应用不会关闭证书验证，也不会自动退回 HTTP。现有服务器程序与数据格式无变化，本版更换客户端默认地址和轮询间隔不要求重新部署服务器。

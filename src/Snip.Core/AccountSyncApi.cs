@@ -94,7 +94,17 @@ public sealed class AccountSyncApi(Uri server, HttpClient? client = null)
             };
         }
         catch (OperationCanceledException) when (!token.IsCancellationRequested) { throw new AccountSyncException("连接同步服务超时，本机配置保留。"); }
-        catch (HttpRequestException) { throw new AccountSyncException("无法连接同步服务，请检查 HTTPS 地址、证书和网络；本机配置保留。"); }
+        catch (HttpRequestException error)
+        {
+            string detail = error.HttpRequestError switch
+            {
+                HttpRequestError.SecureConnectionError => "HTTPS 安全连接失败，请检查证书、TLS 配置和网络；使用 IP 地址时，证书须包含该 IP。",
+                HttpRequestError.ProxyTunnelError => "无法通过代理连接同步服务，请检查本机代理是否运行及代理配置。",
+                HttpRequestError.NameResolutionError => "无法解析同步服务器地址，请检查地址、DNS 和代理配置。",
+                _ => "无法连接同步服务，请检查 HTTPS 地址、证书、网络和本机代理。"
+            };
+            throw new AccountSyncException(detail + " 本机配置保留。", innerException: error, networkError: error.HttpRequestError);
+        }
     }
     private static long Revision(HttpResponseMessage response)
     {

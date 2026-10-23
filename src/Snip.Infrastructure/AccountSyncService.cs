@@ -230,7 +230,7 @@ public sealed class AccountSyncService : IDisposable
             if (stored is null) return;
             bool previous = stored.Automatic; stored.Automatic = enabled;
             try { Save(stored); } catch { stored.Automatic = previous; throw; }
-            Publish(enabled ? "已开启自动同步，约每 30 秒检查一次。" : "已暂停自动同步；可手动点击立即同步。");
+            Publish(enabled ? "已开启自动同步，约每 2 小时检查一次；也可点击立即同步。" : "已暂停自动同步；可手动点击立即同步。");
         }
         catch (Exception error) { Fail(error, "同步开关保存失败。"); }
         finally { gate.Release(); }
@@ -260,7 +260,7 @@ public sealed class AccountSyncService : IDisposable
     }
     private async Task LoopAsync()
     {
-        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(30));
+        using var timer = new PeriodicTimer(TimeSpan.FromHours(2));
         try
         {
             do
@@ -278,7 +278,8 @@ public sealed class AccountSyncService : IDisposable
     }
     private void Fail(Exception error, string fallback)
     {
-        diagnostics?.Record("account-sync", "operation-failed", error: error);
+        diagnostics?.Record("account-sync", "operation-failed", error is AccountSyncException syncError
+            ? new { syncError.StatusCode, NetworkError = syncError.NetworkError?.ToString() } : null, error: error);
         failures = Math.Min(failures + 1, 4); nextAttempt = DateTimeOffset.UtcNow.AddSeconds(Math.Min(300, 30 * (1 << failures)));
         synchronizationFailed = session is not null;
         if (error is AccountSyncException { Unauthorized: true })

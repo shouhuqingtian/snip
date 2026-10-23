@@ -31,7 +31,7 @@
      <TextBlock Grid.Row="5" Grid.ColumnSpan="2" Text="密码至少 12 位，也用于解密云端配置，请妥善保存。" Style="{StaticResource Subtitle}" FontSize="11" TextWrapping="Wrap" Margin="0,4,0,0"/>
     </Grid>
     <StackPanel Visibility="{Binding SignedIn,Converter={StaticResource BoolVisibility}}"><TextBlock Text="同步服务器" FontWeight="SemiBold"/><TextBox Text="{Binding Server,Mode=OneWay}" IsReadOnly="True" ToolTip="退出此设备后可更改同步服务器" Margin="0,6,0,0"/></StackPanel>
-    <CheckBox x:Name="AutomaticSyncBox" Content="自动同步（约每 30 秒检查一次）" IsChecked="{Binding Automatic}" IsEnabled="{Binding CanToggleAutomatic}" Margin="0,16,0,0"/>
+    <CheckBox x:Name="AutomaticSyncBox" Content="自动同步（约每 2 小时检查一次）" IsChecked="{Binding Automatic}" IsEnabled="{Binding CanToggleAutomatic}" Margin="0,16,0,0"/>
    </StackPanel></Border>
    <Border Style="{StaticResource Card}" Margin="0,0,0,14" Visibility="{Binding Conflict,Converter={StaticResource BoolVisibility}}"><StackPanel>
     <TextBlock Text="需要选择同步方向" Style="{StaticResource SectionTitle}"/><TextBlock Text="两边的配置不一致，自动同步已暂停。选择你想保留的配置后继续。" Style="{StaticResource Subtitle}" TextWrapping="Wrap" Margin="0,8,0,12"/><WrapPanel><Button x:Name="UseCloudButton" Content="使用云端配置" Command="{Binding UseCloudCommand}"/><Button x:Name="UseLocalButton" Content="上传本机配置" Command="{Binding UseLocalCommand}"/></WrapPanel>
