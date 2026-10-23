@@ -97,6 +97,20 @@ internal static class ImageTextSelectionChecks
             Require(!closing.IsActive && closing.Document is null && closingEditor.TextSelection is null,"Closing the editor retained a late selectable text layer.");
             Console.WriteLine("PASS composed-image recognition, conservative mosaic exclusion despite guessed original words, annotation invalidation, cancellation and closing without late text layers.");
 
+            stage="new selection cancels queued clipboard publication";
+            var delayedClipboard=new DelayedClipboard();
+            var retryEditor=new EditorViewModel(image,new AnnotationRenderer(),export,new Dialogs());
+            var retryWindow=new EditorWindow(new Ocr(),delayedClipboard) {DataContext=retryEditor};retryWindow.Show();
+            Click(retryWindow,"SelectImageTextButton"); Wait(()=>retryEditor.TextSelection is {Busy:false,Document:not null});
+            var retrySelection=retryEditor.TextSelection!;
+            retrySelection.Begin(new(50,75),word:true); Click(retryWindow,"CopyImageTextButton"); Wait(()=>delayedClipboard.Text=="Alpha");
+            retrySelection.Begin(new(210,75),word:true);
+            Require(delayedClipboard.Token.IsCancellationRequested && retrySelection.SelectedText=="beta","New selection did not cancel pending clipboard publication.");
+            delayedClipboard.Release.TrySetResult(true); Pump(150);
+            Require(delayedClipboard.Copies==0 && !retrySelection.Status.Contains("失败"),"Old selection was published or cancellation reported as a copy failure.");
+            retryWindow.CancelScreenshot();
+            Console.WriteLine("PASS changing the selected word cancels an in-flight clipboard retry without publishing stale text or reporting a false failure.");
+
             stage="pin right-click edit copy";
             using(var pins=new PinManager(export))
             {
@@ -132,6 +146,14 @@ internal static class ImageTextSelectionChecks
             nativeEditor.TextSelection.Begin(new(world.Bounds.X+world.Bounds.Width/2,world.Bounds.Y+world.Bounds.Height/2),word:true);
             Click(nativeWindow,"CopyImageTextButton");Wait(()=>nativeEditor.TextSelection.Status.Contains("已复制"));
             Require(Clipboard.GetText()=="world","Native recognized word geometry did not copy the selected word.");nativeWindow.CancelScreenshot();
+            stage="failed local OCR preserves editor and private diagnostics";
+            var failedEditor=new EditorViewModel(image,new AnnotationRenderer(),export,new Dialogs());
+            var failing=new Ocr { Error=new InvalidOperationException("PUBLIC PRIVATE OCR TEXT Alpha SECRET") };
+            var failedWindow=new EditorWindow(failing,diagnostics:journal) {DataContext=failedEditor};failedWindow.Show();
+            Click(failedWindow,"SelectImageTextButton");Wait(()=>failedEditor.TextSelection is {Busy:false} failed && failed.Status.Contains("未完成"));
+            Require(failedEditor.TextSelection!.Document is null && failedWindow.IsVisible && !failedEditor.IsDirty,"Failed OCR destroyed or changed the editor.");
+            failedEditor.TextSelection.Deactivate();failedEditor.BeginPointer(new(10,10),false);failedEditor.EndPointer(new(100,50));
+            Require(failedEditor.BaseAnnotations.Count==1,"Failed OCR blocked ordinary annotation.");failedWindow.CancelScreenshot();
             journal.FlushAsync().GetAwaiter().GetResult(); string logs=File.ReadAllText(Path.Combine(folder,"logs","events.jsonl"));
             Require(!logs.Contains("Alpha") && !logs.Contains("SECRET") && !logs.Contains("Hello"),"Text selection diagnostics contain screenshot text.");
             Console.WriteLine("PASS real Windows English OCR coordinates, double-click word span and actual word clipboard; logs contain no screenshot/OCR text. No online OCR or paid provider contacted.");
@@ -176,17 +198,24 @@ internal static class ImageTextSelectionChecks
     { public string? ChoosePngPath()=>null;public TextInput? EditText(string text,string color,double fontSize)=>null;public CloseChoice ConfirmClose()=>CloseChoice.Discard;public void ShowError(string message)=>throw new InvalidOperationException("Unexpected image export error."); }
     private sealed class Export:IImageExportService
     { public int Copies;public BitmapSource? Last;public Task CopyAsync(BitmapSource image){Copies++;Last=image;return Task.CompletedTask;}public void SavePng(BitmapSource image,string path)=>Last=image; }
+    private sealed class DelayedClipboard:ITextClipboardService
+    {
+        public string Text=""; public CancellationToken Token; public int Copies;
+        public readonly TaskCompletionSource<bool> Release=new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public async Task CopyAsync(string text,CancellationToken token,IProgress<int>? retries=null)
+        { Text=text;Token=token;await Release.Task.WaitAsync(token);token.ThrowIfCancellationRequested();Copies++; }
+    }
     private sealed class FakeDesktop(BitmapSource image):IDesktopCaptureService
     { public IReadOnlyList<DisplayInfo> GetDisplays()=>[new("PUBLIC",new(0,0,800,1800),true)];public DesktopFrame Capture()=>new(image,new(0,0,800,1800),GetDisplays());public BitmapSource CaptureRegion(PixelRect region)=>image;public PixelPoint CursorPosition=>new(20,20);public void PlaceOverlay(Window window,PixelRect bounds){} }
     private sealed class Ocr:IOcrService
     {
-        public int Calls;public TaskCompletionSource<OcrResult>? Pending; public readonly List<ImagePayload> Payloads=[];
+        public int Calls;public TaskCompletionSource<OcrResult>? Pending;public Exception? Error; public readonly List<ImagePayload> Payloads=[];
         public IReadOnlyList<string> Languages=>["en-US"];
         public static OcrResult Result=>new([
             new("Alpha beta",new(40,60,260,45),null,[new("Alpha",new(40,60,120,45)),new("beta",new(190,60,110,45))]),
             new("SECRET",new(350,60,180,45),null,[new("SECRET",new(350,60,180,45))]),
             new("中文测试",new(40,150,180,45),null),new("Gamma delta",new(40,1500,260,45),null,[new("Gamma",new(40,1500,140,45)),new("delta",new(210,1500,90,45))])]);
         public Task<OcrResult> RecognizeAsync(ImagePayload payload,CancellationToken token)=>RecognizeAsync(payload,null,token);
-        public Task<OcrResult> RecognizeAsync(ImagePayload payload,string? language,CancellationToken token) { var pending=Pending;Payloads.Add(payload);Interlocked.Increment(ref Calls);return pending?.Task??Task.FromResult(Result); }
+        public Task<OcrResult> RecognizeAsync(ImagePayload payload,string? language,CancellationToken token) { var pending=Pending;Payloads.Add(payload);Interlocked.Increment(ref Calls);return Error is { } error ? Task.FromException<OcrResult>(error) : pending?.Task??Task.FromResult(Result); }
     }
 }

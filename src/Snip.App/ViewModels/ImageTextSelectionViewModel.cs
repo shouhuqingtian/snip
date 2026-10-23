@@ -26,7 +26,7 @@ public sealed class ImageTextSelectionViewModel : ObservableObject, IDisposable
         ToggleCommand = new(() => { if (IsActive) Deactivate(); else _ = StartAsync(); }, () => !disposed && !editor.IsExporting);
         RetryCommand = new(() => { ClearDocument(); _ = StartAsync(); }, () => IsActive && !Busy && !disposed);
         SelectAllCommand = new(() => { if (Document is { } doc) SetRange(0, doc.Text.Length); }, () => IsActive && Document is not null);
-        CopyCommand = new(CopyAsync, _ => { if (!disposed) Status = "复制文字失败，选字已保留，请重试。"; }, () => IsActive && !Busy && end > start && !disposed);
+        CopyCommand = new(CopyAsync, error => { if (!disposed && error is not OperationCanceledException) Status = "复制文字失败，选字已保留，请重试。"; }, () => IsActive && !Busy && end > start && !disposed);
         editor.VisualChanged += EditorChanged; editor.PropertyChanged += EditorPropertyChanged;
     }
     public event EventHandler? VisualChanged;
@@ -107,7 +107,11 @@ public sealed class ImageTextSelectionViewModel : ObservableObject, IDisposable
     public void End() => anchor = null;
     private void SetRange(int first, int last)
     {
+        if (start == first && end == last) return;
+        // A pending clipboard retry must never publish the previous selection after a new drag.
+        if (!Busy && operation is not null) CancelOperation();
         start = first; end = last;
+        if (IsActive && end > start) Status = "已选中文字，Ctrl+C 复制。";
         Highlights = Document?.Highlights(start, end) ?? [];
         Notify(nameof(SelectedText)); CopyCommand.Refresh(); VisualChanged?.Invoke(this, EventArgs.Empty);
     }
