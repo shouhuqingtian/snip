@@ -90,6 +90,10 @@ internal static class AccountSyncChecks
             ((PasswordBox)homeWindow.FindName("SyncPasswordBox")).Password = "PUBLIC Wrong Password 12345";
             Click(homeWindow, "SyncLoginButton"); Wait(() => !homeVm.Busy);
             Require(!homeVm.SignedIn && homeVm.FeedbackError && homeVm.FeedbackTitle == "登录失败" && homeVm.FeedbackDetail.Contains("密码") && homeVm.Password.Length > 0, "Wrong password is silent or clears retry input.");
+            homeWindow.UpdateLayout();
+            var authViewport = (ScrollViewer)homeWindow.FindName("AuthViewport");
+            var passwordBounds = ((PasswordBox)homeWindow.FindName("SyncPasswordBox")).TransformToAncestor(authViewport).TransformBounds(new Rect(((PasswordBox)homeWindow.FindName("SyncPasswordBox")).RenderSize));
+            Require(passwordBounds.Top >= 0 && passwordBounds.Bottom <= authViewport.ViewportHeight + 1, "Login error pushes the editable password field outside the initial viewport.");
             Preview(homeWindow, "55-login-error");
             ((PasswordBox)homeWindow.FindName("SyncPasswordBox")).Password = Password;
             stage = "home login and Windows re-protection";
