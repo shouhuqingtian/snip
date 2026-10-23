@@ -6,6 +6,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Input;
+using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
@@ -120,6 +121,15 @@ internal static class ImageTextSelectionChecks
                 var edit=pin.ContextMenu!.Items.OfType<MenuItem>().Single(i=>Equals(i.Header,"编辑（副本）…"));
                 edit.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
                 var editing=app.Windows.OfType<EditorWindow>().Single(); var copy=(EditorViewModel)editing.DataContext;
+                // Real overlapping topmost windows: ownership alone does not promote an already
+                // shown editor into the owner's topmost band. Source pins must not eat its input.
+                var editable=(EditorCanvas)editing.FindName("EditorSurface"); editing.UpdateLayout();
+                var overlap=editable.PointToScreen(new Point(60,80));
+                double originalLeft=pin.Left,originalTop=pin.Top;
+                pin.Left=overlap.X-50;pin.Top=overlap.Y-30;pin.UpdateLayout();editing.Activate();Pump(80);
+                var hit=GetAncestor(WindowFromPoint(new NativePoint((int)overlap.X,(int)overlap.Y)),2);
+                Require(editing.Topmost && hit==new WindowInteropHelper(editing).Handle,"The source topmost pin covers its editor and intercepts mouse input.");
+                pin.Left=originalLeft;pin.Top=originalTop;pin.UpdateLayout();
                 Click(editing,"SelectImageTextButton"); Wait(()=>copy.TextSelection is { Busy:false, Document:not null });
                 copy.TextSelection!.SelectAllCommand.Execute(null); Click(editing,"CopyImageTextButton"); Wait(()=>copy.TextSelection.Status.Contains("已复制"));
                 Require(Clipboard.GetText().Contains("Alpha") && pin.IsVisible && pins.ViewModel.Entries.Count==1,"Pin edit cannot select text or lost/changed the original pin.");
@@ -131,7 +141,7 @@ internal static class ImageTextSelectionChecks
                 editing.Toolbar.RequestComplete(); Wait(()=>!editing.IsVisible);
                 Require(export.Copies==1 && export.Last is { PixelWidth:800, PixelHeight:1800 },"Edited copy could not complete as an image after text selection.");
             }
-            Console.WriteLine("PASS actual pin context-menu edit copy, shared editor text selection, unchanged original, re-pin new image, original close independence and ordinary image completion.");
+            Console.WriteLine("PASS actual pin context-menu edit copy, native overlapping topmost-window input, shared editor text selection, unchanged original, re-pin new image, original close independence and ordinary image completion.");
 
             stage="native Windows OCR word geometry";
             var native=new OfflineOcrService();
@@ -192,6 +202,9 @@ internal static class ImageTextSelectionChecks
         var bounds=PixelRect.FromPoints(new(a.X,a.Y),new(b.X,b.Y)).Intersect(capture.GetDisplays().First(d=>d.Primary).Bounds);
         Directory.CreateDirectory("artifacts/validation/ui-previews");new ImageExportService().SavePng(capture.CaptureRegion(bounds),"artifacts/validation/ui-previews/"+name+".png");
     }
+    [StructLayout(LayoutKind.Sequential)]private readonly record struct NativePoint(int X,int Y);
+    [DllImport("user32.dll")]private static extern IntPtr WindowFromPoint(NativePoint point);
+    [DllImport("user32.dll")]private static extern IntPtr GetAncestor(IntPtr window,uint flags);
     [DllImport("user32.dll")][return:MarshalAs(UnmanagedType.Bool)]private static extern bool SetCursorPos(int x,int y);
     [DllImport("user32.dll")]private static extern void mouse_event(uint flags,uint dx,uint dy,uint data,UIntPtr extra);
     private sealed class Dialogs:IEditorDialogs

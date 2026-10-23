@@ -142,7 +142,7 @@ public sealed class FeatureHub
         var window = OpenEditor(new EditorViewModel(image, renderer, export, new EditorDialogs(() => null)));
         // Keep the active editor above the topmost source pin without hiding/changing it.
         // Detach before source closure so the independent copy survives that closure.
-        window.Owner = source;
+        window.Owner = source; window.Topmost = source.Topmost;
         System.ComponentModel.CancelEventHandler detach = (_, _) => window.Owner = null;
         source.Closing += detach; window.Closed += (_, _) => source.Closing -= detach;
         window.Activate();
