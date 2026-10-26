@@ -62,7 +62,7 @@ internal static class ToolbarDragChecks
             Require(session.Editor.Tool == AnnotationTool.Arrow && Position(toolbar) == placed, "Tool click was consumed by dragging or reset the position.");
             var stroke = TextWindowChecks.Descendants<ComboBox>(toolbar).First(); Click(stroke); Wait(() => stroke.IsDropDownOpen);
             var lastWidth = (ComboBoxItem)stroke.ItemContainerGenerator.ContainerFromIndex(stroke.Items.Count - 1); Click(lastWidth);
-            Require(session.Editor.StrokeWidth == 8 && Position(toolbar) == placed, "Stroke dropdown was intercepted by the drag handler.");
+            Require(session.Editor.StrokeWidth == 8 && Position(toolbar) == placed, $"Stroke dropdown operation failed: width={session.Editor.StrokeWidth}, selected={stroke.SelectedItem}, position={Position(toolbar)}, expected={placed}, popup={stroke.IsDropDownOpen}.");
             var color = TextWindowChecks.Descendants<Button>(toolbar).Single(b => Equals(b.ToolTip, "#007AFF")); Click(color);
             Require(session.Editor.Color == "#007AFF" && Position(toolbar) == placed, "Color selection was intercepted or moved the toolbar.");
             var blank = toolbar.PointToScreen(new Point(toolbar.ActualWidth / 2, toolbar.ActualHeight - 3));

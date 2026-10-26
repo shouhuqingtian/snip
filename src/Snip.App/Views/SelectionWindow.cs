@@ -148,8 +148,11 @@ public sealed class SelectionWindow : Window
     {
         if (!session.Editing || e.OriginalSource is not DependencyObject source) return;
         // Padding, labels and the grip are draggable; controls keep their normal input.
-        for (DependencyObject? node = source; node is not null && node != toolbar; node = node is Visual ? VisualTreeHelper.GetParent(node) : LogicalTreeHelper.GetParent(node))
-            if (node is ButtonBase or Selector or TextBoxBase or RangeBase or Thumb or MenuBase) return;
+        DependencyObject? node = source;
+        for (; node is not null && node != toolbar; node = node is Visual ? VisualTreeHelper.GetParent(node) : LogicalTreeHelper.GetParent(node))
+            if (node is ButtonBase or Selector or ListBoxItem or MenuItem or TextBoxBase or RangeBase or Thumb or MenuBase) return;
+        // Popup items can route input through the toolbar without belonging to its visual tree.
+        if (node != toolbar) return;
         toolbarPointerStart = e.GetPosition(overlay);
         toolbarStart = new(Canvas.GetLeft(toolbar), Canvas.GetTop(toolbar));
         toolbarPreviousPosition = toolbarPosition; toolbarMoving = false;
