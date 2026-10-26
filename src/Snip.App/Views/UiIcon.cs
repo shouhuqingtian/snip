@@ -16,6 +16,7 @@ public sealed class UiIcon : FrameworkElement
     {
         ["capture"] = "M 4 9 L 4 4 L 9 4 M 15 4 L 20 4 L 20 9 M 20 15 L 20 20 L 15 20 M 9 20 L 4 20 L 4 15 M 8 8 L 16 8 L 16 16 L 8 16 Z",
         ["select"] = "M 5 3 L 5 19 L 9 15 L 12 21 L 15 19 L 12 13 L 18 13 Z",
+        ["grip"] = "M 8 6 L 8 6.1 M 16 6 L 16 6.1 M 8 12 L 8 12.1 M 16 12 L 16 12.1 M 8 18 L 8 18.1 M 16 18 L 16 18.1",
         ["rectangle"] = "M 4 5 L 20 5 L 20 19 L 4 19 Z",
         ["ellipse"] = "M 20 12 A 8 8 0 1 1 4 12 A 8 8 0 1 1 20 12 Z",
         ["arrow"] = "M 5 19 L 19 5 M 9 5 L 19 5 L 19 15",

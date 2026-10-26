@@ -17,6 +17,7 @@ internal static class Program
     {
         if (args.FirstOrDefault() == "--desktop-scroll-fixture") return DesktopScrollChecks.RunFixture(args);
         if (args.Contains("--desktop-scroll")) return DesktopScrollChecks.Run();
+        if (args.Contains("--toolbar-drag")) return ToolbarDragChecks.Run();
         if (args.FirstOrDefault() == "--browser-transparent-overlay") return BrowserTargetChecks.HoldTransparentOverlay(args);
         if (args.Contains("--hover-stall")) return HoverRegionChecks.StallWorker();
         if (args.Contains("--smart-selection")) return HoverRegionChecks.Run();

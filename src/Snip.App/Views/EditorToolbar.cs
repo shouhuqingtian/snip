@@ -3,6 +3,7 @@ using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Data;
 using System.Windows.Media;
+using System.Windows.Input;
 using Snip.App.ViewModels;
 using Snip.Core;
 
@@ -11,6 +12,13 @@ namespace Snip.App.Views;
 /// <summary>The same toolbar is hosted by the screen selection and standalone editor.</summary>
 public sealed class EditorToolbar : UserControl
 {
+    private readonly Border dragHandle = new()
+    {
+        Name = "ToolbarDragHandle", Width = 20, Height = 40, Margin = new Thickness(0, 0, 4, 0),
+        Background = Brushes.Transparent, Cursor = Cursors.SizeAll, Visibility = Visibility.Collapsed,
+        ToolTip = "拖动工具栏（也可拖动空白处）", Child = new UiIcon("grip") { Width = 18, Height = 24, VerticalAlignment = VerticalAlignment.Center }
+    };
+    public bool ShowDragHandle { get => dragHandle.Visibility == Visibility.Visible; set => dragHandle.Visibility = value ? Visibility.Visible : Visibility.Collapsed; }
     public event EventHandler? CompleteRequested, CancelRequested, WindowRequested, SelectionRequested;
     public event EventHandler? StickerRequested, PinRequested, OcrRequested, TranslateRequested, ShareRequested;
     public event Action<BrowserCaptureMode>? ScrollRequested;
@@ -20,6 +28,7 @@ public sealed class EditorToolbar : UserControl
         Ui.EnsureTheme();
         var panel = new StackPanel();
         var tools = new WrapPanel();
+        tools.Children.Add(dragHandle);
         panel.Children.Add(tools);
         var converter = new ToolConverter();
         foreach (var (tool, glyph, tip) in new[] {

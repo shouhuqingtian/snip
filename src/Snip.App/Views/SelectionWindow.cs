@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
@@ -18,6 +19,11 @@ public sealed class SelectionWindow : Window
     private EditorCanvas? editorCanvas;
     private readonly TextBlock hint;
     private readonly Border hintFrame;
+    private Point? toolbarPosition;
+    private Point? toolbarPointerStart;
+    private Point toolbarStart;
+    private Point? toolbarPreviousPosition;
+    private bool toolbarMoving;
     public DisplayInfo Display { get; }
     public SelectionWindow(SelectionSession session, IDesktopCaptureService capture, DisplayInfo display)
     {
@@ -28,7 +34,17 @@ public sealed class SelectionWindow : Window
         Width = display.Bounds.Width; Height = display.Bounds.Height;
         var root = new Grid(); root.Children.Add(new SelectionSurface(session, capture, display)); root.Children.Add(overlay);
         toolbar.Name = "SelectionToolbar";
+        toolbar.ShowDragHandle = true;
         toolbar.Visibility = Visibility.Collapsed;
+        toolbar.PreviewMouseLeftButtonDown += BeginToolbarMove;
+        toolbar.PreviewMouseMove += MoveToolbar;
+        toolbar.PreviewMouseLeftButtonUp += (_, e) =>
+        {
+            if (toolbarPointerStart is null) return;
+            EndToolbarMove(restore: false); e.Handled = true;
+        };
+        toolbar.LostMouseCapture += (_, _) => EndToolbarMove(restore: true);
+        Deactivated += (_, _) => EndToolbarMove(restore: true);
         toolbar.SizeChanged += (_, _) => Position(this, EventArgs.Empty);
         toolbar.CompleteRequested += (_, _) => session.Confirm(); toolbar.CancelRequested += (_, _) => Cancel();
         toolbar.WindowRequested += (_, _) => session.Request(SelectionAction.Editor);
@@ -44,11 +60,16 @@ public sealed class SelectionWindow : Window
         hintFrame = new Border { Name = "SelectionHint", Child = hint, CornerRadius = new CornerRadius(8), Background = new SolidColorBrush(Color.FromArgb(225, 36, 50, 57)), IsHitTestVisible = false };
         overlay.Children.Add(hintFrame); Canvas.SetLeft(hintFrame, 16); Canvas.SetTop(hintFrame, 16); Content = root;
         SourceInitialized += (_, _) => capture.PlaceOverlay(this, display.Bounds);
-        PreviewMouseDown += (_, e) => { if (e.ChangedButton == MouseButton.Middle) { session.Confirm(); e.Handled=true; } };
+        PreviewMouseDown += (_, e) =>
+        {
+            if (toolbarPointerStart is not null && e.ChangedButton == MouseButton.Right) { EndToolbarMove(restore: true); e.Handled = true; }
+            else if (e.ChangedButton == MouseButton.Middle) { if (toolbarPointerStart is null) session.Confirm(); e.Handled = true; }
+        };
         PreviewKeyDown += OnKey; session.EditorChanged += RefreshEditor; session.ViewModel.Changed += Position;
         SizeChanged += (_, _) => { Position(this, EventArgs.Empty); PositionEditor(); };
         Closed += (_, _) =>
         {
+            EndToolbarMove(restore: false);
             session.EditorChanged -= RefreshEditor; session.ViewModel.Changed -= Position;
             if (editorCanvas is not null) editorCanvas.DataContext = null;
             toolbar.DataContext = null;
@@ -58,6 +79,7 @@ public sealed class SelectionWindow : Window
     private void Cancel() => session.Cancel();
     private void RefreshEditor(object? sender, EventArgs e)
     {
+        EndToolbarMove(restore: false); toolbarPosition = null;
         if (editorCanvas is not null) { overlay.Children.Remove(editorCanvas); editorCanvas = null; }
         if (session.Editing && session.Editor is { } vm)
         {
@@ -83,6 +105,7 @@ public sealed class SelectionWindow : Window
         var selectedDisplay = session.ViewModel.Frame.Displays.OrderByDescending(d => { var i = r.Intersect(d.Bounds); return i.Width * i.Height; }).First();
         bool visible = session.Editing && selectedDisplay.Name == Display.Name;
         toolbar.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
+        if (!visible) { EndToolbarMove(restore: false); toolbarPosition = null; }
         if (ActualWidth <= 0 || ActualHeight <= 0) return;
         // Measure in overlay DIPs, including wrapped text on smaller/scaled displays.
         hintFrame.MaxWidth = Math.Max(1, ActualWidth - 32);
@@ -98,6 +121,11 @@ public sealed class SelectionWindow : Window
         double below = (r.Bottom - Display.Bounds.Y) * sy + 10;
         double y = below + toolbarHeight <= ActualHeight - 12 ? below : (r.Y - Display.Bounds.Y) * sy - toolbarHeight - 10;
         y = Math.Clamp(y, 12, Math.Max(12, ActualHeight - toolbarHeight - 12));
+        if (toolbarPosition is { } placed)
+        {
+            x = Math.Clamp(placed.X, 12, Math.Max(12, ActualWidth - toolbar.Width - 12));
+            y = Math.Clamp(placed.Y, 12, Math.Max(12, ActualHeight - toolbarHeight - 12));
+        }
         var toolbarBounds = new Rect(x, y, toolbar.Width, toolbarHeight);
         var hintBounds = new Rect(new Point(16, 16), hintFrame.DesiredSize);
         var clearance = toolbarBounds; clearance.Inflate(8, 8);
@@ -114,9 +142,46 @@ public sealed class SelectionWindow : Window
                 y = hintBounds.Bottom + 8;
         }
         Canvas.SetLeft(toolbar, x); Canvas.SetTop(toolbar, y);
+        if (toolbarPosition is not null) toolbarPosition = new(x, y);
+    }
+    private void BeginToolbarMove(object sender, MouseButtonEventArgs e)
+    {
+        if (!session.Editing || e.OriginalSource is not DependencyObject source) return;
+        // Padding, labels and the grip are draggable; controls keep their normal input.
+        for (DependencyObject? node = source; node is not null && node != toolbar; node = node is Visual ? VisualTreeHelper.GetParent(node) : LogicalTreeHelper.GetParent(node))
+            if (node is ButtonBase or Selector or TextBoxBase or RangeBase or Thumb or MenuBase) return;
+        toolbarPointerStart = e.GetPosition(overlay);
+        toolbarStart = new(Canvas.GetLeft(toolbar), Canvas.GetTop(toolbar));
+        toolbarPreviousPosition = toolbarPosition; toolbarMoving = false;
+        if (!toolbar.CaptureMouse()) { toolbarPointerStart = null; return; }
+        e.Handled = true;
+    }
+    private void MoveToolbar(object sender, MouseEventArgs e)
+    {
+        if (toolbarPointerStart is not { } origin) return;
+        if (e.LeftButton != MouseButtonState.Pressed) { EndToolbarMove(restore: true); return; }
+        var delta = e.GetPosition(overlay) - origin;
+        if (!toolbarMoving && Math.Abs(delta.X) < SystemParameters.MinimumHorizontalDragDistance && Math.Abs(delta.Y) < SystemParameters.MinimumVerticalDragDistance) return;
+        toolbarMoving = true;
+        toolbarPosition = toolbarStart + delta;
+        Position(this, EventArgs.Empty); e.Handled = true;
+    }
+    private void EndToolbarMove(bool restore)
+    {
+        if (toolbarPointerStart is null) return;
+        toolbarPointerStart = null;
+        if (restore) toolbarPosition = toolbarPreviousPosition;
+        toolbarMoving = false;
+        if (toolbar.IsMouseCaptured) toolbar.ReleaseMouseCapture();
+        if (IsVisible) Position(this, EventArgs.Empty);
     }
     private void OnKey(object sender, KeyEventArgs e)
     {
+        if (toolbarPointerStart is not null)
+        {
+            if (e.Key == Key.Escape) EndToolbarMove(restore: true);
+            if (e.Key is Key.Escape or Key.Enter) { e.Handled = true; return; }
+        }
         if (Keyboard.FocusedElement is TextBox) return;
         if (e.Key == Key.Escape) { if (session.Editor?.CancelCurrent() != true) Cancel(); e.Handled = true; }
         else if (e.Key == Key.Enter) { session.Confirm(); e.Handled = true; }
