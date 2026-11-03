@@ -147,7 +147,7 @@ internal static class VoiceInputChecks
         var info = new ProcessStartInfo(chrome) { UseShellExecute = false };
         foreach (string arg in new[] { "--new-window", "--no-first-run", "--disable-background-mode", "--disable-gpu", "--user-data-dir=" + Path.Combine(folder, "chrome"), "--window-size=800,650", new Uri(Path.Combine(AppContext.BaseDirectory, "Fixtures/voice-input.html")).AbsoluteUri }) info.ArgumentList.Add(arg);
         using var launcher = Process.Start(info)!; WindowCaptureInfo? window = null;
-        string Title() { var s = new StringBuilder(512); GetWindowText(window!.Handle, s, s.Capacity); return s.ToString(); }
+        string Title() { var s = new StringBuilder(512); GetWindowText(window!.Handle, s, s.Capacity); return s.ToString().Split(" - ", 2)[0]; }
         try
         {
             Wait(() => (window = DesktopWindows.Snapshot().FirstOrDefault(w =>
