@@ -1,0 +1,141 @@
+using System;
+using System.Diagnostics;
+using System.IO;
+using System.Linq;
+using System.Runtime.InteropServices;
+using System.Text.Json;
+using System.Threading;
+using System.Threading.Tasks;
+using System.Windows.Automation;
+using Snip.Core;
+
+namespace Snip.Infrastructure;
+
+public sealed record VoiceTargetInfo(bool Editable, bool Password, int ProcessId, int[] RuntimeId);
+public interface IVoiceTargetProbe
+{
+    Task<VoiceTargetInfo?> ReadAsync(IntPtr foreground, CancellationToken token);
+}
+public sealed class VoiceTargetProbe(Func<ProcessStartInfo> host) : IVoiceTargetProbe
+{
+    public Task<VoiceTargetInfo?> ReadAsync(IntPtr foreground, CancellationToken token) => Task.Run(async () =>
+    {
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(token); deadline.CancelAfter(TimeSpan.FromSeconds(3));
+        Process? process = null;
+        try
+        {
+            var info = host(); info.UseShellExecute = false; info.CreateNoWindow = true; info.RedirectStandardInput = info.RedirectStandardOutput = true;
+            info.ArgumentList.Add("--voice-target-worker"); process = Process.Start(info) ?? throw new InvalidOperationException();
+            using var job = VoiceWorkerJob.Attach(process);
+            await process.StandardInput.WriteLineAsync(foreground.ToInt64().ToString(System.Globalization.CultureInfo.InvariantCulture)).ConfigureAwait(false);
+            string? line = await process.StandardOutput.ReadLineAsync(deadline.Token).ConfigureAwait(false);
+            if (line is null || line.Length > 8192) return null;
+            var result = JsonSerializer.Deserialize<VoiceTargetInfo>(line);
+            if (result?.RuntimeId is null || result.RuntimeId.Length is < 1 or > 64) return null;
+            return result;
+        }
+        catch (Exception e) when (e is IOException or JsonException or InvalidOperationException or System.ComponentModel.Win32Exception or OperationCanceledException)
+        { token.ThrowIfCancellationRequested(); return null; }
+        finally { Stop(process); }
+    }, token);
+    internal static void Stop(Process? process)
+    {
+        if (process is null) return;
+        try { if (!process.HasExited) process.Kill(true); process.WaitForExit(1000); }
+        catch (Exception e) when (e is InvalidOperationException or System.ComponentModel.Win32Exception) { }
+        finally { process.Dispose(); }
+    }
+}
+public static class VoiceTargetWorker
+{
+    [DllImport("user32.dll")] private static extern IntPtr GetForegroundWindow();
+    public static int Run(TextReader input, TextWriter output)
+    {
+        using var timeout = new Timer(_ => Environment.Exit(8), null, 4000, Timeout.Infinite);
+        VoiceTargetInfo result = new(false, false, 0, []);
+        try
+        {
+            if (!long.TryParse(input.ReadLine(), out long expected) || GetForegroundWindow().ToInt64() != expected) return 1;
+            var focused = AutomationElement.FocusedElement;
+            if (focused is not null)
+            {
+                bool password = focused.Current.IsPassword, editable = false;
+                if (focused.TryGetCurrentPattern(ValuePattern.Pattern, out var pattern)) editable = !((ValuePattern)pattern).Current.IsReadOnly;
+                else if (focused.Current.ControlType == ControlType.Edit) editable = true;
+                result = new(editable && focused.Current.IsEnabled && focused.Current.IsKeyboardFocusable, password, focused.Current.ProcessId, focused.GetRuntimeId());
+            }
+            if (GetForegroundWindow().ToInt64() != expected) result = new(false, false, 0, []);
+        }
+        catch (Exception) { result = new(false, false, 0, []); }
+        output.WriteLine(JsonSerializer.Serialize(result)); output.Flush(); return 0;
+    }
+}
+/// <summary>Native microphone driver lives only in a bounded helper. Audio crosses an anonymous pipe, never disk.</summary>
+public sealed class IsolatedMicrophoneRecorder(Func<ProcessStartInfo> host) : IMicrophoneRecorder
+{
+    public event Action<int>? WorkerStarted;
+    public Task<RecordedVoice> RecordAsync(CancellationToken stop, CancellationToken cancel, Action started) => Task.Run(async () =>
+    {
+        Process? worker = null;
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancel); deadline.CancelAfter(TimeSpan.FromSeconds(TranscriptionProviders.MaximumRecordingSeconds + 10));
+        try
+        {
+            var info = host(); info.UseShellExecute = false; info.CreateNoWindow = true; info.RedirectStandardInput = info.RedirectStandardOutput = true;
+            info.ArgumentList.Add("--voice-record-worker"); worker = Process.Start(info) ?? throw new VoiceInputException("无法启动录音辅助进程。");
+            using var job = VoiceWorkerJob.Attach(worker);
+            WorkerStarted?.Invoke(worker.Id);
+            var current = worker;
+            using var released = stop.Register(() =>
+            {
+                deadline.CancelAfter(TimeSpan.FromSeconds(5));
+                try { current.StandardInput.WriteLine("stop"); current.StandardInput.Flush(); } catch (Exception e) when (e is IOException or InvalidOperationException or ObjectDisposedException) { }
+            });
+            byte[] header = new byte[4];
+            using var startup = CancellationTokenSource.CreateLinkedTokenSource(deadline.Token); startup.CancelAfter(TimeSpan.FromSeconds(5));
+            await current.StandardOutput.BaseStream.ReadExactlyAsync(header, startup.Token).ConfigureAwait(false);
+            int size = System.Buffers.Binary.BinaryPrimitives.ReadInt32LittleEndian(header);
+            if (size == -1)
+            {
+                started(); await current.StandardOutput.BaseStream.ReadExactlyAsync(header, deadline.Token).ConfigureAwait(false);
+                size = System.Buffers.Binary.BinaryPrimitives.ReadInt32LittleEndian(header);
+            }
+            if (size <= -100 && size >= -100 - (int)VoiceInputFailure.Service)
+            {
+                await current.StandardOutput.BaseStream.ReadExactlyAsync(header, deadline.Token).ConfigureAwait(false);
+                var reason = (VoiceInputFailure)(-100 - size); int nativeCode = System.Buffers.Binary.BinaryPrimitives.ReadInt32LittleEndian(header);
+                throw new VoiceInputException(reason switch
+                {
+                    VoiceInputFailure.NoMicrophone => "未找到默认麦克风，请连接麦克风并设置 Windows 输入设备。",
+                    VoiceInputFailure.DeviceAccess => "无法使用默认麦克风，请检查 Windows 桌面应用麦克风权限、设备设置和占用。",
+                    VoiceInputFailure.NoVoice => "没有录到清晰声音，请检查麦克风输入音量。",
+                    VoiceInputFailure.TooShort => "录音太短，请按住快捷键说话后再松开。",
+                    _ => "录音未完成，请检查默认麦克风并重试。"
+                }, reason, nativeCode);
+            }
+            if (size < 44 || size > 44 + TranscriptionProviders.MaximumRecordingSeconds * 32000) throw new VoiceInputException("录音辅助进程返回了无效数据。");
+            byte[] wav = new byte[size];
+            try { await current.StandardOutput.BaseStream.ReadExactlyAsync(wav, deadline.Token).ConfigureAwait(false); return new RecordedVoice(wav); }
+            catch { System.Security.Cryptography.CryptographicOperations.ZeroMemory(wav); throw; }
+        }
+        catch (OperationCanceledException) when (!cancel.IsCancellationRequested) { throw new VoiceInputException("录音辅助进程超时，麦克风已停止，请重试。", VoiceInputFailure.RecorderTimeout); }
+        catch (IOException) { throw new VoiceInputException("录音辅助进程中断，麦克风已停止，请重试。"); }
+        finally { VoiceTargetProbe.Stop(worker); }
+    }, cancel);
+}
+public static class VoiceRecordingWorker
+{
+    public static async Task<int> RunAsync(TextReader input, Stream output, IMicrophoneRecorder? recorder = null)
+    {
+        using var stop = new CancellationTokenSource(); using var cancel = new CancellationTokenSource();
+        using var watchdog = new Timer(_ => Environment.Exit(8), null, TimeSpan.FromSeconds(TranscriptionProviders.MaximumRecordingSeconds + 8), Timeout.InfiniteTimeSpan);
+        _ = Task.Run(async () => { _ = await input.ReadLineAsync().ConfigureAwait(false); stop.Cancel(); });
+        void Length(int length) { byte[] header = new byte[4]; System.Buffers.Binary.BinaryPrimitives.WriteInt32LittleEndian(header, length); output.Write(header); output.Flush(); }
+        try
+        {
+            using var audio = await (recorder ?? new WindowsMicrophoneRecorder()).RecordAsync(stop.Token, cancel.Token, () => Length(-1)).ConfigureAwait(false);
+            Length(audio.Wav.Length); await output.WriteAsync(audio.Wav).ConfigureAwait(false); await output.FlushAsync().ConfigureAwait(false); return 0;
+        }
+        catch (VoiceInputException error) { Length(-100 - (int)error.Failure); Length(error.NativeCode); return 1; }
+        catch (Exception) { Length(-100); Length(0); return 1; }
+    }
+}

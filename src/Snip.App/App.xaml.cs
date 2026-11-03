@@ -35,10 +35,19 @@ public partial class App : Application
     private ConfigurationTransferWindow? configurationTransfer;
     private AccountSyncService? accountSync;
     private AccountSyncWindow? accountSyncWindow;
+    private TranscriptionSettingsStore? transcriptionSettings;
+    private VoiceInputController? voiceInput;
+    private VoiceInputSettingsWindow? voiceInputSettings;
+    private VoiceInputStatusWindow? voiceInputStatus;
+    private VoiceInputResultWindow? voiceInputResult;
 
     protected override async void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
+        if (e.Args.Length == 1 && e.Args[0] == "--voice-target-worker")
+        { int result = await Task.Run(() => VoiceTargetWorker.Run(Console.In, Console.Out)); Shutdown(result); return; }
+        if (e.Args.Length == 1 && e.Args[0] == "--voice-record-worker")
+        { int result = await VoiceRecordingWorker.RunAsync(Console.In, Console.OpenStandardOutput()); Shutdown(result); return; }
         if (e.Args.Length == 2 && e.Args[0] == "--ocr-worker") { RunOcrWorker(e.Args[1]); return; }
         if (e.Args.Length == 1 && e.Args[0] == "--hover-worker") { RunHoverWorker(); return; }
         diagnostics = new DiagnosticJournal(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SelfSnip", "Logs"));
@@ -77,23 +86,38 @@ public partial class App : Application
             pins = new PinManager(export, ShowPinHotkeySettings);
             translationPreferences = new TranslationPreferencesStore();
             features = new FeatureHub(renderer, export, capture, pins, diagnostics, translationPreferences:translationPreferences);
+            transcriptionSettings = new TranscriptionSettingsStore(new OnlineTranslationSettingsStore());
+            voiceInput = new VoiceInputController(transcriptionSettings, Dispatcher, diagnostics);
+            voiceInput.CanStart = () => !Windows.Cast<Window>().Any(w => w is VoiceInputSettingsWindow { IsActive: true } or HotkeySettingsWindow { IsActive: true } or PinHotkeySettingsWindow { IsActive: true });
+            voiceInput.ShortcutWhileConfiguring += gesture => { if (voiceInputSettings?.IsActive == true) voiceInputSettings.CaptureRegisteredGesture(gesture); };
             accountSync = new AccountSyncService(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SelfSnip"), Dispatcher,
-                () => !Windows.Cast<Window>().Any(window => window is OnlineTranslationSettingsWindow or OnlineSpeechSettingsWindow or ApplicationSettingsWindow or ConfigurationTransferWindow),
+                () => voiceInput?.IsActive != true && !Windows.Cast<Window>().Any(window => window is OnlineTranslationSettingsWindow or OnlineSpeechSettingsWindow or VoiceInputSettingsWindow or ApplicationSettingsWindow or ConfigurationTransferWindow),
                 features.RefreshAccountConfiguration, diagnostics);
             await accountSync.StartAsync();
-            coordinator = new CaptureCoordinator(capture, renderer, export, features, diagnostics, copyNotifications.Hide);
-            main = new MainWindow { Title = "自用截图 " + DesktopDiagnostics.Version.Split('+')[0], DataContext = new MainViewModel(coordinator.CaptureAsync, ShowError, ExportDiagnosticsAsync, () => features.ShowOnlineSettings(), ShowHotkeySettings, ShowApplicationSettings, ShowConfigurationTransfer, ShowAccountSync) };
+            coordinator = new CaptureCoordinator(capture, renderer, export, features, diagnostics, () => { copyNotifications.Hide(); voiceInput?.Cancel(true); voiceInputStatus?.Close(); });
+            main = new MainWindow { Title = "自用截图 " + DesktopDiagnostics.Version.Split('+')[0], DataContext = new MainViewModel(coordinator.CaptureAsync, ShowError, ExportDiagnosticsAsync, () => features.ShowOnlineSettings(), ShowHotkeySettings, ShowApplicationSettings, ShowConfigurationTransfer, ShowAccountSync, ShowVoiceInputSettings) };
             MainWindow = main;
-            hotkey = new HotkeyService(); tray = new TrayService();
+            hotkey = new HotkeyService(); var desktopTray = new TrayService(); tray = desktopTray;
+            desktopTray.VoiceSettingsRequested += (_, _) => ShowVoiceInputSettings();
+            desktopTray.VoiceResultRequested += (_, _) => ShowVoiceInputResult();
             hotkeyStore = new HotkeySettingsStore();
             features.CaptureStatus = message => tray?.SetCaptureStatus(message);
             tray.CaptureCancelRequested += (_, _) => features.CancelBrowserCapture();
-            hotkey.Triggered += (_, _) => { if (hotkeySettings?.IsActive != true && pinHotkeySettings?.IsActive != true) StartCapture(); }; tray.CaptureRequested += (_, _) => StartCapture();
+            hotkey.Triggered += (_, _) =>
+            {
+                if (voiceInputSettings?.IsActive == true) { voiceInputSettings.CaptureRegisteredGesture(hotkey.Current ?? HotkeyGesture.Default); return; }
+                if (hotkeySettings?.IsActive != true && pinHotkeySettings?.IsActive != true) StartCapture();
+            }; tray.CaptureRequested += (_, _) => StartCapture();
             tray.OpenRequested += (_, _) => OpenMain(); tray.ExitRequested += (_, _) => ExitApplication();
             tray.PinsRequested += (_, _) => pins.ShowManager();
             pinHotkeys = new PinHotkeyService(); pinHotkeyStore = new PinHotkeySettingsStore();
             pinHotkeys.Triggered += (_, action) =>
             {
+                if (voiceInputSettings?.IsActive == true)
+                {
+                    var gesture = action == PinHotkeyAction.Restore ? pinHotkeys.Current.Restore : action == PinHotkeyAction.Previous ? pinHotkeys.Current.Previous : pinHotkeys.Current.Next;
+                    if (gesture is not null) voiceInputSettings.CaptureRegisteredGesture(gesture); return;
+                }
                 if (pinHotkeySettings?.IsActive == true || hotkeySettings?.IsActive == true) return;
                 try { if (action == PinHotkeyAction.Restore) pins.RestoreLast(); else pins.Cycle(action == PinHotkeyAction.Previous ? -1 : 1); }
                 catch (Exception error) { ShowError(error); }
@@ -120,6 +144,9 @@ public partial class App : Application
                 ((MainViewModel)main.DataContext).Status = configured.DisplayText + " 注册失败，可点‘修改’换一个组合，或通过托盘截图。";
                 if (!startupLaunch) MessageBox.Show($"快捷键 {configured.DisplayText} 无法注册，可能已被其他软件占用。\n可打开主窗口修改快捷键，或使用托盘菜单截图。", "自用截图", MessageBoxButton.OK, MessageBoxImage.Warning);
             }
+            try { voiceInput.Initialize(); }
+            catch (Exception error) { diagnostics.Record("voice-input", "startup-registration-failed", error: error); ((MainViewModel)main.DataContext).Status = "语音输入暂不可用，请打开语音输入设置检查快捷键和密钥；截图功能仍可使用。"; }
+            voiceInput.Changed += VoiceInputChanged;
         }
         catch (Exception ex) { ShowError(ex); Shutdown(1); }
     }
@@ -153,6 +180,42 @@ public partial class App : Application
         hotkeySettings = new HotkeySettingsWindow(vm) { Owner = main?.IsVisible == true ? main : null };
         hotkeySettings.Closed += (_, _) => hotkeySettings = null;
         hotkeySettings.Show();
+    }
+    private void ShowVoiceInputSettings()
+    {
+        if (voiceInputSettings is not null) { voiceInputSettings.Activate(); return; }
+        if (transcriptionSettings is null || voiceInput is null) return;
+        voiceInput.Cancel(true); voiceInputStatus?.Close();
+        try
+        {
+            var vm = new VoiceInputSettingsViewModel(transcriptionSettings, new OnlineTranslationSettingsStore(), voiceInput);
+            voiceInputSettings = new(vm); voiceInputSettings.Closed += (_, _) => voiceInputSettings = null; voiceInputSettings.Show();
+        }
+        catch (Exception error) { ShowError(error); }
+    }
+    private void VoiceInputChanged(object? sender, EventArgs args)
+    {
+        if (voiceInput is null || Dispatcher.HasShutdownStarted) return;
+        if (voiceInput.SuppressNotification) { voiceInputStatus?.Close(); return; }
+        try
+        {
+            if (voiceInputStatus is null)
+            {
+                var window = new VoiceInputStatusWindow(voiceInput, ShowVoiceInputResult); voiceInputStatus = window;
+                window.Closed += (_, _) => { if (ReferenceEquals(voiceInputStatus, window)) voiceInputStatus = null; }; window.Show();
+            }
+            else voiceInputStatus.UpdateStatus();
+        }
+        catch (Exception error)
+        {
+            diagnostics?.Record("voice-input", "status-window-failed", error: error); voiceInput.Cancel(true); voiceInputStatus?.Close(); voiceInputStatus = null;
+            if (main?.DataContext is MainViewModel vm) vm.Status = "语音提示无法显示，本次语音输入已取消，可导出诊断包排查。";
+        }
+    }
+    private void ShowVoiceInputResult()
+    {
+        if (voiceInput?.LastText is not { Length: > 0 } text) { if (main?.DataContext is MainViewModel vm) vm.Status = "还没有语音识别结果；先配置语音输入，再把光标放到输入框并按住快捷键说话。"; OpenMain(); return; }
+        voiceInputResult?.Close(); voiceInputResult = new(text); voiceInputResult.Closed += (_, _) => voiceInputResult = null; voiceInputResult.Show();
     }
 
     private void ShowPinHotkeySettings()
@@ -266,6 +329,7 @@ public partial class App : Application
     {
         diagnostics?.Record("app", "exiting", new { e.ApplicationExitCode });
         accountSync?.Dispose();
+        voiceInput?.Dispose(); voiceInputStatus?.Close(); voiceInputResult?.Close();
         activationListener?.Unregister(null); copyNotifications?.Dispose(); coordinator?.Dispose(); pins?.Dispose(); pinHotkeys?.Dispose(); hotkey?.Dispose(); tray?.Dispose();
         if (ownsMutex) instance?.ReleaseMutex(); instance?.Dispose(); activation?.Dispose();
         diagnostics?.Dispose();

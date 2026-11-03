@@ -1,0 +1,14 @@
+<!doctype html><meta charset="utf-8"><title>Public voice fixture</title>
+<style>body{font:20px sans-serif;margin:24px}textarea,[contenteditable]{display:block;width:90%;min-height:100px;border:2px solid #078568;padding:12px;margin:16px 0}</style>
+<h1>Public voice input fixture</h1>
+<textarea id="one" aria-label="Public textarea"></textarea>
+<div id="two" contenteditable="true" role="textbox" aria-label="Public contenteditable" aria-multiline="true" tabindex="0"></div>
+<script>
+let submitted=false;
+document.addEventListener('keydown',e=>{if(e.key==='Enter')submitted=true});
+one.addEventListener('focus',()=>document.title='Public voice fixture | ONE');
+two.addEventListener('focus',()=>document.title='Public voice fixture | TWO');
+one.addEventListener('input',()=>document.title='Public voice fixture | '+(one.value==='PUBLIC 中文 voice'&&!submitted?'ONEOK':'ONEEDIT'));
+two.addEventListener('input',()=>document.title='Public voice fixture | '+(two.textContent==='PUBLIC English words'&&!submitted?'TWOOK':'TWOEDIT'));
+window.addEventListener('load',()=>one.focus());
+</script>

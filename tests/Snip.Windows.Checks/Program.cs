@@ -15,6 +15,9 @@ internal static class Program
     [STAThread]
     private static int Main(string[] args)
     {
+        if (args.FirstOrDefault() == "--voice-record-fixture") return VoiceInputChecks.RecordFixture();
+        if (args.FirstOrDefault() == "--voice-job-parent") return VoiceInputChecks.JobParent(args[1]);
+        if (args.Contains("--voice-input")) return VoiceInputChecks.Run();
         if (args.FirstOrDefault() == "--desktop-scroll-fixture") return DesktopScrollChecks.RunFixture(args);
         if (args.Contains("--desktop-scroll")) return DesktopScrollChecks.Run();
         if (args.Contains("--toolbar-drag")) return ToolbarDragChecks.Run();

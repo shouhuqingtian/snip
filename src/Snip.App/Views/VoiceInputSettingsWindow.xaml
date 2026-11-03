@@ -1,0 +1,24 @@
+<Window x:Class="Snip.App.Views.VoiceInputSettingsWindow" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+ Title="自用截图 · 语音输入设置" Width="750" Height="850" MinWidth="540" MinHeight="480" WindowStartupLocation="CenterScreen">
+ <DockPanel Margin="24">
+  <StackPanel DockPanel.Dock="Top" Margin="0,0,0,14"><TextBlock Text="语音输入" Style="{StaticResource PageTitle}"/><TextBlock Text="在输入框中按住快捷键说话，松开后识别并输入；不会自动发送消息。" Style="{StaticResource Subtitle}" TextWrapping="Wrap" Margin="0,8,0,0"/></StackPanel>
+  <StackPanel DockPanel.Dock="Bottom" Margin="0,14,0,0"><TextBlock x:Name="VoiceSettingsStatus" Text="{Binding Status}" TextWrapping="Wrap" Foreground="{StaticResource AccentBrush}" Margin="0,0,0,10"/><WrapPanel HorizontalAlignment="Right"><Button Style="{StaticResource FooterCloseButton}" Click="CloseClick"/><Button Content="取消当前录音 / 识别" Command="{Binding CancelRecordingCommand}"/><Button x:Name="SaveVoiceInput" Content="保存设置" Style="{StaticResource PrimaryButton}" Command="{Binding SaveCommand}"/></WrapPanel></StackPanel>
+  <ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel>
+   <Border Style="{StaticResource Card}" Margin="0,0,0,12"><StackPanel IsEnabled="{Binding CanEdit}">
+    <CheckBox Content="启用语音输入全局快捷键" IsChecked="{Binding Enabled}" Margin="0,0,0,12"/>
+    <TextBlock Text="语音快捷键（点击后按下新组合）" FontWeight="SemiBold"/><TextBox x:Name="VoiceGestureBox" Text="{Binding GestureText,Mode=OneWay}" IsReadOnly="True" PreviewKeyDown="CaptureKey" Margin="0,6,0,10"/>
+    <TextBlock Text="使用 Windows 默认麦克风；录音最长 2 分钟。空闲时不打开麦克风，不加载识别模型。" Style="{StaticResource Subtitle}" TextWrapping="Wrap"/>
+   </StackPanel></Border>
+   <Border Style="{StaticResource Card}" Margin="0,0,0,12"><StackPanel IsEnabled="{Binding CanEdit}">
+    <TextBlock Text="在线语音识别服务（ASR）" Style="{StaticResource SectionTitle}"/><ComboBox x:Name="VoiceProviderBox" ItemsSource="{Binding Providers}" SelectedItem="{Binding Provider}" Margin="0,10,0,12"/>
+    <TextBlock Text="完整识别 API 地址" FontWeight="SemiBold"/><TextBox x:Name="VoiceEndpointBox" Text="{Binding Endpoint,UpdateSourceTrigger=PropertyChanged}" Margin="0,6,0,12"/>
+    <TextBlock Text="语音识别模型（可自定义）" FontWeight="SemiBold"/><ComboBox x:Name="VoiceModelBox" IsEditable="True" ItemsSource="{Binding Models}" Text="{Binding Model,UpdateSourceTrigger=PropertyChanged}" Margin="0,6,0,12"/>
+    <TextBlock Text="识别语言" FontWeight="SemiBold"/><ComboBox ItemsSource="{Binding Languages}" SelectedItem="{Binding Language}" Margin="0,6,0,12"/>
+    <TextBlock Text="复用同平台翻译密钥" FontWeight="SemiBold"/><ComboBox ItemsSource="{Binding KeyProfiles}" SelectedItem="{Binding KeyProfile}" Margin="0,6,0,6"/>
+    <TextBlock Text="仅接口域名和地域一致时可复用；文字翻译模型、AI 发音模型不能代替语音识别模型。" Style="{StaticResource Subtitle}" TextWrapping="Wrap" FontSize="12" Margin="0,0,0,12"/>
+    <TextBlock Text="独立 API Key（已保存时可留空）" FontWeight="SemiBold"/><PasswordBox x:Name="VoiceKeyBox" IsEnabled="{Binding IndependentKey}" PasswordChanged="KeyChanged" Margin="0,6,0,0" Height="38" Padding="10,8"/>
+   </StackPanel></Border>
+   <TextBlock Text="只有主动录音后才会把声音发送给所选识别服务，费用由服务商收取。录音不落盘，识别结果只在本次运行保留；输入位置改变时保留结果供复制。这组设置保存在此电脑，可复用已同步的翻译密钥。切换服务会放弃未保存的修改。" Style="{StaticResource Subtitle}" FontSize="12" TextWrapping="Wrap"/>
+  </StackPanel></ScrollViewer>
+ </DockPanel>
+</Window>

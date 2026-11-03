@@ -12,7 +12,9 @@ if (args.Length == 1 && args[0] == "--online")
     int translation = await OnlineTranslationChecks.RunAsync();
     if (translation != 0) return translation;
     int ocr = await OnlineOcrChecks.RunAsync();
-    return ocr == 0 ? await OnlineSpeechChecks.RunAsync() : ocr;
+    if (ocr != 0) return ocr;
+    int speech = await OnlineSpeechChecks.RunAsync();
+    return speech == 0 ? await OnlineTranscriptionChecks.RunAsync() : speech;
 }
 if (args.Length == 2 && args[1] == "--performance") return await TranslationPerformanceChecks.RunAsync(args[0]);
 if (args.Length == 2 && args[1] is "--gpu-runtime" or "--gpu-inference") return await GpuRuntimeChecks.RunAsync(args[0], args[1] == "--gpu-inference");

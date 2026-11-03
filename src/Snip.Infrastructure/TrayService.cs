@@ -16,6 +16,7 @@ public sealed class TrayService : ITrayService
     public event EventHandler? PinsRequested;
     public event EventHandler? CaptureCancelRequested;
     public event EventHandler? DiagnosticsRequested;
+    public event EventHandler? VoiceSettingsRequested, VoiceResultRequested;
     private bool capturing;
     private HotkeyGesture gesture = HotkeyGesture.Default;
     private readonly ToolStripItem captureItem;
@@ -26,6 +27,8 @@ public sealed class TrayService : ITrayService
         captureItem = menu.Items.Add("开始截图  Ctrl+Alt+A", null, (_, _) => CaptureRequested?.Invoke(this, EventArgs.Empty));
         menu.Items.Add("打开主窗口", null, (_, _) => OpenRequested?.Invoke(this, EventArgs.Empty));
         menu.Items.Add("贴图管理", null, (_, _) => PinsRequested?.Invoke(this, EventArgs.Empty));
+        menu.Items.Add("语音输入设置…", null, (_, _) => VoiceSettingsRequested?.Invoke(this, EventArgs.Empty));
+        menu.Items.Add("查看上次语音识别结果", null, (_, _) => VoiceResultRequested?.Invoke(this, EventArgs.Empty));
         menu.Items.Add("导出诊断包…", null, (_, _) => DiagnosticsRequested?.Invoke(this, EventArgs.Empty));
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("退出", null, (_, _) => ExitRequested?.Invoke(this, EventArgs.Empty));
