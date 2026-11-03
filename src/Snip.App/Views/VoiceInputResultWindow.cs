@@ -6,6 +6,7 @@ namespace Snip.App.Views;
 
 public sealed class VoiceInputResultWindow : Window
 {
+    private readonly CancellationTokenSource lifetime = new();
     public VoiceInputResultWindow(string text)
     {
         Ui.ApplyWindow(this); Title = "自用截图 · 语音识别结果"; Width = 700; Height = 520; MinWidth = 420; MinHeight = 300; WindowStartupLocation = WindowStartupLocation.CenterScreen;
@@ -19,12 +20,14 @@ public sealed class VoiceInputResultWindow : Window
         copy.Click += async (_, _) =>
         {
             copy.IsEnabled = false;
-            try { await new TextClipboardService().CopyAsync(text, default); status.Text = "已复制文字。"; }
+            try { await new TextClipboardService().CopyAsync(text, lifetime.Token); if (!lifetime.IsCancellationRequested) status.Text = "已复制文字。"; }
+            catch (OperationCanceledException) when (lifetime.IsCancellationRequested) { }
             catch { status.Text = "复制未完成，结果保留，请稍后重试。"; }
             finally { copy.IsEnabled = true; }
         };
         buttons.Children.Add(copy); footer.Children.Add(buttons); panel.Children.Add(footer);
         panel.Children.Add(new TextBox { Text = text, IsReadOnly = true, AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Margin = new Thickness(0, 14, 0, 0), FontSize = 17 });
         Content = panel;
+        Closed += (_, _) => lifetime.Cancel();
     }
 }

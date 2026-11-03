@@ -63,8 +63,8 @@ internal static class VoiceInputChecks
             var vm = new VoiceInputSettingsViewModel(store, translations, controller); var settings = new VoiceInputSettingsWindow(vm); settings.Show(); settings.UpdateLayout();
             vm.Endpoint = "https://asr.example.com/v1/audio/transcriptions"; vm.Model = "PUBLIC-ASR"; vm.SetGesture(Gesture);
             ((PasswordBox)settings.FindName("VoiceKeyBox")).Password = Key;
-            ((Button)settings.FindName("SaveVoiceInput")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-            Require(controller.Enabled && store.ReadPreferences().Hotkey == Gesture && store.ReadCredentials().ApiKey == Key && ((PasswordBox)settings.FindName("VoiceKeyBox")).Password.Length == 0, "ASR settings did not register/save or clear key display.");
+            Click((Button)settings.FindName("SaveVoiceInput"));
+            Require(controller.Enabled && store.ReadPreferences().Hotkey == Gesture && store.ReadCredentials().ApiKey == Key && ((PasswordBox)settings.FindName("VoiceKeyBox")).Password.Length == 0, "ASR settings did not register/save or clear key display: " + vm.Status);
             Require(!File.ReadAllText(Path.Combine(folder, "voice-input.json")).Contains(Key), "ASR key is plaintext on disk.");
             Preview(settings, "58-voice-input-settings");
             using (var occupant = new HotkeyService())
