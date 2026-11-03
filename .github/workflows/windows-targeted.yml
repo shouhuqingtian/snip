@@ -85,8 +85,9 @@ jobs:
         if: success()
         shell: python
         run: |
-          import os, base64
+          import os, base64, json
           from pathlib import Path
+          rows=[]
           for name in ['58-voice-input-settings','59-voice-input-result','60-voice-input-recording']:
               path=Path('artifacts/validation/ui-previews')/(name+'.png')
               if not path.exists():
@@ -94,7 +95,28 @@ jobs:
               encoded=base64.b64encode(path.read_bytes()).decode('ascii')
               parts=[encoded[i:i+3000] for i in range(0,len(encoded),3000)]
               for i,part in enumerate(parts):
-                  print(f'::notice title=Voice fixture preview {name} {i+1}/{len(parts)}::{part}')
+                  rows.append(f'::notice title=Voice fixture preview {name} {i+1}/{len(parts)}::{part}')
+          (Path(os.environ['RUNNER_TEMP'])/'public-voice-previews.json').write_text(json.dumps(rows))
+          for row in rows[:10]:
+              print(row)
+      - name: Expose remaining public voice fixture images
+        if: success()
+        shell: python
+        run: |
+          import os, json
+          from pathlib import Path
+          rows=json.loads((Path(os.environ['RUNNER_TEMP'])/'public-voice-previews.json').read_text())
+          for row in rows[10:20]:
+              print(row)
+      - name: Finish exposing public voice fixture images
+        if: success()
+        shell: python
+        run: |
+          import os, json
+          from pathlib import Path
+          rows=json.loads((Path(os.environ['RUNNER_TEMP'])/'public-voice-previews.json').read_text())
+          for row in rows[20:]:
+              print(row)
       - name: Summarize native check for review
         if: always()
         shell: pwsh
