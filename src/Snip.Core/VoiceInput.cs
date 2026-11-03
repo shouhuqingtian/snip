@@ -33,7 +33,7 @@ public interface IMicrophoneRecorder
     Task<RecordedVoice> RecordAsync(CancellationToken stop, CancellationToken cancel, Action started);
 }
 public enum VoiceInputFailure { Unknown, NoMicrophone, DeviceAccess, NoVoice, TooShort, RecorderTimeout, Network, Service }
-public sealed class VoiceInputException(string message, VoiceInputFailure failure = VoiceInputFailure.Unknown, int nativeCode = 0) : InvalidOperationException(message)
+public sealed class VoiceInputException(string message, VoiceInputFailure failure = VoiceInputFailure.Unknown, int nativeCode = 0, Exception? innerException = null) : InvalidOperationException(message, innerException)
 {
     public VoiceInputFailure Failure { get; } = failure;
     public int NativeCode { get; } = nativeCode;

@@ -56,14 +56,28 @@ public static class VoiceTargetWorker
         try
         {
             if (!long.TryParse(input.ReadLine(), out long expected) || GetForegroundWindow().ToInt64() != expected) return 1;
-            var focused = AutomationElement.FocusedElement;
-            if (focused is not null)
+            var window = new IntPtr(expected);
+            bool chromium = BrowserHoverHitTest.IsChromium(window);
+            // Chromium enables its accessibility tree lazily for a new UIA client.
+            // Initialize only this foreground window, then give the focused edit a
+            // bounded chance to appear. Never accept the temporary browser pane as
+            // the original input or enumerate page text.
+            if (chromium) _ = AutomationElement.FromHandle(window);
+            var warmup = Stopwatch.StartNew();
+            do
             {
-                bool password = focused.Current.IsPassword, editable = false;
-                if (focused.TryGetCurrentPattern(ValuePattern.Pattern, out var pattern)) editable = !((ValuePattern)pattern).Current.IsReadOnly;
-                else if (focused.Current.ControlType == ControlType.Edit) editable = true;
-                result = new(editable && focused.Current.IsEnabled && focused.Current.IsKeyboardFocusable, password, focused.Current.ProcessId, focused.GetRuntimeId());
-            }
+                if (GetForegroundWindow().ToInt64() != expected) break;
+                var focused = AutomationElement.FocusedElement;
+                if (focused is not null)
+                {
+                    bool password = focused.Current.IsPassword, editable = false;
+                    if (focused.TryGetCurrentPattern(ValuePattern.Pattern, out var pattern)) editable = !((ValuePattern)pattern).Current.IsReadOnly;
+                    else if (focused.Current.ControlType == ControlType.Edit) editable = true;
+                    result = new(editable && focused.Current.IsEnabled && focused.Current.IsKeyboardFocusable, password, focused.Current.ProcessId, focused.GetRuntimeId());
+                }
+                if (!chromium || result.Editable || result.Password || warmup.ElapsedMilliseconds >= 1000) break;
+                Thread.Sleep(50); // Only this deadline-bound helper thread waits.
+            } while (true);
             if (GetForegroundWindow().ToInt64() != expected) result = new(false, false, 0, []);
         }
         catch (Exception) { result = new(false, false, 0, []); }

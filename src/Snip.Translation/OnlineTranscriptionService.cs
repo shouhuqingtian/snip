@@ -31,7 +31,7 @@ public sealed class OnlineTranscriptionService(TranscriptionCredentials credenti
                 HttpStatusCode.TooManyRequests => "语音识别服务限流或额度不足，请稍后重试。",
                 >= HttpStatusCode.MultipleChoices and < HttpStatusCode.BadRequest => "识别接口返回重定向，请填写最终 HTTPS 地址。",
                 _ => "语音识别服务未完成请求，请检查模型、额度和服务状态。"
-            });
+            }, VoiceInputFailure.Service, (int)response.StatusCode);
             if (response.Content.Headers.ContentLength > 131072) throw new VoiceInputException("识别服务返回内容过长。");
             using var stream = await response.Content.ReadAsStreamAsync(deadline.Token).ConfigureAwait(false); using var output = new MemoryStream();
             byte[] buffer = new byte[4096];
@@ -44,9 +44,9 @@ public sealed class OnlineTranscriptionService(TranscriptionCredentials credenti
             if (!json.RootElement.TryGetProperty("text", out var text) || text.ValueKind != JsonValueKind.String) throw new VoiceInputException("识别服务没有返回 text 字段，请检查接口协议。");
             return VoiceText.ForTyping(text.GetString()!);
         }
-        catch (OperationCanceledException) when (!token.IsCancellationRequested) { throw new VoiceInputException("语音识别超时，请稍后重试。"); }
-        catch (HttpRequestException) { throw new VoiceInputException("无法连接语音识别服务，请检查地址、代理、证书和网络。"); }
-        catch (IOException) { throw new VoiceInputException("语音识别连接中断，请稍后重试。"); }
-        catch (JsonException) { throw new VoiceInputException("识别服务返回格式不受支持，请使用兼容语音转文字接口。"); }
+        catch (OperationCanceledException error) when (!token.IsCancellationRequested) { throw new VoiceInputException("语音识别超时，请稍后重试。", VoiceInputFailure.Network, innerException: error); }
+        catch (HttpRequestException error) { throw new VoiceInputException("无法连接语音识别服务，请检查地址、代理、证书和网络。", VoiceInputFailure.Network, innerException: error); }
+        catch (IOException error) { throw new VoiceInputException("语音识别连接中断，请稍后重试。", VoiceInputFailure.Network, innerException: error); }
+        catch (JsonException error) { throw new VoiceInputException("识别服务返回格式不受支持，请使用兼容语音转文字接口。", VoiceInputFailure.Service, innerException: error); }
     }
 }

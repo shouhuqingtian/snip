@@ -33,7 +33,7 @@ internal static class OnlineTranscriptionChecks
                 int calls = 0;
                 using var client = new HttpClient(new Handler((_, _) => { calls++; return Task.FromResult(new HttpResponseMessage((HttpStatusCode)code) { Content = new StringContent("PRIVATE-KEY PRIVATE-VOICE PRIVATE-RESPONSE") }); }));
                 try { await Service(client).TranscribeAsync(audio, default); throw new Exception("HTTP failure accepted."); }
-                catch (VoiceInputException e) { Require(!e.Message.Contains("PRIVATE") && calls == 1, "Provider data leaked or ASR was retried."); passed++; }
+                catch (VoiceInputException e) { Require(!e.Message.Contains("PRIVATE") && calls == 1 && e.Failure == VoiceInputFailure.Service && e.NativeCode == code, "Provider data leaked, ASR was retried or HTTP diagnostics were lost."); passed++; }
             }
             foreach (string body in new[] { "invalid", "{}", "{\"text\":\"\"}", "{\"text\":4}" })
             {
@@ -46,6 +46,12 @@ internal static class OnlineTranscriptionChecks
             {
                 try { await Service(client).TranscribeAsync(audio, cancel.Token); throw new Exception("ASR cancellation ignored."); }
                 catch (OperationCanceledException) { passed++; }
+            }
+            foreach (Exception failure in new Exception[] { new HttpRequestException("PRIVATE-ENDPOINT"), new IOException("PRIVATE-VOICE") })
+            {
+                using var client = new HttpClient(new Handler((_, _) => Task.FromException<HttpResponseMessage>(failure)));
+                try { await Service(client).TranscribeAsync(audio, default); throw new Exception("ASR connection failure accepted."); }
+                catch (VoiceInputException e) { Require(e.Failure == VoiceInputFailure.Network && ReferenceEquals(e.InnerException, failure) && !e.Message.Contains("PRIVATE"), "Connection diagnostics were lost or displayed private data."); passed++; }
             }
             Console.WriteLine($"{passed} deterministic voice transcription protocol checks passed; synthetic WAV only; no paid service request."); return 0;
         }
