@@ -34,22 +34,23 @@ public sealed class WindowsMicrophoneRecorder : IMicrophoneRecorder
         if (stop.IsCancellationRequested) throw new VoiceInputException("请按住语音快捷键说话，松开后再识别。");
         using var signal = new AutoResetEvent(false); using var pcm = new MemoryStream();
         var buffers = new List<(IntPtr Header, IntPtr Data, bool Prepared)>(); IntPtr device = IntPtr.Zero;
+        var order = new RecordingBufferOrder(5);
         uint size = (uint)Marshal.SizeOf<Header>();
         var format = new Format { Tag = 1, Channels = 1, Samples = 16000, BytesPerSecond = 32000, Align = 2, Bits = 16 };
         void Check(uint code) { if (code != 0) throw new VoiceInputException("无法启用默认麦克风，请检查 Windows 麦克风权限、默认设备及设备占用。", VoiceInputFailure.DeviceAccess, (int)code); }
         void Drain(bool requeue)
         {
-            foreach (var buffer in buffers)
+            order.Drain(index => (Marshal.PtrToStructure<Header>(buffers[index].Header).Flags & 1) != 0, index =>
             {
+                var buffer = buffers[index];
                 var header = Marshal.PtrToStructure<Header>(buffer.Header);
-                if ((header.Flags & 1) == 0) continue;
                 int count = Math.Min(checked((int)header.Recorded), TranscriptionProviders.MaximumRecordingSeconds * 32000 - (int)pcm.Length);
                 if (count > 0)
                 {
                     byte[] bytes = new byte[count]; Marshal.Copy(buffer.Data, bytes, 0, count); pcm.Write(bytes, 0, count); CryptographicOperations.ZeroMemory(bytes);
                 }
                 if (requeue) Check(waveInAddBuffer(device, buffer.Header, size));
-            }
+            });
         }
         try
         {

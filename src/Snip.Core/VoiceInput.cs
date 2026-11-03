@@ -44,6 +44,21 @@ public sealed class RecordedVoice(byte[] wav) : IDisposable
     public void Dispose() => CryptographicOperations.ZeroMemory(Wav);
     public override string ToString() => "Recorded audio (redacted)";
 }
+/// <summary>Preserves queued recording order when completed driver buffers wrap around.</summary>
+public sealed class RecordingBufferOrder
+{
+    private readonly int count;
+    private int next;
+    public RecordingBufferOrder(int count)
+    { if (count is < 1 or > 64) throw new ArgumentOutOfRangeException(nameof(count)); this.count = count; }
+    public void Drain(Func<int, bool> completed, Action<int> consume)
+    {
+        for (int i = 0; i < count && completed(next); i++)
+        {
+            int index = next; consume(index); next = (index + 1) % count;
+        }
+    }
+}
 public static class TranscriptionProviders
 {
     public const int MaximumRecordingSeconds = 120;
