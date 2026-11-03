@@ -89,7 +89,7 @@ public partial class App : Application
             transcriptionSettings = new TranscriptionSettingsStore(new OnlineTranslationSettingsStore());
             voiceInput = new VoiceInputController(transcriptionSettings, Dispatcher, diagnostics);
             voiceInput.CanStart = () => !Windows.Cast<Window>().Any(w => w is VoiceInputSettingsWindow { IsActive: true } or HotkeySettingsWindow { IsActive: true } or PinHotkeySettingsWindow { IsActive: true });
-            voiceInput.ShortcutWhileConfiguring += gesture => { if (voiceInputSettings?.IsActive == true) voiceInputSettings.CaptureRegisteredGesture(gesture); };
+            voiceInput.ShortcutWhileConfiguring += gesture => voiceInputSettings?.TryCaptureRegisteredGesture(gesture);
             accountSync = new AccountSyncService(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SelfSnip"), Dispatcher,
                 () => voiceInput?.IsActive != true && !Windows.Cast<Window>().Any(window => window is OnlineTranslationSettingsWindow or OnlineSpeechSettingsWindow or VoiceInputSettingsWindow or ApplicationSettingsWindow or ConfigurationTransferWindow),
                 features.RefreshAccountConfiguration, diagnostics);
@@ -105,7 +105,7 @@ public partial class App : Application
             tray.CaptureCancelRequested += (_, _) => features.CancelBrowserCapture();
             hotkey.Triggered += (_, _) =>
             {
-                if (voiceInputSettings?.IsActive == true) { voiceInputSettings.CaptureRegisteredGesture(hotkey.Current ?? HotkeyGesture.Default); return; }
+                if (voiceInputSettings?.TryCaptureRegisteredGesture(hotkey.Current ?? HotkeyGesture.Default) == true) return;
                 if (hotkeySettings?.IsActive != true && pinHotkeySettings?.IsActive != true) StartCapture();
             }; tray.CaptureRequested += (_, _) => StartCapture();
             tray.OpenRequested += (_, _) => OpenMain(); tray.ExitRequested += (_, _) => ExitApplication();
@@ -113,11 +113,8 @@ public partial class App : Application
             pinHotkeys = new PinHotkeyService(); pinHotkeyStore = new PinHotkeySettingsStore();
             pinHotkeys.Triggered += (_, action) =>
             {
-                if (voiceInputSettings?.IsActive == true)
-                {
-                    var gesture = action == PinHotkeyAction.Restore ? pinHotkeys.Current.Restore : action == PinHotkeyAction.Previous ? pinHotkeys.Current.Previous : pinHotkeys.Current.Next;
-                    if (gesture is not null) voiceInputSettings.CaptureRegisteredGesture(gesture); return;
-                }
+                var gesture = action == PinHotkeyAction.Restore ? pinHotkeys.Current.Restore : action == PinHotkeyAction.Previous ? pinHotkeys.Current.Previous : pinHotkeys.Current.Next;
+                if (gesture is not null && voiceInputSettings?.TryCaptureRegisteredGesture(gesture) == true) return;
                 if (pinHotkeySettings?.IsActive == true || hotkeySettings?.IsActive == true) return;
                 try { if (action == PinHotkeyAction.Restore) pins.RestoreLast(); else pins.Cycle(action == PinHotkeyAction.Previous ? -1 : 1); }
                 catch (Exception error) { ShowError(error); }

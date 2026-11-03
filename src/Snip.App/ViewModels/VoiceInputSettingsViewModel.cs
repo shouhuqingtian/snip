@@ -19,6 +19,7 @@ public sealed class VoiceInputSettingsViewModel : ObservableObject, IDisposable
         Providers = TranscriptionProviders.Names.Concat(store.ReadProfiles().Select(p => p.Provider)).Distinct().ToArray();
         KeyProfiles = new[] { "不复用" }.Concat(translation.ReadProfiles().Select(p => p.Provider)).ToArray();
         Load(initial?.Provider ?? TranscriptionProviders.Names[0]);
+        if (controller.LastFailure.Length > 0) Status = "上次语音输入未完成：" + controller.LastFailure;
         SaveCommand = new(Save, () => CanEdit); CancelRecordingCommand = new(() => controller.Cancel(), () => controller.IsActive);
         controller.Changed += Changed;
     }
@@ -39,7 +40,10 @@ public sealed class VoiceInputSettingsViewModel : ObservableObject, IDisposable
     public string ModeHint => mode == VoiceInputMode.Toggle ? "按一次 " + gesture.DisplayText + " 开始录音，再按一次结束并识别。" : "按住 " + gesture.DisplayText + " 说话，松开后识别并输入。";
     public string[] Models => TranscriptionProviders.Models(Provider);
     public string Provider { get => provider; set { if (value != provider && CanEdit) Load(value); } }
-    public string Endpoint { get => endpoint; set => Set(ref endpoint, value); }
+    public string Endpoint { get => endpoint; set { if (Set(ref endpoint, value)) Notify(nameof(EndpointHint)); } }
+    public string EndpointHint => Uri.TryCreate(Endpoint, UriKind.Absolute, out var uri) && (uri.Host.Equals("minimaxi.com", StringComparison.OrdinalIgnoreCase) || uri.Host.EndsWith(".minimaxi.com", StringComparison.OrdinalIgnoreCase) || uri.Host.Equals("minimax.io", StringComparison.OrdinalIgnoreCase) || uri.Host.EndsWith(".minimax.io", StringComparison.OrdinalIgnoreCase))
+        ? "这是 MiniMax 地址，本程序尚未适配其专用语音识别协议。请勿根据发音接口猜测识别地址或模型；可以改选已有的识别预设，填写对应平台密钥。"
+        : "自定义仅支持 OpenAI 兼容的语音转文字接口，其他平台的专用接口不能直接使用。服务、地址、模型和密钥须对应同一平台。";
     public string Model { get => model; set => Set(ref model, value); }
     public string Language { get => language; set => Set(ref language, value); }
     public string ApiKey { get => apiKey; set => Set(ref apiKey, value); }
@@ -57,14 +61,14 @@ public sealed class VoiceInputSettingsViewModel : ObservableObject, IDisposable
         provider = name; endpoint = settings.Endpoint; model = settings.Model;
         language = settings.Language == "zh" ? Languages[1] : settings.Language == "en" ? Languages[2] : Languages[0];
         keyProfile = settings.TranslationProfile.Length > 0 ? settings.TranslationProfile : "不复用"; apiKey = "";
-        Notify(nameof(Provider)); Notify(nameof(Endpoint)); Notify(nameof(Model)); Notify(nameof(Language)); Notify(nameof(KeyProfile)); Notify(nameof(ApiKey)); Notify(nameof(IndependentKey)); Notify(nameof(Models));
+        Notify(nameof(Provider)); Notify(nameof(Endpoint)); Notify(nameof(EndpointHint)); Notify(nameof(Model)); Notify(nameof(Language)); Notify(nameof(KeyProfile)); Notify(nameof(ApiKey)); Notify(nameof(IndependentKey)); Notify(nameof(Models));
         SecretsCleared?.Invoke(this, EventArgs.Empty);
         Status = settings.HasApiKey ? "已有加密保存的密钥；留空继续使用。修改接口地址需要重新填写密钥。" : "填写语音识别模型和密钥，或选择同平台的翻译密钥。";
     }
-    public void SetGesture(HotkeyGesture value)
+    public bool SetGesture(HotkeyGesture value)
     {
-        try { value.Validate(); gesture = value; Notify(nameof(GestureText)); Notify(nameof(ModeHint)); Status = "保存后，" + ModeHint; }
-        catch (ArgumentException error) { Status = error.Message; }
+        try { value.Validate(); gesture = value; Notify(nameof(GestureText)); Notify(nameof(ModeHint)); Status = "保存后，" + ModeHint; return true; }
+        catch (ArgumentException error) { Status = error.Message; return false; }
     }
     private void Save()
     {
@@ -78,7 +82,7 @@ public sealed class VoiceInputSettingsViewModel : ObservableObject, IDisposable
     private void Changed(object? sender, EventArgs args)
     {
         Notify(nameof(CanEdit)); Notify(nameof(IndependentKey)); SaveCommand.Refresh(); CancelRecordingCommand.Refresh();
-        if (controller.IsActive) Status = controller.Status;
+        if (controller.IsActive || controller.LastFailure.Length > 0) Status = controller.Status;
     }
     public void Dispose() { controller.Changed -= Changed; ApiKey = ""; }
 }

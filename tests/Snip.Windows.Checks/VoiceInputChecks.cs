@@ -67,6 +67,7 @@ internal static class VoiceInputChecks
             Require(controller.Enabled && store.ReadPreferences().Hotkey == Gesture && store.ReadCredentials().ApiKey == Key && ((PasswordBox)settings.FindName("VoiceKeyBox")).Password.Length == 0, "ASR settings did not register/save or clear key display: " + vm.Status);
             Require(!File.ReadAllText(Path.Combine(folder, "voice-input.json")).Contains(Key), "ASR key is plaintext on disk.");
             Preview(settings, "58-voice-input-settings");
+            CheckSettingsHotkeys(settings, vm, controller, store, recorder);
             using (var occupant = new HotkeyService())
             {
                 Require(occupant.Register(HotkeyGesture.Default), "Public screenshot conflict fixture could not register.");
@@ -106,6 +107,13 @@ internal static class VoiceInputChecks
             Require(input.Text == "prefix中文 English 🙂 下一句suffix" && Clipboard.GetText() == "PUBLIC-CLIPBOARD-SENTINEL" && !controller.ReviewNeeded, "Native Unicode input differs, moved caret, touched clipboard or required manual paste.");
             Require(recorder.LastWave!.All(b => b == 0), "Completed recording bytes were retained.");
             Console.WriteLine("PASS native hold-to-record/release-to-recognize inserts mixed Chinese/English/emoji at the original WPF caret, keeps clipboard intact and clears audio bytes.");
+
+            input.Text = "prefixsuffix"; Focus(input); Start(); Release(); Wait(() => recognizer.Pending);
+            const string failureMessage = "语音识别失败（HTTP 400）：请求格式或参数不被接受，请核对 OpenAI 兼容接口。";
+            recognizer.Result.SetException(new VoiceInputException(failureMessage, VoiceInputFailure.Service, 400)); Wait(() => !controller.IsActive);
+            using (var failureVm = new VoiceInputSettingsViewModel(store, translations, controller))
+                Require(failureVm.Status.Contains("HTTP 400") && controller.LastFailure == failureMessage && input.Text == "prefixsuffix", "Service failure was lost when reopening settings or typed into the input.");
+            Console.WriteLine("PASS ASR service failure preserves its safe HTTP explanation when reopening settings and never inserts failure text into the original field.");
 
             input.Text = "prefixsuffix"; Focus(input); Start(); Release(); Wait(() => recognizer.Pending);
             Click(other); recognizer.Result.SetResult("PUBLIC-DO-NOT-INSERT"); Wait(() => !controller.IsActive);
@@ -168,7 +176,7 @@ internal static class VoiceInputChecks
             controller.Dispose(); controller = null;
             journal.FlushAsync().GetAwaiter().GetResult(); string logs = File.ReadAllText(Path.Combine(folder, "logs/events.jsonl"));
             Require(!logs.Contains(Key) && !logs.Contains("PUBLIC-SHARED-KEY") && !logs.Contains("PUBLIC-DO-NOT-INSERT") && !logs.Contains("PUBLIC-TOGGLE-REVIEW") && !logs.Contains("asr.example.com"), "Voice content, endpoint or credentials entered diagnostics.");
-            File.WriteAllText("artifacts/validation/voice-input.json", JsonSerializer.Serialize(new { NativeHotkeyHoldRelease = true, ProtectedSettings = true, CredentialReuseChecked = true, ConflictPreservesShortcut = true, NativeCaretInsertion = true, ClipboardUnchanged = true, FocusChangeNoInjection = true, CancellationNoUpload = true, PasswordNoUpload = true, ReadOnlyPreserved = true, AudioCleared = true, ChromeTextareaInput = true, ChromeContentEditableInput = true, IsolatedRecorderPipe = true, WorkerReaped = true, ParentExitKillsWorker = true, DiagnosticsPrivate = true, TogglePressTwice = true, ToggleReleaseKeepsRecording = true, RecordingModePersists = true, ToggleCancelNoUpload = true, ToggleFocusChangeNoInjection = true }));
+            File.WriteAllText("artifacts/validation/voice-input.json", JsonSerializer.Serialize(new { NativeHotkeyHoldRelease = true, ProtectedSettings = true, CredentialReuseChecked = true, ConflictPreservesShortcut = true, NativeCaretInsertion = true, ClipboardUnchanged = true, FocusChangeNoInjection = true, CancellationNoUpload = true, PasswordNoUpload = true, ReadOnlyPreserved = true, AudioCleared = true, ChromeTextareaInput = true, ChromeContentEditableInput = true, IsolatedRecorderPipe = true, WorkerReaped = true, ParentExitKillsWorker = true, DiagnosticsPrivate = true, TogglePressTwice = true, ToggleReleaseKeepsRecording = true, RecordingModePersists = true, ToggleCancelNoUpload = true, ToggleFocusChangeNoInjection = true, SettingsScreenshotAvailable = true, ShortcutCaptureRequiresClick = true, ShortcutCaptureEndsAfterOne = true, ShortcutCaptureCancelsOnBlur = true, ShortcutDraftNotApplied = true, ServiceFailureVisibleInSettings = true }));
             return 0;
         }
         catch (Exception error)
@@ -178,6 +186,50 @@ internal static class VoiceInputChecks
             Console.Error.WriteLine(error); return 1;
         }
         finally { Keys(true, 0x20, 0x12, 0x11); controller?.Dispose(); status?.Close(); foreach (var w in app.Windows.Cast<Window>().ToArray()) w.Close(); Directory.Delete(folder, true); SynchronizationContext.SetSynchronizationContext(previous); }
+    }
+    private static void CheckSettingsHotkeys(VoiceInputSettingsWindow settings, VoiceInputSettingsViewModel vm, VoiceInputController controller, TranscriptionSettingsStore store, FakeRecorder recorder)
+    {
+        var desktop = new DesktopCaptureService(); var renderer = new AnnotationRenderer(); var export = new ImageExportService();
+        using var pins = new PinManager(export);
+        using var coordinator = new CaptureCoordinator(desktop, renderer, export, new FeatureHub(renderer, export, desktop, pins));
+        using var screenshot = new HotkeyService();
+        Require(screenshot.Register(HotkeyGesture.Default), "Settings screenshot fixture could not register.");
+        Task? capture = null; int captures = 0, recordings = recorder.Calls;
+        void OnCapture(object? sender, EventArgs args)
+        { if (settings.TryCaptureRegisteredGesture(HotkeyGesture.Default)) return; captures++; capture = coordinator.CaptureAsync(); }
+        void OnVoice(HotkeyGesture gesture) => settings.TryCaptureRegisteredGesture(gesture);
+        var canStart = controller.CanStart; controller.CanStart = () => !settings.IsActive;
+        screenshot.Triggered += OnCapture; controller.ShortcutWhileConfiguring += OnVoice;
+        var box = (TextBox)settings.FindName("VoiceGestureBox"); var endpoint = (TextBox)settings.FindName("VoiceEndpointBox");
+        try
+        {
+            settings.Activate(); endpoint.Focus(); Pause();
+            Require(!settings.IsCapturingGesture, "Opening voice settings armed shortcut capture.");
+            HotkeyChecks.Press(0x12, 0x57); HotkeyChecks.Press(0x11, 0x12, 0x20); Pause();
+            Require(vm.GestureText == Gesture.DisplayText && recorder.Calls == recordings, "Ordinary settings keys changed the shortcut or started recording.");
+            HotkeyChecks.Press(0x11, 0x12, 0x41);
+            Wait(() => Application.Current.Windows.OfType<SelectionWindow>().Any(w => w.IsActive));
+            HotkeyChecks.Press(0x0D); Wait(() => capture?.IsCompleted == true); capture!.GetAwaiter().GetResult();
+            Require(captures == 1 && Clipboard.ContainsImage() && vm.GestureText == Gesture.DisplayText && settings.IsVisible && !settings.IsCapturingGesture, "Screenshot shortcut was swallowed, changed voice shortcut or failed to copy the settings window.");
+            Console.WriteLine("PASS native screenshot shortcut opens the real selection coordinator and Enter copies while voice settings are open; ordinary keys and the voice shortcut do not change the draft.");
+
+            settings.Activate(); Click((Button)settings.FindName("ChangeVoiceGesture")); Require(settings.IsCapturingGesture, "Explicit shortcut edit button did not arm capture.");
+            HotkeyChecks.Press(0x11, 0x10, 0x77); Wait(() => vm.GestureText == "Ctrl+Shift+F8");
+            Require(!settings.IsCapturingGesture && store.ReadPreferences().Hotkey == Gesture && controller.Shortcut == Gesture.DisplayText, "One-shot shortcut edit applied an unsaved draft or stayed armed.");
+            HotkeyChecks.Press(0x12, 0x57); Pause(); Require(vm.GestureText == "Ctrl+Shift+F8", "Later keys replaced a completed shortcut draft.");
+            Click(box); Require(settings.IsCapturingGesture, "Clicking the shortcut box did not arm capture.");
+            HotkeyChecks.Press(0x11, 0x12, 0x41); Wait(() => vm.GestureText == HotkeyGesture.Default.DisplayText);
+            Require(!settings.IsCapturingGesture && captures == 1, "Registered screenshot shortcut was not captured exactly once while explicitly editing.");
+            Click(box); HotkeyChecks.Press(0x1B); Pause(); Require(!settings.IsCapturingGesture && settings.IsVisible, "Esc did not cancel shortcut editing without closing settings.");
+            Click(box); Click(endpoint); HotkeyChecks.Press(0x12, 0x57); Pause();
+            Require(!settings.IsCapturingGesture && vm.GestureText == HotkeyGesture.Default.DisplayText && store.ReadPreferences().Hotkey == Gesture, "Clicking another field did not cancel editing or changed saved settings.");
+            Console.WriteLine("PASS explicit native click is required for one-shot shortcut editing; registered keys are captured only while editing; Esc/blur cancel and unsaved drafts leave the working registration intact.");
+        }
+        finally
+        {
+            screenshot.Triggered -= OnCapture; controller.ShortcutWhileConfiguring -= OnVoice; controller.CanStart = canStart;
+            vm.SetGesture(Gesture);
+        }
     }
     private static ProcessStartInfo AppHost() => new(Path.Combine(AppContext.BaseDirectory, "Snip.exe"));
     private static void CheckChrome(VoiceInputController controller, FakeRecorder recorder, FakeTranscriber recognizer, string folder)

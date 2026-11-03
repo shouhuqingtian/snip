@@ -28,12 +28,32 @@ internal static class OnlineTranscriptionChecks
                 string text = await new OnlineTranscriptionService(new(new("PUBLIC", "https://public.example.com/v1/audio/transcriptions", "PUBLIC-ASR", language), "PUBLIC-KEY"), client).TranscribeAsync(audio, default);
                 Require(text == "中文 English 下一句" && calls == 1, "ASR result sanitization or request count differs."); passed++;
             }
-            foreach (int code in new[] { 302, 400, 401, 403, 404, 429, 503 })
+            foreach (string provider in TranscriptionProviders.Names.Where(n => n != "自定义（兼容接口）"))
+            {
+                var settings = TranscriptionProviders.Defaults(provider);
+                using var client = new HttpClient(new Handler(async (request, token) =>
+                {
+                    Require(request.RequestUri!.AbsoluteUri == settings.Endpoint && request.Headers.Authorization?.Parameter == "PUBLIC-PRESET-KEY", "Preset ASR target/auth differs.");
+                    Require(request.Content is MultipartFormDataContent, "Preset ASR did not use the compatible upload protocol.");
+                    var parts = ((MultipartFormDataContent)request.Content!).ToArray();
+                    Require(await parts.Single(p => p.Headers.ContentDisposition!.Name!.Trim('"') == "model").ReadAsStringAsync(token) == settings.Model, "Preset ASR did not upload its recognition model.");
+                    Require((await parts.Single(p => p.Headers.ContentDisposition!.Name!.Trim('"') == "file").ReadAsByteArrayAsync(token)).SequenceEqual(audio.Wav), "Preset ASR changed its WAV upload.");
+                    return new(HttpStatusCode.OK) { Content = new StringContent("{\"text\":\"PUBLIC PRESET RESULT\"}") };
+                }));
+                Require(await new OnlineTranscriptionService(new(settings, "PUBLIC-PRESET-KEY"), client).TranscribeAsync(audio, default) == "PUBLIC PRESET RESULT", "Preset ASR response differs."); passed++;
+            }
+            foreach (int code in new[] { 302, 400, 401, 403, 404, 405, 415, 422, 429, 503 })
             {
                 int calls = 0;
                 using var client = new HttpClient(new Handler((_, _) => { calls++; return Task.FromResult(new HttpResponseMessage((HttpStatusCode)code) { Content = new StringContent("PRIVATE-KEY PRIVATE-VOICE PRIVATE-RESPONSE") }); }));
                 try { await Service(client).TranscribeAsync(audio, default); throw new Exception("HTTP failure accepted."); }
-                catch (VoiceInputException e) { Require(!e.Message.Contains("PRIVATE") && calls == 1 && e.Failure == VoiceInputFailure.Service && e.NativeCode == code, "Provider data leaked, ASR was retried or HTTP diagnostics were lost."); passed++; }
+                catch (VoiceInputException e)
+                {
+                    Require(!e.Message.Contains("PRIVATE") && calls == 1 && e.Failure == VoiceInputFailure.Service && e.NativeCode == code && e.Message.Contains($"HTTP {code}"), "Provider data leaked, ASR was retried or HTTP diagnostics were lost.");
+                    if (code is 400 or 405 or 415 or 422) Require(e.Message.Contains("OpenAI") && e.Message.Contains("接口"), "Incompatible ASR endpoint failure did not explain the required protocol.");
+                    if (code == 503) Require(e.Message.Contains("服务暂时异常"), "Server failure was reported as a key/model error.");
+                    passed++;
+                }
             }
             foreach (string body in new[] { "invalid", "{}", "{\"text\":\"\"}", "{\"text\":4}" })
             {

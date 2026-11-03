@@ -68,6 +68,11 @@ public sealed class VoiceInputTests
     public void RecognitionHasSeparateEditableProvidersAndNoImplicitTextModel()
     {
         foreach (string name in TranscriptionProviders.Names.Where(n => n != "自定义（兼容接口）")) TranscriptionProviders.Validate(TranscriptionProviders.Defaults(name));
+        Assert.Equal("https://api.groq.com/openai/v1/audio/transcriptions", TranscriptionProviders.Defaults("Groq").Endpoint);
+        Assert.Equal(["whisper-large-v3-turbo", "whisper-large-v3"], TranscriptionProviders.Models("Groq"));
+        Assert.Equal("whisper-v3", TranscriptionProviders.Defaults("Fireworks").Model);
+        foreach (string name in TranscriptionProviders.Names.Where(n => n != "自定义（兼容接口）"))
+            Assert.Contains(TranscriptionProviders.Defaults(name).Model, TranscriptionProviders.Models(name));
         Assert.Throws<ArgumentException>(() => TranscriptionProviders.Validate(new("public", "http://example.com/", "model")));
         Assert.Throws<ArgumentException>(() => TranscriptionProviders.Validate(new("public", "https://key:private@example.com/", "model")));
         Assert.Throws<ArgumentException>(() => TranscriptionProviders.Validate(new("public", "https://example.com/asr", "model", "PRIVATE")));

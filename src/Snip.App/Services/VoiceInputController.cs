@@ -47,6 +47,7 @@ public sealed class VoiceInputController : IDisposable
     public string RecordingEndHint => Mode == VoiceInputMode.Toggle ? "再按快捷键结束" : "松开结束";
     public string UsageHint => Mode == VoiceInputMode.Toggle ? "按一次 " + Shortcut + " 开始录音，再按一次结束并识别。" : "按住 " + Shortcut + " 说话，松开后识别并输入。";
     public string Status { get; private set; } = "按所选方式录音，结束后识别并输入。";
+    public string LastFailure { get; private set; } = "";
     public string LastText { get; private set; } = "";
     public bool ReviewNeeded { get; private set; }
     public bool SuppressNotification { get; private set; }
@@ -73,7 +74,7 @@ public sealed class VoiceInputController : IDisposable
             }
             store.Save(settings, key, next, removeKey);
             if (!next.Enabled || candidate is not null) { if (hotkey is not null) { hotkey.Triggered -= Triggered; hotkey.Dispose(); } hotkey = candidate; candidate = null; if (hotkey is not null) hotkey.Triggered += Triggered; }
-            preferences = next; Publish(next.Enabled ? "已保存，" + UsageHint : "已保存，语音输入已停用。", VoiceInputState.Idle);
+            preferences = next; LastFailure = ""; Publish(next.Enabled ? "已保存，" + UsageHint : "已保存，语音输入已停用。", VoiceInputState.Idle);
         }
         finally { candidate?.Dispose(); }
     }
@@ -86,7 +87,7 @@ public sealed class VoiceInputController : IDisposable
     public async Task BeginAsync()
     {
         dispatcher.VerifyAccess(); if (disposed || IsActive || !Enabled || !CanStart()) return;
-        long current = ++generation; SuppressNotification = false; ReviewNeeded = false; RecordingStartedUtc = null;
+        long current = ++generation; SuppressNotification = false; ReviewNeeded = false; RecordingStartedUtc = null; LastFailure = "";
         using var request = new CancellationTokenSource(); using var released = new CancellationTokenSource(); active = request; stop = released;
         IVoiceInputTarget? target = null;
         string completion = "语音输入已停止。";
@@ -151,6 +152,7 @@ public sealed class VoiceInputController : IDisposable
         {
             diagnostics?.Record("voice-input", "failed", new { Stage = State.ToString(), Failure = (error as VoiceInputException)?.Failure.ToString(), NativeCode = (error as VoiceInputException)?.NativeCode }, error: error);
             completion = error is VoiceInputException or ArgumentException ? error.Message : "语音输入未完成，请检查麦克风和识别服务设置。";
+            LastFailure = completion;
         }
         finally
         {

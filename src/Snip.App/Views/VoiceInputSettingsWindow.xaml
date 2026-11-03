@@ -7,13 +7,16 @@
    <Border Style="{StaticResource Card}" Margin="0,0,0,12"><StackPanel IsEnabled="{Binding CanEdit}">
     <CheckBox Content="启用语音输入全局快捷键" IsChecked="{Binding Enabled}" Margin="0,0,0,12"/>
     <TextBlock Text="录音操作方式" FontWeight="SemiBold"/><ComboBox x:Name="VoiceModeBox" ItemsSource="{Binding InputModes}" SelectedIndex="{Binding ModeIndex}" Margin="0,6,0,10"/>
-    <TextBlock Text="语音快捷键（点击后按下新组合）" FontWeight="SemiBold"/><TextBox x:Name="VoiceGestureBox" Text="{Binding GestureText,Mode=OneWay}" IsReadOnly="True" PreviewKeyDown="CaptureKey" Margin="0,6,0,10"/>
+    <TextBlock Text="语音快捷键" FontWeight="SemiBold"/>
+    <DockPanel Margin="0,6,0,6"><Button x:Name="ChangeVoiceGesture" DockPanel.Dock="Right" Content="修改快捷键" Click="ChangeGestureClick" Margin="8,0,0,0"/><TextBox x:Name="VoiceGestureBox" Text="{Binding GestureText,Mode=OneWay}" IsReadOnly="True" IsTabStop="False" PreviewMouseLeftButtonDown="BeginGestureCapture" PreviewKeyDown="CaptureKey"/></DockPanel>
+    <TextBlock x:Name="GestureCaptureHint" Text="点击修改后才录入快捷键；保存后生效。" Style="{StaticResource Subtitle}" FontSize="12" TextWrapping="Wrap" Margin="0,0,0,10"/>
     <TextBlock Text="{Binding ModeHint}" Style="{StaticResource Subtitle}" TextWrapping="Wrap" Margin="0,0,0,10"/>
     <TextBlock Text="使用 Windows 默认麦克风；录音最长 2 分钟。空闲时不打开麦克风，不加载识别模型。" Style="{StaticResource Subtitle}" TextWrapping="Wrap"/>
    </StackPanel></Border>
    <Border Style="{StaticResource Card}" Margin="0,0,0,12"><StackPanel IsEnabled="{Binding CanEdit}">
     <TextBlock Text="在线语音识别服务（ASR）" Style="{StaticResource SectionTitle}"/><ComboBox x:Name="VoiceProviderBox" ItemsSource="{Binding Providers}" SelectedItem="{Binding Provider}" Margin="0,10,0,12"/>
     <TextBlock Text="完整识别 API 地址" FontWeight="SemiBold"/><TextBox x:Name="VoiceEndpointBox" Text="{Binding Endpoint,UpdateSourceTrigger=PropertyChanged}" Margin="0,6,0,12"/>
+    <TextBlock Text="{Binding EndpointHint}" Style="{StaticResource Subtitle}" FontSize="12" TextWrapping="Wrap" Margin="0,0,0,12"/>
     <TextBlock Text="语音识别模型（可自定义）" FontWeight="SemiBold"/><ComboBox x:Name="VoiceModelBox" IsEditable="True" ItemsSource="{Binding Models}" Text="{Binding Model,UpdateSourceTrigger=PropertyChanged}" Margin="0,6,0,12"/>
     <TextBlock Text="识别语言" FontWeight="SemiBold"/><ComboBox ItemsSource="{Binding Languages}" SelectedItem="{Binding Language}" Margin="0,6,0,12"/>
     <TextBlock Text="复用同平台翻译密钥" FontWeight="SemiBold"/><ComboBox ItemsSource="{Binding KeyProfiles}" SelectedItem="{Binding KeyProfile}" Margin="0,6,0,6"/>

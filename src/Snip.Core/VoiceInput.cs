@@ -68,17 +68,21 @@ public sealed class RecordingBufferOrder
 public static class TranscriptionProviders
 {
     public const int MaximumRecordingSeconds = 120;
-    public static readonly string[] Names = ["硅基流动", "OpenAI", "自定义（兼容接口）"];
+    public static readonly string[] Names = ["硅基流动", "OpenAI", "Groq", "Fireworks", "自定义（兼容接口）"];
     public static TranscriptionSettings Defaults(string provider) => provider switch
     {
         "硅基流动" => new(provider, "https://api.siliconflow.cn/v1/audio/transcriptions", "FunAudioLLM/SenseVoiceSmall"),
         "OpenAI" => new(provider, "https://api.openai.com/v1/audio/transcriptions", "gpt-4o-mini-transcribe"),
+        "Groq" => new(provider, "https://api.groq.com/openai/v1/audio/transcriptions", "whisper-large-v3-turbo"),
+        "Fireworks" => new(provider, "https://audio-prod.us-virginia-1.direct.fireworks.ai/v1/audio/transcriptions", "whisper-v3"),
         _ => new(provider, "", "")
     };
     public static string[] Models(string provider) => provider switch
     {
         "硅基流动" => ["FunAudioLLM/SenseVoiceSmall"],
         "OpenAI" => ["gpt-4o-mini-transcribe", "gpt-4o-transcribe", "whisper-1"],
+        "Groq" => ["whisper-large-v3-turbo", "whisper-large-v3"],
+        "Fireworks" => ["whisper-v3"],
         _ => []
     };
     public static void Validate(TranscriptionSettings settings)
