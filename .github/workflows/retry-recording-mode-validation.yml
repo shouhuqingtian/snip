@@ -1,0 +1,16 @@
+name: Retry the interrupted recording-mode delivery check
+on:
+  push:
+    branches: [voice-recording-mode]
+    paths: ['.github/workflows/retry-recording-mode-validation.yml']
+permissions:
+  actions: write
+jobs:
+  retry:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Rerun failed jobs on the unchanged release commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh run rerun 41596448112 --failed --repo "$GITHUB_REPOSITORY"
