@@ -19,6 +19,7 @@ namespace Snip.Windows.Checks;
 internal static class SelfCaptureChecks
 {
     [DllImport("user32.dll")] private static extern bool SetPhysicalCursorPos(int x, int y);
+    [DllImport("user32.dll", SetLastError = true)] private static extern bool SetWindowPos(IntPtr window, IntPtr after, int x, int y, int width, int height, uint flags);
 
     internal static void Verify(HotkeyService hotkey)
     {
@@ -30,7 +31,8 @@ internal static class SelfCaptureChecks
         using var pins = new PinManager(export);
         using var coordinator = new CaptureCoordinator(desktop, renderer, export, new FeatureHub(renderer, export, desktop, pins));
         var main = new MainWindow { AllowClose = true, WindowStartupLocation = WindowStartupLocation.Manual, Left = 40, Top = 20 };
-        var result = new Window { Style = null, WindowStyle = WindowStyle.None, ResizeMode = ResizeMode.NoResize, Left = 720, Top = 100, Width = 240, Height = 180, Background = Brushes.OrangeRed };
+        var result = new Window { Style = null, WindowStyle = WindowStyle.None, ResizeMode = ResizeMode.NoResize, Left = 720, Top = 100, Width = 240, Height = 180, Background = Brushes.OrangeRed,
+            Content = new Border { Background = Brushes.OrangeRed } };
         var pin = new PinWindow(GreenImage(), export) { Left = 720, Top = 340 };
         Task? active = null;
         Exception? commandError = null;
@@ -43,14 +45,16 @@ internal static class SelfCaptureChecks
             // Show() can leave a same-process fixture behind the runner console
             // under foreground-lock rules. Raise it, then restore the launcher;
             // the capture must still run while the launcher owns foreground.
-            target.Activate(); main.Activate(); Move(target.PointToScreen(new Point(100, 90)));
+            target.Activate(); main.Activate();
+            Require(SetWindowPos(new WindowInteropHelper(target).Handle, IntPtr.Zero, 0, 0, 0, 0, 0x13), "Could not expose public fixture without changing focus.");
+            Move(target.PointToScreen(new Point(100, 90)));
             if (ReferenceEquals(target, result))
             {
                 // A non-active WPF fixture can be visible before its surface is
                 // presented. Establish the source pixels before judging capture.
-                try { Wait(() => ResultCenter() is [0, 69, 255, _]); }
+                try { Wait(() => ResultExposed() && ResultCenter() is [0, 69, 255, _]); }
                 catch (TimeoutException)
-                { throw new InvalidOperationException("Public result fixture was not presented before capture. BGRA=" + string.Join(",", ResultCenter()) + "; result=" + Bounds(result) + "; main=" + Bounds(main)); }
+                { throw new InvalidOperationException("Public result fixture was not presented before capture. Exposed=" + ResultExposed() + "; BGRA=" + string.Join(",", ResultCenter()) + "; result=" + Bounds(result) + "; main=" + Bounds(main)); }
             }
             HotkeyChecks.Press(0x11, 0x12, 0x41); WaitOverlay();
             Require(main.IsVisible && result.IsVisible && pin.IsVisible, "Hotkey hid one of the application's visible windows.");
@@ -60,6 +64,11 @@ internal static class SelfCaptureChecks
             var bounds = Bounds(result); var center = new PixelRect(Math.Floor(bounds.X + bounds.Width / 2), Math.Floor(bounds.Y + bounds.Height / 2), 1, 1);
             var image = new FormatConvertedBitmap(new DesktopCaptureService().CaptureRegion(center), PixelFormats.Bgra32, null, 0);
             byte[] color = new byte[4]; image.CopyPixels(color, 4, 0); return color;
+        }
+        bool ResultExposed()
+        {
+            var bounds = Bounds(result);
+            return DesktopWindows.AtPhysicalPoint(new(bounds.X + bounds.Width / 2, bounds.Y + bounds.Height / 2))?.Handle == new WindowInteropHelper(result).Handle;
         }
         PixelRect Bounds(Window target)
         {
