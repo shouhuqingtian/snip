@@ -81,6 +81,20 @@ jobs:
               exit $checkExit
             }
           }
+      - name: Expose public voice fixture images for visual review
+        if: success()
+        shell: python
+        run: |
+          import os, base64
+          from pathlib import Path
+          for name in ['58-voice-input-settings','59-voice-input-result','60-voice-input-recording']:
+              path=Path('artifacts/validation/ui-previews')/(name+'.png')
+              if not path.exists():
+                  continue
+              encoded=base64.b64encode(path.read_bytes()).decode('ascii')
+              parts=[encoded[i:i+12000] for i in range(0,len(encoded),12000)]
+              for i,part in enumerate(parts):
+                  print(f'::notice title=Voice fixture preview {name} {i+1}/{len(parts)}::{part}')
       - name: Summarize native check for review
         if: always()
         shell: pwsh

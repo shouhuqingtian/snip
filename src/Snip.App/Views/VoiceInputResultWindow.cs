@@ -26,7 +26,7 @@ public sealed class VoiceInputResultWindow : Window
             finally { copy.IsEnabled = true; }
         };
         buttons.Children.Add(copy); footer.Children.Add(buttons); panel.Children.Add(footer);
-        panel.Children.Add(new TextBox { Text = text, IsReadOnly = true, AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Margin = new Thickness(0, 14, 0, 0), FontSize = 17 });
+        panel.Children.Add(new TextBox { Text = text, IsReadOnly = true, AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, VerticalContentAlignment = VerticalAlignment.Top, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Margin = new Thickness(0, 14, 0, 0), FontSize = 17 });
         Content = panel;
         Closed += (_, _) => lifetime.Cancel();
     }

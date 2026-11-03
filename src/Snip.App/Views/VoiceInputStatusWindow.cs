@@ -27,7 +27,8 @@ public sealed class VoiceInputStatusWindow : Window
         Width = 430; Height = 112; WindowStyle = WindowStyle.None; ResizeMode = ResizeMode.NoResize; ShowInTaskbar = false; ShowActivated = false; Focusable = false; Topmost = true;
         AllowsTransparency = true; Background = Brushes.Transparent;
         var content = new DockPanel { Margin = new Thickness(14) };
-        var cancel = new Button { Content = "×", Width = 28, Height = 28, FontSize = 19, Margin = new Thickness(8, 0, 0, 0), ToolTip = "取消 / 关闭提示", VerticalAlignment = VerticalAlignment.Top };
+        var cancel = new Button { Content = "×", Width = 28, Height = 28, MinHeight = 28, Padding = new Thickness(0), Foreground = Brushes.White, FontSize = 19, Margin = new Thickness(8, 0, 0, 0), ToolTip = "取消 / 关闭提示", VerticalAlignment = VerticalAlignment.Top };
+        Ui.Style(cancel, "QuietButton");
         cancel.Click += (_, _) => { controller.Cancel(true); Close(); }; DockPanel.SetDock(cancel, Dock.Right); content.Children.Add(cancel);
         var text = new StackPanel(); text.Children.Add(message); text.Children.Add(timerText);
         review = new Button { Content = "查看 / 复制识别结果", HorizontalAlignment = HorizontalAlignment.Left, Padding = new Thickness(8, 3, 8, 3), Margin = new Thickness(0, 5, 0, 0), Visibility = Visibility.Collapsed };

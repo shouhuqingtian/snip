@@ -200,9 +200,20 @@ internal static class VoiceInputChecks
     private static void Preview(Window window, string name, bool show = false)
     {
         if (show) window.Show(); window.UpdateLayout(); var content = (FrameworkElement)window.Content;
-        var image = new RenderTargetBitmap((int)Math.Ceiling(content.ActualWidth), (int)Math.Ceiling(content.ActualHeight), 96, 96, System.Windows.Media.PixelFormats.Pbgra32); image.Render(content);
+        var margin = content.Margin; double width = content.ActualWidth + margin.Left + margin.Right, height = content.ActualHeight + margin.Top + margin.Bottom;
+        var drawing = new System.Windows.Media.DrawingVisual();
+        using (var dc = drawing.RenderOpen())
+        {
+            dc.DrawRectangle(window.Background, null, new Rect(0, 0, width, height));
+            var offset = System.Windows.Media.VisualTreeHelper.GetOffset(content);
+            var brush = new System.Windows.Media.VisualBrush(content) { ViewboxUnits = System.Windows.Media.BrushMappingMode.Absolute, Viewbox = new Rect(offset.X, offset.Y, content.ActualWidth, content.ActualHeight), Stretch = System.Windows.Media.Stretch.Fill };
+            dc.DrawRectangle(brush, null, new Rect(margin.Left, margin.Top, content.ActualWidth, content.ActualHeight));
+        }
+        var image = new RenderTargetBitmap((int)Math.Ceiling(width), (int)Math.Ceiling(height), 96, 96, System.Windows.Media.PixelFormats.Pbgra32); image.Render(drawing);
         Directory.CreateDirectory("artifacts/validation/ui-previews"); var encoder = new PngBitmapEncoder(); encoder.Frames.Add(BitmapFrame.Create(image));
-        using var file = File.Create("artifacts/validation/ui-previews/" + name + ".png"); encoder.Save(file); if (show) window.Close();
+        string path = "artifacts/validation/ui-previews/" + name + ".png";
+        using (var file = File.Create(path)) encoder.Save(file);
+        if (show) window.Close();
     }
     private static void Require(bool condition, string message) { if (!condition) throw new InvalidOperationException(message); }
     private sealed class FakeRecorder : IMicrophoneRecorder
