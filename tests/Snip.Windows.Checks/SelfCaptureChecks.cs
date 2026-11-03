@@ -39,7 +39,11 @@ internal static class SelfCaptureChecks
         void WaitOverlay() => Wait(() => app.Windows.OfType<SelectionWindow>().Any(w => w.IsActive));
         void Start(Window target)
         {
-            active = null; main.Activate(); Move(target.PointToScreen(new Point(100, 90)));
+            active = null;
+            // Show() can leave a same-process fixture behind the runner console
+            // under foreground-lock rules. Raise it, then restore the launcher;
+            // the capture must still run while the launcher owns foreground.
+            target.Activate(); main.Activate(); Move(target.PointToScreen(new Point(100, 90)));
             if (ReferenceEquals(target, result))
             {
                 // A non-active WPF fixture can be visible before its surface is
