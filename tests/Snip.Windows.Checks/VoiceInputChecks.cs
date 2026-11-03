@@ -80,12 +80,13 @@ internal static class VoiceInputChecks
             settings.Close(); controller.Dispose();
             controller = new(store, app.Dispatcher, journal, recorder, new VoiceTargetProbe(AppHost), _ => recognizer); controller.Initialize();
             Require(controller.Enabled && store.ReadCredentials().ApiKey == "PUBLIC-SHARED-KEY", "Protected voice settings did not survive restart.");
-            controller.Changed += (_, _) =>
+            void ObserveVoice(object? sender, EventArgs args)
             {
                 if (controller.SuppressNotification) { status?.Close(); return; }
                 if (status is null) { status = new(controller, () => { }); var window = status; status.Closed += (_, _) => { if (ReferenceEquals(status, window)) status = null; }; status.Show(); }
                 else status.UpdateStatus();
-            };
+            }
+            controller.Changed += ObserveVoice;
             Console.WriteLine("PASS actual ASR settings XAML, DPAPI keys, same-platform reuse, cross-host rejection, restart and native hotkey conflict preservation.");
 
             void Focus(TextBox box) { owner.Activate(); box.Focus(); box.SelectionStart = 6; box.SelectionLength = 0; Pause(); }
@@ -124,11 +125,50 @@ internal static class VoiceInputChecks
             Require(controller.ReviewNeeded && other.Text == "untouched", "Read-only field was changed.");
             Console.WriteLine("PASS UI Automation password/read-only detection prevents automatic entry; password recordings are not sent to ASR.");
 
+            void SetMode(int index)
+            {
+                status?.Close();
+                var modeVm = new VoiceInputSettingsViewModel(store, translations, controller);
+                var modeWindow = new VoiceInputSettingsWindow(modeVm); modeWindow.Show(); modeWindow.Activate(); modeWindow.UpdateLayout();
+                Click((ComboBox)modeWindow.FindName("VoiceModeBox")); HotkeyChecks.Press(index == 1 ? (ushort)0x23 : (ushort)0x24); HotkeyChecks.Press(0x0D);
+                Wait(() => modeVm.ModeIndex == index); Click((Button)modeWindow.FindName("SaveVoiceInput"));
+                Require(new TranscriptionSettingsStore(translations, Path.Combine(folder, "voice-input.json")).ReadPreferences().Mode == (VoiceInputMode)index && controller.Mode == (VoiceInputMode)index, "Actual mode selector did not save or activate the mode: " + modeVm.Status);
+                if (index == 1) Preview(modeWindow, "58-voice-input-settings");
+                modeWindow.Close(); status?.Close();
+            }
+            SetMode(1); controller.Dispose();
+            controller = new(store, app.Dispatcher, journal, recorder, new VoiceTargetProbe(AppHost), _ => recognizer); controller.Initialize(); controller.Changed += ObserveVoice;
+            using (var reopenedVm = new VoiceInputSettingsViewModel(store, translations, controller))
+                Require(controller.Mode == VoiceInputMode.Toggle && reopenedVm.ModeIndex == 1, "Toggle recording mode did not survive restart.");
+            Console.WriteLine("PASS actual native mode selector saves toggle/hold choices and restores the selected mode after controller/settings restart with credentials intact.");
+
+            input.Text = "prefixsuffix"; other.IsReadOnly = false; Focus(input);
+            int toggleRecordings = recorder.Calls, toggleRequests = recognizer.Calls;
+            recognizer.Reset(); HotkeyChecks.Press(0x11, 0x12, 0x20);
+            Wait(() => recorder.Calls == toggleRecordings + 1 && controller.State == VoiceInputState.Recording); Pause();
+            Require(controller.State == VoiceInputState.Recording && recognizer.Calls == toggleRequests, "Releasing the shortcut stopped toggle recording or uploaded audio.");
+            if (status is not null) Preview(status, "60-voice-input-recording");
+            HotkeyChecks.Press(0x11, 0x12, 0x20); Wait(() => recognizer.Pending);
+            HotkeyChecks.Press(0x11, 0x12, 0x20); Pause();
+            Require(recorder.Calls == toggleRecordings + 1 && controller.State == VoiceInputState.Recognizing, "A shortcut during recognition restarted or interrupted the request.");
+            recognizer.Result.SetResult("toggle 中文 words"); Wait(() => !controller.IsActive);
+            Require(input.Text == "prefixtoggle 中文 wordssuffix" && !controller.ReviewNeeded && Clipboard.GetText() == "PUBLIC-CLIPBOARD-SENTINEL" && recorder.LastWave!.All(b => b == 0), "Toggle recording failed native caret insertion, clipboard preservation or audio cleanup.");
+            Console.WriteLine("PASS native tap-to-start, release-keeps-recording, tap-again-to-stop and Unicode caret insertion; recognition ignores extra shortcuts without restarting.");
+
+            input.Text = "prefixsuffix"; Focus(input); Start(); Keys(true, 0x20, 0x12, 0x11); Pause();
+            int beforeToggleCancel = recognizer.Calls; HotkeyChecks.Press(0x1B); Wait(() => !controller.IsActive);
+            Require(recognizer.Calls == beforeToggleCancel && input.Text == "prefixsuffix", "Esc cancellation in toggle mode uploaded audio or changed the input.");
+            Focus(input); Start(); Keys(true, 0x20, 0x12, 0x11); Click(other);
+            HotkeyChecks.Press(0x11, 0x12, 0x20); Wait(() => recognizer.Pending); recognizer.Result.SetResult("PUBLIC-TOGGLE-REVIEW"); Wait(() => !controller.IsActive);
+            Require(controller.ReviewNeeded && input.Text == "prefixsuffix" && other.Text == "untouched" && Keyboard.FocusedElement == other, "Toggle stop injected into a changed input field or stole focus.");
+            SetMode(0); Require(controller.Mode == VoiceInputMode.Hold, "Switching back to hold recording did not take effect.");
+            Console.WriteLine("PASS toggle Esc cancellation before upload and changed-field result preservation; saved switch back to hold mode takes effect immediately.");
+
             status?.Close(); CheckChrome(controller, recorder, recognizer, folder); CheckRecorderWorker();
             controller.Dispose(); controller = null;
             journal.FlushAsync().GetAwaiter().GetResult(); string logs = File.ReadAllText(Path.Combine(folder, "logs/events.jsonl"));
-            Require(!logs.Contains(Key) && !logs.Contains("PUBLIC-SHARED-KEY") && !logs.Contains("PUBLIC-DO-NOT-INSERT") && !logs.Contains("asr.example.com"), "Voice content, endpoint or credentials entered diagnostics.");
-            File.WriteAllText("artifacts/validation/voice-input.json", JsonSerializer.Serialize(new { NativeHotkeyHoldRelease = true, ProtectedSettings = true, CredentialReuseChecked = true, ConflictPreservesShortcut = true, NativeCaretInsertion = true, ClipboardUnchanged = true, FocusChangeNoInjection = true, CancellationNoUpload = true, PasswordNoUpload = true, ReadOnlyPreserved = true, AudioCleared = true, ChromeTextareaInput = true, ChromeContentEditableInput = true, IsolatedRecorderPipe = true, WorkerReaped = true, ParentExitKillsWorker = true, DiagnosticsPrivate = true }));
+            Require(!logs.Contains(Key) && !logs.Contains("PUBLIC-SHARED-KEY") && !logs.Contains("PUBLIC-DO-NOT-INSERT") && !logs.Contains("PUBLIC-TOGGLE-REVIEW") && !logs.Contains("asr.example.com"), "Voice content, endpoint or credentials entered diagnostics.");
+            File.WriteAllText("artifacts/validation/voice-input.json", JsonSerializer.Serialize(new { NativeHotkeyHoldRelease = true, ProtectedSettings = true, CredentialReuseChecked = true, ConflictPreservesShortcut = true, NativeCaretInsertion = true, ClipboardUnchanged = true, FocusChangeNoInjection = true, CancellationNoUpload = true, PasswordNoUpload = true, ReadOnlyPreserved = true, AudioCleared = true, ChromeTextareaInput = true, ChromeContentEditableInput = true, IsolatedRecorderPipe = true, WorkerReaped = true, ParentExitKillsWorker = true, DiagnosticsPrivate = true, TogglePressTwice = true, ToggleReleaseKeepsRecording = true, RecordingModePersists = true, ToggleCancelNoUpload = true, ToggleFocusChangeNoInjection = true }));
             return 0;
         }
         catch (Exception error)

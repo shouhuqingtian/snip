@@ -43,23 +43,26 @@ public sealed class VoiceInputController : IDisposable
     public bool IsActive => State != VoiceInputState.Idle;
     public bool Enabled => hotkey is not null;
     public string Shortcut => preferences.Hotkey.DisplayText;
-    public string Status { get; private set; } = "按住语音快捷键说话，松开后识别并输入。";
+    public VoiceInputMode Mode => preferences.Mode;
+    public string RecordingEndHint => Mode == VoiceInputMode.Toggle ? "再按快捷键结束" : "松开结束";
+    public string UsageHint => Mode == VoiceInputMode.Toggle ? "按一次 " + Shortcut + " 开始录音，再按一次结束并识别。" : "按住 " + Shortcut + " 说话，松开后识别并输入。";
+    public string Status { get; private set; } = "按所选方式录音，结束后识别并输入。";
     public string LastText { get; private set; } = "";
     public bool ReviewNeeded { get; private set; }
     public bool SuppressNotification { get; private set; }
     public DateTimeOffset? RecordingStartedUtc { get; private set; }
     public void Initialize()
     {
-        dispatcher.VerifyAccess(); preferences = store.ReadPreferences();
+        dispatcher.VerifyAccess(); preferences = store.ReadPreferences(); preferences.Validate();
         if (!preferences.Enabled) return;
         _ = store.ReadCredentials(); var candidate = hotkeyFactory();
         if (!candidate.Register(preferences.Hotkey)) { candidate.Dispose(); throw new VoiceInputException("语音输入快捷键已被占用，请在语音输入设置中修改。"); }
-        hotkey = candidate; hotkey.Triggered += Triggered; Publish("语音输入已启用，按住 " + Shortcut + " 说话。", VoiceInputState.Idle);
+        hotkey = candidate; hotkey.Triggered += Triggered; Publish("语音输入已启用，" + UsageHint, VoiceInputState.Idle);
     }
     public void Save(TranscriptionSettings settings, string? key, VoiceInputPreferences next, bool removeKey = false)
     {
-        dispatcher.VerifyAccess(); if (IsActive) throw new VoiceInputException("请先松开语音快捷键，并等待当前识别结束。");
-        TranscriptionProviders.Validate(settings); next.Hotkey.Validate();
+        dispatcher.VerifyAccess(); if (IsActive) throw new VoiceInputException("请先结束录音，并等待当前识别结束。");
+        TranscriptionProviders.Validate(settings); next.Validate();
         IHotkeyService? candidate = null;
         try
         {
@@ -70,12 +73,16 @@ public sealed class VoiceInputController : IDisposable
             }
             store.Save(settings, key, next, removeKey);
             if (!next.Enabled || candidate is not null) { if (hotkey is not null) { hotkey.Triggered -= Triggered; hotkey.Dispose(); } hotkey = candidate; candidate = null; if (hotkey is not null) hotkey.Triggered += Triggered; }
-            preferences = next; Publish(next.Enabled ? "已保存，按住 " + Shortcut + " 说话，松开后输入文字。" : "已保存，语音输入已停用。", VoiceInputState.Idle);
+            preferences = next; Publish(next.Enabled ? "已保存，" + UsageHint : "已保存，语音输入已停用。", VoiceInputState.Idle);
         }
         finally { candidate?.Dispose(); }
     }
     private async void Triggered(object? sender, EventArgs args)
-    { if (!CanStart()) { ShortcutWhileConfiguring?.Invoke(preferences.Hotkey); return; } await BeginAsync(); }
+    {
+        if (!CanStart()) { ShortcutWhileConfiguring?.Invoke(preferences.Hotkey); return; }
+        if (Mode == VoiceInputMode.Toggle && State is VoiceInputState.Starting or VoiceInputState.Recording) { stop?.Cancel(); return; }
+        await BeginAsync();
+    }
     public async Task BeginAsync()
     {
         dispatcher.VerifyAccess(); if (disposed || IsActive || !Enabled || !CanStart()) return;
@@ -83,22 +90,23 @@ public sealed class VoiceInputController : IDisposable
         using var request = new CancellationTokenSource(); using var released = new CancellationTokenSource(); active = request; stop = released;
         IVoiceInputTarget? target = null;
         string completion = "语音输入已停止。";
-        Publish("准备麦克风，请继续按住 " + Shortcut + "…", VoiceInputState.Starting);
+        bool holdMode = Mode == VoiceInputMode.Hold;
+        Publish(holdMode ? "准备麦克风，请继续按住 " + Shortcut + "…" : "准备麦克风，再按一次快捷键结束录音…", VoiceInputState.Starting);
         try
         {
             var credentials = store.ReadCredentials();
             target = targetFactory(preferences.Hotkey,
-                () => dispatcher.BeginInvoke(() => { if (!disposed && current == generation && ReferenceEquals(stop, released)) released.Cancel(); }),
+                () => dispatcher.BeginInvoke(() => { if (holdMode && !disposed && current == generation && ReferenceEquals(stop, released)) released.Cancel(); }),
                 () => dispatcher.BeginInvoke(() => { if (!disposed && current == generation) Cancel(); }));
             currentTarget = target;
-            if (!target.HotkeyHeld) throw new VoiceInputException("请按住语音快捷键说话，松开后才会识别。");
+            if (holdMode && !target.HotkeyHeld) throw new VoiceInputException("请按住语音快捷键说话，松开后才会识别。");
             var initialTask = probe.ReadAsync(target.Foreground, request.Token);
             using var holdWatch = CancellationTokenSource.CreateLinkedTokenSource(request.Token);
             var releaseWatch = Task.Run(async () =>
             {
                 try
                 {
-                    while (!holdWatch.IsCancellationRequested)
+                    while (holdMode && !holdWatch.IsCancellationRequested)
                     {
                         if (!target.HotkeyHeld) { released.Cancel(); return; }
                         await Task.Delay(20, holdWatch.Token).ConfigureAwait(false);
@@ -112,7 +120,7 @@ public sealed class VoiceInputController : IDisposable
                 recorded = await recorder.RecordAsync(released.Token, request.Token, () => dispatcher.BeginInvoke(() =>
                 {
                     if (!disposed && generation == current && State == VoiceInputState.Starting)
-                    { RecordingStartedUtc = DateTimeOffset.UtcNow; Publish("正在录音 · 松开快捷键后识别 · Esc 取消（最长 2 分钟）", VoiceInputState.Recording); }
+                    { RecordingStartedUtc = DateTimeOffset.UtcNow; Publish("正在录音 · " + RecordingEndHint + " · Esc 取消（最长 2 分钟）", VoiceInputState.Recording); }
                 }));
             }
             finally { holdWatch.Cancel(); await releaseWatch; }

@@ -122,7 +122,7 @@ public sealed class IsolatedMicrophoneRecorder(Func<ProcessStartInfo> host) : IM
                     VoiceInputFailure.NoMicrophone => "未找到默认麦克风，请连接麦克风并设置 Windows 输入设备。",
                     VoiceInputFailure.DeviceAccess => "无法使用默认麦克风，请检查 Windows 桌面应用麦克风权限、设备设置和占用。",
                     VoiceInputFailure.NoVoice => "没有录到清晰声音，请检查麦克风输入音量。",
-                    VoiceInputFailure.TooShort => "录音太短，请按住快捷键说话后再松开。",
+                    VoiceInputFailure.TooShort => "录音太短，请说话后再结束录音。",
                     _ => "录音未完成，请检查默认麦克风并重试。"
                 }, reason, nativeCode);
             }

@@ -7,6 +7,19 @@ namespace Snip.Core.Tests;
 public sealed class VoiceInputTests
 {
     [Fact]
+    public void ExistingVoicePreferencesKeepHoldModeAndBothModesSurviveRestart()
+    {
+        var legacy = System.Text.Json.JsonSerializer.Deserialize<VoiceInputPreferences>("{\"Enabled\":true,\"Hotkey\":{\"Modifiers\":3,\"VirtualKey\":32}}")!;
+        legacy.Validate(); Assert.Equal(VoiceInputMode.Hold, legacy.Mode);
+        foreach (var mode in Enum.GetValues<VoiceInputMode>())
+        {
+            var stored = legacy with { Mode = mode };
+            var restored = System.Text.Json.JsonSerializer.Deserialize<VoiceInputPreferences>(System.Text.Json.JsonSerializer.Serialize(stored))!;
+            restored.Validate(); Assert.Equal(stored, restored);
+        }
+        Assert.Throws<ArgumentException>(() => (legacy with { Mode = (VoiceInputMode)42 }).Validate());
+    }
+    [Fact]
     public void CoalescedDriverBuffersKeepPcmChronologicalAcrossWrapAndStop()
     {
         var order = new RecordingBufferOrder(5);

@@ -52,8 +52,8 @@ public sealed class VoiceInputStatusWindow : Window
         };
         timer.Tick += (_, _) =>
         {
-            if (controller.State == VoiceInputState.Recording && controller.RecordingStartedUtc is { } started) timerText.Text = $"已录音 {(DateTimeOffset.UtcNow - started).TotalSeconds:0} 秒 · 松开结束 · Esc 取消";
-            else timerText.Text = controller.IsActive ? "按住录音，松开识别；文字不会自动发送。" : "";
+            if (controller.State == VoiceInputState.Recording && controller.RecordingStartedUtc is { } started) timerText.Text = $"已录音 {(DateTimeOffset.UtcNow - started).TotalSeconds:0} 秒 · {controller.RecordingEndHint} · Esc 取消";
+            else timerText.Text = controller.IsActive ? "文字不会自动发送；Esc 可取消。" : "";
             if (!controller.IsActive && !controller.ReviewNeeded && DateTimeOffset.UtcNow - updated > TimeSpan.FromSeconds(3)) Close();
         };
         Closed += (_, _) => { timer.Stop(); source?.RemoveHook(Hook); };

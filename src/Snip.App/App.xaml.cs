@@ -214,7 +214,7 @@ public partial class App : Application
     }
     private void ShowVoiceInputResult()
     {
-        if (voiceInput?.LastText is not { Length: > 0 } text) { if (main?.DataContext is MainViewModel vm) vm.Status = "还没有语音识别结果；先配置语音输入，再把光标放到输入框并按住快捷键说话。"; OpenMain(); return; }
+        if (voiceInput?.LastText is not { Length: > 0 } text) { if (main?.DataContext is MainViewModel vm) vm.Status = "还没有语音识别结果；先配置语音输入，再把光标放到输入框并按所选方式录音。"; OpenMain(); return; }
         voiceInputResult?.Close(); voiceInputResult = new(text); voiceInputResult.Closed += (_, _) => voiceInputResult = null; voiceInputResult.Show();
     }
 

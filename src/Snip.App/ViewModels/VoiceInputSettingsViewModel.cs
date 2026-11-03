@@ -11,10 +11,11 @@ public sealed class VoiceInputSettingsViewModel : ObservableObject, IDisposable
     private string provider = "", endpoint = "", model = "", language = "", keyProfile = "不复用", apiKey = "", status = "保存后，把光标放到输入框，按住快捷键说话，松开后识别。";
     private bool enabled;
     private HotkeyGesture gesture;
+    private VoiceInputMode mode;
     public VoiceInputSettingsViewModel(ITranscriptionSettingsStore store, IOnlineTranslationSettingsStore translation, VoiceInputController controller)
     {
         this.store = store; this.controller = controller;
-        var initial = store.Read(); var preferences = store.ReadPreferences(); gesture = preferences.Hotkey; enabled = initial is null || preferences.Enabled;
+        var initial = store.Read(); var preferences = store.ReadPreferences(); gesture = preferences.Hotkey; enabled = initial is null || preferences.Enabled; mode = preferences.Mode;
         Providers = TranscriptionProviders.Names.Concat(store.ReadProfiles().Select(p => p.Provider)).Distinct().ToArray();
         KeyProfiles = new[] { "不复用" }.Concat(translation.ReadProfiles().Select(p => p.Provider)).ToArray();
         Load(initial?.Provider ?? TranscriptionProviders.Names[0]);
@@ -25,6 +26,17 @@ public sealed class VoiceInputSettingsViewModel : ObservableObject, IDisposable
     public string[] Providers { get; }
     public string[] KeyProfiles { get; }
     public string[] Languages { get; } = ["自动（中英混合）", "中文", "英文"];
+    public string[] InputModes { get; } = ["按住说话，松开结束", "按一次开始，再按一次结束"];
+    public int ModeIndex
+    {
+        get => (int)mode;
+        set
+        {
+            if (value is < 0 or > 1 || !CanEdit || (int)mode == value) return;
+            mode = (VoiceInputMode)value; Notify(nameof(ModeIndex)); Notify(nameof(ModeHint)); Status = "保存后，" + ModeHint;
+        }
+    }
+    public string ModeHint => mode == VoiceInputMode.Toggle ? "按一次 " + gesture.DisplayText + " 开始录音，再按一次结束并识别。" : "按住 " + gesture.DisplayText + " 说话，松开后识别并输入。";
     public string[] Models => TranscriptionProviders.Models(Provider);
     public string Provider { get => provider; set { if (value != provider && CanEdit) Load(value); } }
     public string Endpoint { get => endpoint; set => Set(ref endpoint, value); }
@@ -51,7 +63,7 @@ public sealed class VoiceInputSettingsViewModel : ObservableObject, IDisposable
     }
     public void SetGesture(HotkeyGesture value)
     {
-        try { value.Validate(); gesture = value; Notify(nameof(GestureText)); Status = "保存后按住 " + value.DisplayText + " 说话。"; }
+        try { value.Validate(); gesture = value; Notify(nameof(GestureText)); Notify(nameof(ModeHint)); Status = "保存后，" + ModeHint; }
         catch (ArgumentException error) { Status = error.Message; }
     }
     private void Save()
@@ -59,7 +71,7 @@ public sealed class VoiceInputSettingsViewModel : ObservableObject, IDisposable
         try
         {
             var settings = new TranscriptionSettings(Provider, Endpoint, Model, Language == Languages[1] ? "zh" : Language == Languages[2] ? "en" : "", KeyProfile == "不复用" ? "" : KeyProfile);
-            controller.Save(settings, ApiKey, new(Enabled, gesture)); ApiKey = ""; SecretsCleared?.Invoke(this, EventArgs.Empty); Status = controller.Status;
+            controller.Save(settings, ApiKey, new(Enabled, gesture, mode)); ApiKey = ""; SecretsCleared?.Invoke(this, EventArgs.Empty); Status = controller.Status;
         }
         catch (Exception e) { Status = e is ArgumentException or VoiceInputException ? e.Message : "语音输入设置保存失败，原快捷键和设置保留。"; }
     }

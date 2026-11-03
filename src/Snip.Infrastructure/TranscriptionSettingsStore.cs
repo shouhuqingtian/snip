@@ -23,7 +23,7 @@ public sealed class TranscriptionSettingsStore(IOnlineTranslationSettingsStore t
             if (new FileInfo(path).Length > 512 * 1024) throw new JsonException();
             var stored = JsonSerializer.Deserialize<Stored>(File.ReadAllBytes(path)) ?? throw new JsonException();
             if (stored.Version != 1 || stored.Preferences?.Hotkey is null || stored.Profiles is null || stored.Profiles.Length > 32 || stored.ActiveProvider is null) throw new JsonException();
-            stored.Preferences.Hotkey.Validate();
+            stored.Preferences.Validate();
             foreach (var p in stored.Profiles) { if (p?.Settings is null || p.ProtectedKey is null) throw new JsonException(); TranscriptionProviders.Validate(p.Settings); }
             if (stored.Profiles.Select(p => p.Settings.Provider).Distinct().Count() != stored.Profiles.Length || stored.Preferences.Enabled && !stored.Profiles.Any(p => p.Settings.Provider == stored.ActiveProvider)) throw new JsonException();
             return stored;
@@ -56,7 +56,7 @@ public sealed class TranscriptionSettingsStore(IOnlineTranslationSettingsStore t
     public void Save(TranscriptionSettings settings, string? replacementKey, VoiceInputPreferences preferences, bool removeKey = false)
     {
         settings = settings with { Provider = settings.Provider.Trim(), Endpoint = settings.Endpoint.Trim(), Model = settings.Model.Trim(), HasApiKey = false };
-        TranscriptionProviders.Validate(settings); preferences.Hotkey.Validate();
+        TranscriptionProviders.Validate(settings); preferences.Validate();
         var data = Load(); var old = Find(data, settings.Provider); string encrypted = "";
         if (old is null && data.Profiles.Length >= 32) throw new VoiceInputException("最多保存 32 组语音输入配置。");
         if (settings.TranslationProfile.Length > 0) _ = Shared(settings);

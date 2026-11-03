@@ -31,7 +31,7 @@ public sealed class WindowsMicrophoneRecorder : IMicrophoneRecorder
     {
         cancel.ThrowIfCancellationRequested();
         if (!HasDevice) throw new VoiceInputException("未找到录音设备，请连接麦克风并设置 Windows 默认输入设备。", VoiceInputFailure.NoMicrophone);
-        if (stop.IsCancellationRequested) throw new VoiceInputException("请按住语音快捷键说话，松开后再识别。");
+        if (stop.IsCancellationRequested) throw new VoiceInputException("录音结束过快，请说话后再结束录音。", VoiceInputFailure.TooShort);
         using var signal = new AutoResetEvent(false); using var pcm = new MemoryStream();
         var buffers = new List<(IntPtr Header, IntPtr Data, bool Prepared)>(); IntPtr device = IntPtr.Zero;
         var order = new RecordingBufferOrder(5);

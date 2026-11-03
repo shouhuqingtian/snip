@@ -5,9 +5,15 @@ using System.Text;
 namespace Snip.Core;
 
 public sealed record TranscriptionSettings(string Provider, string Endpoint, string Model, string Language = "", string TranslationProfile = "", bool HasApiKey = false);
-public sealed record VoiceInputPreferences(bool Enabled, HotkeyGesture Hotkey)
+public enum VoiceInputMode { Hold, Toggle }
+public sealed record VoiceInputPreferences(bool Enabled, HotkeyGesture Hotkey, VoiceInputMode Mode = VoiceInputMode.Hold)
 {
     public static VoiceInputPreferences Default { get; } = new(false, new(3, 0x20));
+    public void Validate()
+    {
+        Hotkey.Validate();
+        if (!Enum.IsDefined(Mode)) throw new ArgumentException("请选择有效的录音操作方式。");
+    }
 }
 public sealed class TranscriptionCredentials(TranscriptionSettings settings, string apiKey)
 {
@@ -102,7 +108,7 @@ public static class VoiceText
     public static byte[] PcmToWav(ReadOnlySpan<byte> pcm)
     {
         if (pcm.Length < 8000 || pcm.Length > TranscriptionProviders.MaximumRecordingSeconds * 32000 || pcm.Length % 2 != 0)
-            throw new VoiceInputException("录音太短或超过上限，请按住快捷键说话后再松开。", VoiceInputFailure.TooShort);
+            throw new VoiceInputException("录音太短或超过上限，请重新录音。", VoiceInputFailure.TooShort);
         long energy = 0;
         for (int i = 0; i < pcm.Length; i += 2) { int sample = BinaryPrimitives.ReadInt16LittleEndian(pcm[i..]); energy += (long)sample * sample; }
         if (Math.Sqrt(energy / (pcm.Length / 2.0)) < 20) throw new VoiceInputException("没有录到清晰声音，请检查默认麦克风和输入音量。", VoiceInputFailure.NoVoice);
