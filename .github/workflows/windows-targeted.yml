@@ -92,7 +92,7 @@ jobs:
               if not path.exists():
                   continue
               encoded=base64.b64encode(path.read_bytes()).decode('ascii')
-              parts=[encoded[i:i+12000] for i in range(0,len(encoded),12000)]
+              parts=[encoded[i:i+3000] for i in range(0,len(encoded),3000)]
               for i,part in enumerate(parts):
                   print(f'::notice title=Voice fixture preview {name} {i+1}/{len(parts)}::{part}')
       - name: Summarize native check for review
