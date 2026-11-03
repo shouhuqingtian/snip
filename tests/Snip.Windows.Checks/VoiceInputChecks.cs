@@ -131,7 +131,12 @@ internal static class VoiceInputChecks
             File.WriteAllText("artifacts/validation/voice-input.json", JsonSerializer.Serialize(new { NativeHotkeyHoldRelease = true, ProtectedSettings = true, CredentialReuseChecked = true, ConflictPreservesShortcut = true, NativeCaretInsertion = true, ClipboardUnchanged = true, FocusChangeNoInjection = true, CancellationNoUpload = true, PasswordNoUpload = true, ReadOnlyPreserved = true, AudioCleared = true, ChromeTextareaInput = true, ChromeContentEditableInput = true, IsolatedRecorderPipe = true, WorkerReaped = true, ParentExitKillsWorker = true, DiagnosticsPrivate = true }));
             return 0;
         }
-        catch (Exception error) { Console.Error.WriteLine(error); return 1; }
+        catch (Exception error)
+        {
+            string log = Path.Combine(folder, "logs/events.jsonl");
+            if (File.Exists(log)) foreach (string line in File.ReadLines(log).TakeLast(8)) Console.Error.WriteLine(line);
+            Console.Error.WriteLine(error); return 1;
+        }
         finally { Keys(true, 0x20, 0x12, 0x11); controller?.Dispose(); status?.Close(); foreach (var w in app.Windows.Cast<Window>().ToArray()) w.Close(); Directory.Delete(folder, true); SynchronizationContext.SetSynchronizationContext(previous); }
     }
     private static ProcessStartInfo AppHost() => new(Path.Combine(AppContext.BaseDirectory, "Snip.exe"));

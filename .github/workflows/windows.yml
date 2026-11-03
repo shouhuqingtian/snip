@@ -197,6 +197,25 @@ jobs:
             $detail = $detail.Substring(0, [Math]::Min(3000, $detail.Length)).Replace('%','%25').Replace("`r",'%0D').Replace("`n",'%0A')
             Write-Output "::notice title=Check output $($_.BaseName)::$detail"
           }
+      - name: Summarize desktop verification for review
+        if: always()
+        shell: pwsh
+        run: |
+          "Commit: $env:GITHUB_SHA" | Add-Content $env:GITHUB_STEP_SUMMARY
+          $report = 'artifacts/validation/validation-desktop.json'
+          if (Test-Path $report) {
+            '```json' | Add-Content $env:GITHUB_STEP_SUMMARY
+            Get-Content $report | Add-Content $env:GITHUB_STEP_SUMMARY
+            '```' | Add-Content $env:GITHUB_STEP_SUMMARY
+          }
+          if ('${{ job.status }}' -ne 'success') {
+            Get-ChildItem artifacts/validation -Filter '*.log' -ErrorAction SilentlyContinue | ForEach-Object {
+              "### $($_.Name)" | Add-Content $env:GITHUB_STEP_SUMMARY
+              '```text' | Add-Content $env:GITHUB_STEP_SUMMARY
+              Get-Content $_.FullName -Tail 12 | Add-Content $env:GITHUB_STEP_SUMMARY
+              '```' | Add-Content $env:GITHUB_STEP_SUMMARY
+            }
+          }
       - uses: actions/download-artifact@v4
         with:
           name: Tested-sync-server
@@ -306,6 +325,11 @@ jobs:
             '离线翻译使用唯一 Hy-MT2-1.8B Q3_K_M 模型，首次点击下载/修复模型获取约 951 MB 模型和约 20 MB CPU 推理器。旧 OPUS 模型不再使用。', '',
             '多屏混合 DPI、用户真实网页和系统分享目标仍需实机验收。附件包含便携版、完整源码和 SHA256 校验值；正式版本另含安装包。') |
             Set-Content artifacts/release-notes.md -Encoding utf8
+          $featureNotes = "packaging/release-notes/$version.md"
+          if (Test-Path $featureNotes) {
+            $verificationNotes = Get-Content artifacts/release-notes.md -Raw
+            ((Get-Content $featureNotes -Raw) + "`n`n" + $verificationNotes) | Set-Content artifacts/release-notes.md -Encoding utf8
+          }
           $assets = @(Get-ChildItem artifacts -File -Filter '*.zip' | ForEach-Object FullName) + @((Join-Path $PWD 'artifacts/SHA256SUMS.txt'))
           if ($stable) { $assets += @(Get-ChildItem artifacts/installer -File -Filter '*.exe' | ForEach-Object FullName) }
           gh release view $tag --repo $env:GITHUB_REPOSITORY *> $null
