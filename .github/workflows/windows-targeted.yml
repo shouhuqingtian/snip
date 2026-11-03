@@ -58,6 +58,12 @@ jobs:
             } else {
               dotnet run --project tests/Snip.Windows.Checks/Snip.Windows.Checks.csproj -c Release --no-build -- $flag *> $log
               $checkExit = $LASTEXITCODE
+              if ($env:GITHUB_EVENT_NAME -eq 'push' -and $checkExit -eq 0) {
+                # Preserve the existing self-capture/shortcut scenarios alongside
+                # the new global voice shortcut on every feature-branch round.
+                dotnet run --project tests/Snip.Windows.Checks/Snip.Windows.Checks.csproj -c Release --no-build -- --hotkey *>> $log
+                $checkExit = $LASTEXITCODE
+              }
             }
             Get-Content $log | Write-Output
             if ($env:CHECK -eq 'chrome') {

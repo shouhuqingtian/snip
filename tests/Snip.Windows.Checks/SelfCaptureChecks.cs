@@ -40,8 +40,22 @@ internal static class SelfCaptureChecks
         void Start(Window target)
         {
             active = null; main.Activate(); Move(target.PointToScreen(new Point(100, 90)));
+            if (ReferenceEquals(target, result))
+            {
+                // A non-active WPF fixture can be visible before its surface is
+                // presented. Establish the source pixels before judging capture.
+                try { Wait(() => ResultCenter() is [0, 69, 255, _]); }
+                catch (TimeoutException)
+                { throw new InvalidOperationException("Public result fixture was not presented before capture. BGRA=" + string.Join(",", ResultCenter()) + "; result=" + Bounds(result) + "; main=" + Bounds(main)); }
+            }
             HotkeyChecks.Press(0x11, 0x12, 0x41); WaitOverlay();
             Require(main.IsVisible && result.IsVisible && pin.IsVisible, "Hotkey hid one of the application's visible windows.");
+        }
+        byte[] ResultCenter()
+        {
+            var bounds = Bounds(result); var center = new PixelRect(Math.Floor(bounds.X + bounds.Width / 2), Math.Floor(bounds.Y + bounds.Height / 2), 1, 1);
+            var image = new FormatConvertedBitmap(new DesktopCaptureService().CaptureRegion(center), PixelFormats.Bgra32, null, 0);
+            byte[] color = new byte[4]; image.CopyPixels(color, 4, 0); return color;
         }
         PixelRect Bounds(Window target)
         {
@@ -73,7 +87,7 @@ internal static class SelfCaptureChecks
             Start(result); Copy(resultBounds);
             var captured = Clipboard.GetImage();
             byte[] center = new byte[4]; new FormatConvertedBitmap(captured, PixelFormats.Bgra32, null, 0).CopyPixels(new Int32Rect(captured.PixelWidth / 2, captured.PixelHeight / 2, 1, 1), center, 4, 0);
-            Require(center[2] == 255 && center[1] == 69 && center[0] == 0, "Own result window was replaced by the desktop behind it.");
+            Require(center[2] == 255 && center[1] == 69 && center[0] == 0, "Own result window was replaced by the desktop behind it. BGRA=" + string.Join(",", center) + "; bounds=" + resultBounds);
             Console.WriteLine("PASS real coordinator captures another same-process result window instead of hiding every application window.");
 
             active = null; main.Activate(); Move(pin.PointToScreen(new Point(60, 40)));
