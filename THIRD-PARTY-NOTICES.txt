@@ -48,6 +48,6 @@ ONNX Runtime 1.29.0，MIT；SkiaSharp 3.119.1，MIT；Clipper2 2.0.0，Boost Sof
 本轮重新为增强 OCR 引入 ONNX Runtime；离线翻译仍使用独立的 llama.cpp，不因此常驻 OCR 模型。
 增强 OCR 使用本地管道调用短生命周期识别进程；截图和识别文字不写入临时文件或诊断日志，也不发送到在线 OCR 服务。
 
-2.0.75 Windows 在线服务代理传输使用 Microsoft System.Net.Http.WinHttpHandler 8.0.3，MIT License。
+2.0.76 Windows 在线服务代理传输使用 Microsoft System.Net.Http.WinHttpHandler 8.0.3，MIT License。
 来源：https://www.nuget.org/packages/System.Net.Http.WinHttpHandler/8.0.3
 完整许可随包提供：licenses/WinHttpHandler-MIT.txt；该文件直接来自 NuGet 原始 LICENSE.TXT。
