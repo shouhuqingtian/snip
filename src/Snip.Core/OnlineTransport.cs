@@ -17,6 +17,10 @@ public static class OnlineTransport
     {
         WindowsProxyUsePolicy = WindowsProxyUsePolicy.UseWinInetProxy,
         CookieUsePolicy = CookieUsePolicy.IgnoreCookies,
-        AutomaticRedirection = false
+        AutomaticRedirection = false,
+        // Existing callers own bounded deadlines and cancellation, including long ASR requests.
+        SendTimeout = Timeout.InfiniteTimeSpan,
+        ReceiveHeadersTimeout = Timeout.InfiniteTimeSpan,
+        ReceiveDataTimeout = Timeout.InfiniteTimeSpan
     };
 }

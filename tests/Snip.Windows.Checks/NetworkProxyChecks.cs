@@ -49,8 +49,9 @@ internal static class NetworkProxyChecks
         using var first = new Server("FIRST"); using var second = new Server("SECOND");
         Configure(null);
         using var client = OnlineTransport.CreateClient();
-        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(45));
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(75));
         Require(await client.GetStringAsync(first.Direct, deadline.Token) == "FIRST", "Initial direct request failed.");
+        Require(await client.GetStringAsync(new Uri(first.Direct, "slow"), deadline.Token) == "FIRST", "Native header timeout ended the existing caller deadline prematurely.");
         Configure(first.Port);
         var remote = new Uri("http://snip-proxy-fixture.invalid/test");
         Require(await client.GetStringAsync(remote, deadline.Token) == "FIRST", "Enabling the current Windows proxy was not picked up by the existing client.");
@@ -61,7 +62,7 @@ internal static class NetworkProxyChecks
         Require(await client.GetStringAsync(first.Direct, deadline.Token) == "FIRST", "Disabling the system proxy did not restore direct requests.");
         Console.WriteLine("PASS existing native Windows client follows system proxy enable, port change and disable; proxy receives the original destination for rule-based routing.");
         Directory.CreateDirectory("artifacts/validation");
-        File.WriteAllText("artifacts/validation/network-proxy.json", JsonSerializer.Serialize(new { NativeWindowsTransport = true, InitialDirect = true, EnableWithoutRestart = true, PortChangeWithoutRestart = true, DisableWithoutRestart = true, OriginalDestinationPreserved = true }));
+        File.WriteAllText("artifacts/validation/network-proxy.json", JsonSerializer.Serialize(new { NativeWindowsTransport = true, InitialDirect = true, EnableWithoutRestart = true, PortChangeWithoutRestart = true, DisableWithoutRestart = true, OriginalDestinationPreserved = true, CallerDeadlinePreserved = true }));
         return 0;
     }
     private static void Require(bool value, string message) { if (!value) throw new InvalidOperationException(message); }
@@ -84,8 +85,9 @@ internal static class NetworkProxyChecks
                     {
                         using var socket = await listener.AcceptTcpClientAsync(stop.Token);
                         using var stream = socket.GetStream(); using var reader = new StreamReader(stream, Encoding.ASCII, leaveOpen: true);
-                        Requests.Add(await reader.ReadLineAsync(stop.Token) ?? "");
+                        string line = await reader.ReadLineAsync(stop.Token) ?? ""; Requests.Add(line);
                         while (!string.IsNullOrEmpty(await reader.ReadLineAsync(stop.Token))) { }
+                        if (line.Contains(" /slow ")) await Task.Delay(TimeSpan.FromSeconds(32), stop.Token);
                         byte[] response = Encoding.ASCII.GetBytes("HTTP/1.1 200 OK\r\nContent-Length: " + text.Length + "\r\nConnection: close\r\n\r\n" + text);
                         await stream.WriteAsync(response, stop.Token);
                     }
