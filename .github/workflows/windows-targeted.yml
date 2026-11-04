@@ -77,6 +77,8 @@ jobs:
             }
             if ($checkExit -ne 0) {
               $detail = (Get-Content $log -Tail 25 | Out-String).Replace('%','%25').Replace("`r",'%0D').Replace("`n",'%0A')
+              $summary = Get-Content $log | Where-Object { $_ -like 'FAIL voice-input:*' } | Select-Object -Last 1
+              if ($summary) { Write-Output "::error title=Voice failure summary::$summary" }
               Write-Output "::error title=Targeted desktop failure::$detail"
               exit $checkExit
             }

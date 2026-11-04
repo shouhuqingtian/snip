@@ -188,7 +188,7 @@ internal static class VoiceInputChecks
         {
             string log = Path.Combine(folder, "logs/events.jsonl");
             if (File.Exists(log)) foreach (string line in File.ReadLines(log).TakeLast(8)) Console.Error.WriteLine(line);
-            Console.Error.WriteLine(error); return 1;
+            Console.Error.WriteLine(error); Console.Error.WriteLine("FAIL voice-input: " + error.GetType().Name + ": " + error.Message); return 1;
         }
         finally { Keys(true, 0x20, 0x12, 0x11); controller?.Dispose(); status?.Close(); foreach (var w in app.Windows.Cast<Window>().ToArray()) w.Close(); Directory.Delete(folder, true); SynchronizationContext.SetSynchronizationContext(previous); }
     }
@@ -296,8 +296,8 @@ internal static class VoiceInputChecks
         try
         {
             Wait(() => (window = DesktopWindows.Snapshot().FirstOrDefault(w =>
-            { var s = new StringBuilder(512); GetWindowText(w.Handle, s, s.Capacity); return s.ToString().StartsWith("Public voice fixture |", StringComparison.Ordinal); })) is not null);
-            DesktopWindows.Activate(window!.Handle); Pause();
+            { var s = new StringBuilder(512); GetWindowText(w.Handle, s, s.Capacity); return s.ToString().StartsWith("Public voice fixture", StringComparison.Ordinal); })) is not null);
+            DesktopWindows.Activate(window!.Handle); Wait(() => Title().EndsWith("| ONE", StringComparison.Ordinal)); Pause();
             foreach (var test in new[] { ("ONEOK", "PUBLIC 中文 voice"), ("TWOOK", "PUBLIC English words") })
             {
                 if (test.Item1 == "TWOOK") { HotkeyChecks.Press(0x09); Wait(() => Title().EndsWith("| TWO", StringComparison.Ordinal)); }
