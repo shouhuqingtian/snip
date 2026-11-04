@@ -1,7 +1,7 @@
 name: Run a targeted Windows regression
 on:
   push:
-    branches: [hold-to-dictate, voice-recording-mode, voice-input-settings-fix]
+    branches: [hold-to-dictate, voice-recording-mode, voice-input-settings-fix, system-proxy-compat]
     paths: ['src/**', 'tests/**', '.github/workflows/windows-targeted.yml']
   workflow_dispatch:
     inputs:
@@ -38,10 +38,10 @@ jobs:
       - name: Run selected real desktop scenario
         shell: pwsh
         env:
-          CHECK: ${{ inputs.check || 'voice-input' }}
+          CHECK: ${{ inputs.check || (github.ref_name == 'system-proxy-compat' && 'network-proxy' || 'voice-input') }}
           ROUNDS: ${{ inputs.rounds || 5 }}
         run: |
-          $flag = switch ($env:CHECK) { 'voice-input' { '--voice-input' }; 'toolbar-drag' { '--toolbar-drag' }; 'clipboard' { '--clipboard-ui' }; 'chrome' { '--chrome' }; 'enhanced-ocr' { '--enhanced-ocr' }; 'editor-zoom' { '--editor-zoom' }; 'manual-preview' { '--manual-preview' }; 'window-placement' { '--window-placement' }; 'text-ui' { '--text-ui' }; 'ui-gallery' { '--ui-gallery' }; 'hotkey' { '--hotkey' }; 'annotation-ui' { '--annotation-ui' }; 'editor-interaction' { '--editor-performance' }; 'smart-selection' { '--smart-selection' }; 'inline-text' { '--inline-text' }; 'capture-feedback' { '--capture-feedback' }; 'image-clipboard' { '--image-clipboard' }; 'desktop-scroll' { '--desktop-scroll' }; 'configuration-transfer' { '--configuration-transfer' }; 'image-text-selection' { '--image-text-selection' }; 'account-sync' { '--account-sync' }; 'annotation-style' { '--annotation-style' }; default { throw 'Unsupported check.' } }
+          $flag = switch ($env:CHECK) { 'network-proxy' { '--network-proxy' }; 'voice-input' { '--voice-input' }; 'toolbar-drag' { '--toolbar-drag' }; 'clipboard' { '--clipboard-ui' }; 'chrome' { '--chrome' }; 'enhanced-ocr' { '--enhanced-ocr' }; 'editor-zoom' { '--editor-zoom' }; 'manual-preview' { '--manual-preview' }; 'window-placement' { '--window-placement' }; 'text-ui' { '--text-ui' }; 'ui-gallery' { '--ui-gallery' }; 'hotkey' { '--hotkey' }; 'annotation-ui' { '--annotation-ui' }; 'editor-interaction' { '--editor-performance' }; 'smart-selection' { '--smart-selection' }; 'inline-text' { '--inline-text' }; 'capture-feedback' { '--capture-feedback' }; 'image-clipboard' { '--image-clipboard' }; 'desktop-scroll' { '--desktop-scroll' }; 'configuration-transfer' { '--configuration-transfer' }; 'image-text-selection' { '--image-text-selection' }; 'account-sync' { '--account-sync' }; 'annotation-style' { '--annotation-style' }; default { throw 'Unsupported check.' } }
           $rounds = [Math]::Clamp([int]$env:ROUNDS,1,5)
           New-Item -ItemType Directory -Path artifacts/validation -Force | Out-Null
           foreach ($round in 1..$rounds) {

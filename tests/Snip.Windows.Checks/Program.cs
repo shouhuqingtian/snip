@@ -15,6 +15,7 @@ internal static class Program
     [STAThread]
     private static int Main(string[] args)
     {
+        if (args.Contains("--network-proxy")) return NetworkProxyChecks.Run();
         if (args.FirstOrDefault() == "--voice-record-fixture") return VoiceInputChecks.RecordFixture();
         if (args.FirstOrDefault() == "--voice-job-parent") return VoiceInputChecks.JobParent(args[1]);
         if (args.Contains("--voice-input")) return VoiceInputChecks.Run();

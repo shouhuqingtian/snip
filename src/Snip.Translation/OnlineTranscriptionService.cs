@@ -7,7 +7,7 @@ namespace Snip.Translation;
 
 public sealed class OnlineTranscriptionService(TranscriptionCredentials credentials, HttpClient? client = null) : IAudioTranscriber
 {
-    private static readonly HttpClient Shared = new(new SocketsHttpHandler { AllowAutoRedirect = false, UseCookies = false }) { Timeout = Timeout.InfiniteTimeSpan };
+    private static readonly HttpClient Shared = OnlineTransport.CreateClient();
     public async Task<string> TranscribeAsync(RecordedVoice audio, CancellationToken token)
     {
         TranscriptionProviders.Validate(credentials.Settings);

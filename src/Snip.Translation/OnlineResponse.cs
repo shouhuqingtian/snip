@@ -5,7 +5,7 @@ namespace Snip.Translation;
 /// <summary>Shared bounded transport for explicit OCR and translation requests.</summary>
 internal static class OnlineResponse
 {
-    internal static readonly HttpClient Client = new(new HttpClientHandler { AllowAutoRedirect = false, UseCookies = false }) { Timeout = Timeout.InfiniteTimeSpan };
+    internal static readonly HttpClient Client = Snip.Core.OnlineTransport.CreateClient();
     private const int Limit = 1_048_576;
 
     internal static async Task<JsonDocument> ReadAsync(HttpResponseMessage response, CancellationToken token, Func<InvalidOperationException> invalid)

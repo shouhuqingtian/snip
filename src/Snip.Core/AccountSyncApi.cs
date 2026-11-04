@@ -8,7 +8,7 @@ namespace Snip.Core;
 /// <summary>No redirects, cookies or retries. Only derived authentication secrets and encrypted configuration leave the client.</summary>
 public sealed class AccountSyncApi(Uri server, HttpClient? client = null)
 {
-    private static readonly HttpClient Shared = new(new SocketsHttpHandler { AllowAutoRedirect = false, UseCookies = false }) { Timeout = Timeout.InfiniteTimeSpan };
+    private static readonly HttpClient Shared = OnlineTransport.CreateClient();
     private readonly HttpClient http = client ?? Shared;
     private readonly Uri root = AccountSyncProtocol.Server(server.AbsoluteUri);
     public async Task<SyncAccountParameters> ParametersAsync(string userName, CancellationToken token)
