@@ -95,6 +95,7 @@ public sealed class VoiceInputController : IDisposable
         var activeProbe = (IVoiceTargetProbe?)targetSession ?? probe;
         var elapsed = Stopwatch.StartNew();
         long recordedAt = 0, submittedAt = 0, recognizedAt = 0;
+        int audioBytes = 0;
         string completion = "语音输入已停止。";
         bool holdMode = Mode == VoiceInputMode.Hold;
         Publish(holdMode ? "准备麦克风，请继续按住 " + Shortcut + "…" : "准备麦克风，再按一次快捷键结束录音…", VoiceInputState.Starting);
@@ -132,6 +133,7 @@ public sealed class VoiceInputController : IDisposable
             finally { holdWatch.Cancel(); await releaseWatch; }
             using var audio = recorded;
             recordedAt = elapsed.ElapsedMilliseconds;
+            audioBytes = audio.Wav.Length;
             request.Token.ThrowIfCancellationRequested();
             Publish("正在识别语音… Esc 可取消", VoiceInputState.Recognizing);
             var original = await initialTask;
@@ -154,7 +156,6 @@ public sealed class VoiceInputController : IDisposable
             string message = entered == text.Length ? "识别完成，文字已输入。" : entered > 0 ? "输入已停止，可能只输入了部分文字；完整结果已保留。" : "识别完成，输入位置变化或无法确认可输入；结果已保留，可查看并复制。";
             completion = message;
             diagnostics?.Record("voice-input", "completed", new { Characters = text.Length, InsertedCharacters = entered, AutomaticallyInserted = entered == text.Length });
-            diagnostics?.Record("voice-input", "timing", new { RecordingAndStartupMs = recordedAt, InitialTargetWaitMs = submittedAt - recordedAt, RecognitionMs = recognizedAt - submittedAt, FinalTargetAndInputMs = elapsed.ElapsedMilliseconds - recognizedAt, AudioBytes = audio.Wav.Length });
         }
         catch (OperationCanceledException) { completion = "语音输入已取消。"; }
         catch (Exception error)
@@ -165,6 +166,15 @@ public sealed class VoiceInputController : IDisposable
         }
         finally
         {
+            diagnostics?.Record("voice-input", "timing", new
+            {
+                TotalMs = elapsed.ElapsedMilliseconds,
+                RecordingAndStartupMs = recordedAt > 0 ? recordedAt : (long?)null,
+                InitialTargetWaitMs = submittedAt > 0 ? submittedAt - recordedAt : (long?)null,
+                RecognitionMs = submittedAt > 0 ? (recognizedAt > 0 ? recognizedAt : elapsed.ElapsedMilliseconds) - submittedAt : (long?)null,
+                FinalTargetAndInputMs = recognizedAt > 0 ? elapsed.ElapsedMilliseconds - recognizedAt : (long?)null,
+                AudioBytes = audioBytes
+            });
             request.Cancel(); target?.Dispose(); if (ReferenceEquals(currentTarget, target)) currentTarget = null;
             if (ReferenceEquals(active, request)) { active = null; stop = null; }
             if (!disposed && current == generation) Publish(completion, VoiceInputState.Idle);

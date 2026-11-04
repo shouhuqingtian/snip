@@ -206,7 +206,7 @@ internal static class VoiceInputChecks
             var first = Read(); long firstMs = clock.ElapsedMilliseconds; clock.Restart(); var second = Read(); long warmMs = clock.ElapsedMilliseconds;
             Require(first is { Editable: true, Password: false } && second is { Editable: true } && first.RuntimeId.SequenceEqual(second.RuntimeId) && workers.Count == 1, "Repeated native target verification did not reuse the same isolated worker.");
             Click(other); var changed = Read();
-            Require(changed is { Editable: true } && !changed.RuntimeId.SequenceEqual(first.RuntimeId), "Reused target worker returned stale input identity.");
+            Require(changed is { Editable: true } && !changed.RuntimeId.SequenceEqual(first!.RuntimeId), "Reused target worker returned stale input identity.");
             Click(password); Require(Read()?.Password == true && workers.Count == 1, "Reused target worker missed a password input.");
             session.Dispose(); Wait(() => workers.All(Exited));
             Directory.CreateDirectory("artifacts/validation");
