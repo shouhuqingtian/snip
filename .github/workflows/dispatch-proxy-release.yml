@@ -1,0 +1,16 @@
+name: Dispatch verified proxy release tag
+on:
+  push:
+    branches: [system-proxy-compat]
+    paths: [.github/workflows/dispatch-proxy-release.yml]
+permissions:
+  contents: read
+  actions: write
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - run: gh workflow run windows.yml --ref v2.0.75 --repo "$GITHUB_REPOSITORY"
+        env:
+          GH_TOKEN: ${{ github.token }}
