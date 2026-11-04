@@ -20,6 +20,8 @@ public sealed class VoiceInputStatusWindow : Window
     private readonly VoiceInputController controller;
     private readonly Button review;
     private DateTimeOffset updated;
+    private DateTimeOffset phaseStarted;
+    private VoiceInputState previousState;
     private HwndSource? source;
     public VoiceInputStatusWindow(VoiceInputController controller, Action showResult)
     {
@@ -53,13 +55,14 @@ public sealed class VoiceInputStatusWindow : Window
         timer.Tick += (_, _) =>
         {
             if (controller.State == VoiceInputState.Recording && controller.RecordingStartedUtc is { } started) timerText.Text = $"已录音 {(DateTimeOffset.UtcNow - started).TotalSeconds:0} 秒 · {controller.RecordingEndHint} · Esc 取消";
-            else timerText.Text = controller.IsActive ? "文字不会自动发送；Esc 可取消。" : "";
+            else timerText.Text = controller.State == VoiceInputState.Recognizing ? $"已等待 {(DateTimeOffset.UtcNow - phaseStarted).TotalSeconds:0} 秒 · Esc 可取消" : controller.IsActive ? "文字不会自动发送；Esc 可取消。" : "";
             if (!controller.IsActive && !controller.ReviewNeeded && DateTimeOffset.UtcNow - updated > TimeSpan.FromSeconds(3)) Close();
         };
         Closed += (_, _) => { timer.Stop(); source?.RemoveHook(Hook); };
     }
     public void UpdateStatus()
     {
+        if (controller.State != previousState) { previousState = controller.State; phaseStarted = DateTimeOffset.UtcNow; }
         message.Text = controller.Status; updated = DateTimeOffset.UtcNow;
         review.Visibility = controller.ReviewNeeded && controller.LastText.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
     }

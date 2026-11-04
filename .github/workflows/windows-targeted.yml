@@ -1,7 +1,7 @@
 name: Run a targeted Windows regression
 on:
   push:
-    branches: [hold-to-dictate, voice-recording-mode, voice-input-settings-fix, system-proxy-compat]
+    branches: [hold-to-dictate, voice-recording-mode, voice-input-settings-fix, system-proxy-compat, faster-domestic-asr]
     paths: ['src/**', 'tests/**', '.github/workflows/windows-targeted.yml']
   workflow_dispatch:
     inputs:

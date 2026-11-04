@@ -14,7 +14,10 @@
     <TextBlock Text="使用 Windows 默认麦克风；录音最长 2 分钟。空闲时不打开麦克风，不加载识别模型。" Style="{StaticResource Subtitle}" TextWrapping="Wrap"/>
    </StackPanel></Border>
    <Border Style="{StaticResource Card}" Margin="0,0,0,12"><StackPanel IsEnabled="{Binding CanEdit}">
-    <TextBlock Text="在线语音识别服务（ASR）" Style="{StaticResource SectionTitle}"/><ComboBox x:Name="VoiceProviderBox" ItemsSource="{Binding Providers}" SelectedItem="{Binding Provider}" Margin="0,10,0,12"/>
+    <TextBlock Text="识别服务 / 已保存配置" Style="{StaticResource SectionTitle}"/><ComboBox x:Name="VoiceProviderBox" ItemsSource="{Binding Providers}" SelectedItem="{Binding Provider}" Margin="0,10,0,12"/>
+    <TextBlock Text="自定义配置名称（如百炼备用、工作网关）" FontWeight="SemiBold"/>
+    <DockPanel Margin="0,6,0,12"><Button x:Name="AddVoiceProfile" Content="新增自定义" Command="{Binding AddProfileCommand}" DockPanel.Dock="Right" Margin="8,0,0,0"/><TextBox x:Name="VoiceProfileNameBox" Text="{Binding NewProfileName,UpdateSourceTrigger=PropertyChanged}"/></DockPanel>
+    <TextBlock Text="接口协议" FontWeight="SemiBold"/><ComboBox x:Name="VoiceProtocolBox" ItemsSource="{Binding Protocols}" SelectedIndex="{Binding ProtocolIndex}" Margin="0,6,0,12"/>
     <TextBlock Text="完整识别 API 地址" FontWeight="SemiBold"/><TextBox x:Name="VoiceEndpointBox" Text="{Binding Endpoint,UpdateSourceTrigger=PropertyChanged}" Margin="0,6,0,12"/>
     <TextBlock Text="{Binding EndpointHint}" Style="{StaticResource Subtitle}" FontSize="12" TextWrapping="Wrap" Margin="0,0,0,12"/>
     <TextBlock Text="语音识别模型（可自定义）" FontWeight="SemiBold"/><ComboBox x:Name="VoiceModelBox" IsEditable="True" ItemsSource="{Binding Models}" Text="{Binding Model,UpdateSourceTrigger=PropertyChanged}" Margin="0,6,0,12"/>
@@ -23,7 +26,7 @@
     <TextBlock Text="仅接口域名和地域一致时可复用；文字翻译模型、AI 发音模型不能代替语音识别模型。" Style="{StaticResource Subtitle}" TextWrapping="Wrap" FontSize="12" Margin="0,0,0,12"/>
     <TextBlock Text="独立 API Key（已保存时可留空）" FontWeight="SemiBold"/><PasswordBox x:Name="VoiceKeyBox" IsEnabled="{Binding IndependentKey}" PasswordChanged="KeyChanged" Margin="0,6,0,0" Height="38" Padding="10,8"/>
    </StackPanel></Border>
-   <TextBlock Text="只有主动录音后才会把声音发送给所选识别服务，费用由服务商收取。录音不落盘，识别结果只在本次运行保留；输入位置改变时保留结果供复制。这组设置保存在此电脑，可复用已同步的翻译密钥。切换服务会放弃未保存的修改。" Style="{StaticResource Subtitle}" FontSize="12" TextWrapping="Wrap"/>
+   <TextBlock Text="只有主动录音后才会把声音发送给所选识别服务，费用由服务商收取。录音不落盘，识别结果只在本次运行保留；输入位置改变时保留结果供复制。这组设置保存在此电脑，可复用已同步的翻译密钥。切换会放弃未保存修改；选择已保存配置后点击保存设置才会启用。" Style="{StaticResource Subtitle}" FontSize="12" TextWrapping="Wrap"/>
   </StackPanel></ScrollViewer>
  </DockPanel>
 </Window>

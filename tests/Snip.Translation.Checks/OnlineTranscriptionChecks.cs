@@ -1,5 +1,6 @@
 using System.Net;
 using System.Text;
+using System.Text.Json;
 using Snip.Core;
 using Snip.Translation;
 
@@ -34,11 +35,30 @@ internal static class OnlineTranscriptionChecks
                 using var client = new HttpClient(new Handler(async (request, token) =>
                 {
                     Require(request.RequestUri!.AbsoluteUri == settings.Endpoint && request.Headers.Authorization?.Parameter == "PUBLIC-PRESET-KEY", "Preset ASR target/auth differs.");
-                    Require(request.Content is MultipartFormDataContent, "Preset ASR did not use the compatible upload protocol.");
-                    var parts = ((MultipartFormDataContent)request.Content!).ToArray();
-                    Require(await parts.Single(p => p.Headers.ContentDisposition!.Name!.Trim('"') == "model").ReadAsStringAsync(token) == settings.Model, "Preset ASR did not upload its recognition model.");
-                    Require((await parts.Single(p => p.Headers.ContentDisposition!.Name!.Trim('"') == "file").ReadAsByteArrayAsync(token)).SequenceEqual(audio.Wav), "Preset ASR changed its WAV upload.");
-                    return new(HttpStatusCode.OK) { Content = new StringContent("{\"text\":\"PUBLIC PRESET RESULT\"}") };
+                    if (settings.Protocol == TranscriptionProtocol.Qwen)
+                    {
+                        Require(request.Content!.Headers.ContentType!.MediaType == "application/json", "Qwen ASR must use native JSON.");
+                        using var json = JsonDocument.Parse(await request.Content.ReadAsStringAsync(token)); var root = json.RootElement;
+                        Require(root.GetProperty("model").GetString() == "qwen3-asr-flash", "Qwen ASR model differs.");
+                        string data = root.GetProperty("input").GetProperty("messages")[0].GetProperty("content")[0].GetProperty("audio").GetString()!;
+                        Require(data.StartsWith("data:audio/wav;base64,") && Convert.FromBase64String(data.Split(',', 2)[1]).SequenceEqual(audio.Wav), "Qwen ASR audio is not the exact inline WAV.");
+                        Require(!root.GetProperty("parameters").GetProperty("asr_options").TryGetProperty("language", out _), "Automatic Qwen language should be omitted.");
+                    }
+                    else
+                    {
+                        Require(request.Content is MultipartFormDataContent, "Preset ASR must use multipart.");
+                        var parts = ((MultipartFormDataContent)request.Content!).ToArray();
+                        Require(await parts.Single(p => p.Headers.ContentDisposition!.Name!.Trim('"') == "model").ReadAsStringAsync(token) == settings.Model, "Preset ASR model differs.");
+                        Require((await parts.Single(p => p.Headers.ContentDisposition!.Name!.Trim('"') == "file").ReadAsByteArrayAsync(token)).SequenceEqual(audio.Wav), "Preset ASR changed its WAV upload.");
+                        if (settings.Protocol == TranscriptionProtocol.Zhipu) Require(await parts.Single(p => p.Headers.ContentDisposition!.Name!.Trim('"') == "stream").ReadAsStringAsync(token) == "false", "Zhipu ASR must request a complete response.");
+                    }
+                    string body = settings.Protocol switch
+                    {
+                        TranscriptionProtocol.Qwen => "{\"output\":{\"choices\":[{\"message\":{\"content\":[{\"text\":\"PUBLIC PRESET RESULT\"}]}}]}}",
+                        TranscriptionProtocol.Zhipu => "{\"choices\":[{\"message\":{\"content\":\"PUBLIC PRESET RESULT\"}}]}",
+                        _ => "{\"text\":\"PUBLIC PRESET RESULT\"}"
+                    };
+                    return new(HttpStatusCode.OK) { Content = new StringContent(body) };
                 }));
                 Require(await new OnlineTranscriptionService(new(settings, "PUBLIC-PRESET-KEY"), client).TranscribeAsync(audio, default) == "PUBLIC PRESET RESULT", "Preset ASR response differs."); passed++;
             }
@@ -50,7 +70,7 @@ internal static class OnlineTranscriptionChecks
                 catch (VoiceInputException e)
                 {
                     Require(!e.Message.Contains("PRIVATE") && calls == 1 && e.Failure == VoiceInputFailure.Service && e.NativeCode == code && e.Message.Contains($"HTTP {code}"), "Provider data leaked, ASR was retried or HTTP diagnostics were lost.");
-                    if (code is 400 or 405 or 415 or 422) Require(e.Message.Contains("OpenAI") && e.Message.Contains("接口"), "Incompatible ASR endpoint failure did not explain the required protocol.");
+                    if (code is 400 or 405 or 415 or 422) Require(e.Message.Contains("协议") && e.Message.Contains("接口"), "Incompatible ASR endpoint failure did not explain the required protocol.");
                     if (code == 503) Require(e.Message.Contains("服务暂时异常"), "Server failure was reported as a key/model error.");
                     passed++;
                 }
@@ -59,6 +79,13 @@ internal static class OnlineTranscriptionChecks
             {
                 using var client = new HttpClient(new Handler((_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(body) })));
                 try { await Service(client).TranscribeAsync(audio, default); throw new Exception("Malformed ASR accepted."); }
+                catch (VoiceInputException) { passed++; }
+            }
+            foreach (var protocol in new[] { TranscriptionProtocol.Qwen, TranscriptionProtocol.Zhipu })
+            foreach (string body in new[] { "[]", "{\"output\":null}", "{\"choices\":[]}", "{\"output\":{\"choices\":[null]}}", "{\"choices\":[{\"message\":{\"content\":null}}]}" })
+            {
+                using var client = new HttpClient(new Handler((_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(body) })));
+                try { await new OnlineTranscriptionService(new(new("PUBLIC", "https://public.example.com/asr", "PUBLIC-ASR", Protocol: protocol), "PUBLIC-KEY"), client).TranscribeAsync(audio, default); throw new Exception("Malformed native ASR accepted."); }
                 catch (VoiceInputException) { passed++; }
             }
             using (var cancel = new CancellationTokenSource())

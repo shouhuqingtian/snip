@@ -7,6 +7,34 @@ namespace Snip.Core.Tests;
 public sealed class VoiceInputTests
 {
     [Fact]
+    public void SilenceEndsShrinkUploadWhileContextAndInternalPausesArePreserved()
+    {
+        byte[] pcm = new byte[160000]; // Five seconds, including quiet ends and an internal pause.
+        for (int i = 64000; i < 96000; i += 2)
+            if (i < 76000 || i >= 84000) BinaryPrimitives.WriteInt16LittleEndian(pcm.AsSpan(i), 1000);
+        byte[] wav = VoiceText.PcmToWav(pcm);
+        Assert.Equal(pcm.AsSpan(57600, 44800).ToArray(), wav[44..]);
+        Assert.Equal(wav.Length - 44, BinaryPrimitives.ReadInt32LittleEndian(wav.AsSpan(40)));
+        Assert.True(wav.Length < pcm.Length / 3);
+        // Speech right at the edges, including low-level leading speech, must remain intact.
+        byte[] shortPcm = Enumerable.Repeat((byte)0, 16000).ToArray();
+        for (int i = 0; i < shortPcm.Length; i += 2) BinaryPrimitives.WriteInt16LittleEndian(shortPcm.AsSpan(i), (short)(i < 6400 ? 10 : 1000));
+        Assert.Equal(shortPcm, VoiceText.PcmToWav(shortPcm)[44..]);
+    }
+    [Fact]
+    public void NativeAsrProtocolsPersistAndLegacyProfilesRemainCompatible()
+    {
+        var legacy = System.Text.Json.JsonSerializer.Deserialize<TranscriptionSettings>("{\"Provider\":\"PUBLIC\",\"Endpoint\":\"https://public.example.com/asr\",\"Model\":\"PUBLIC\"}")!;
+        Assert.Equal(TranscriptionProtocol.OpenAi, legacy.Protocol);
+        foreach (var name in new[] { "阿里云百炼", "智谱AI" })
+        {
+            var settings = TranscriptionProviders.Defaults(name);
+            var restored = System.Text.Json.JsonSerializer.Deserialize<TranscriptionSettings>(System.Text.Json.JsonSerializer.Serialize(settings))!;
+            Assert.Equal(settings, restored); Assert.NotEqual(TranscriptionProtocol.OpenAi, restored.Protocol);
+        }
+        Assert.Throws<ArgumentException>(() => TranscriptionProviders.Validate(legacy with { Protocol = (TranscriptionProtocol)42 }));
+    }
+    [Fact]
     public void ExistingVoicePreferencesKeepHoldModeAndBothModesSurviveRestart()
     {
         var legacy = System.Text.Json.JsonSerializer.Deserialize<VoiceInputPreferences>("{\"Enabled\":true,\"Hotkey\":{\"Modifiers\":3,\"VirtualKey\":32}}")!;

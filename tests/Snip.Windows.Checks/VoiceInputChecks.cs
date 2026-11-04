@@ -53,12 +53,15 @@ internal static class VoiceInputChecks
             var other = new TextBox { Text = "untouched", Margin = new Thickness(12), FontSize = 18 };
             var password = new PasswordBox { Margin = new Thickness(12) };
             var panel = new StackPanel(); panel.Children.Add(input); panel.Children.Add(other); panel.Children.Add(password); owner.Content = panel; owner.Show(); owner.Activate(); owner.UpdateLayout();
+            CheckTargetSession(owner, input, other, password);
             var translations = new OnlineTranslationSettingsStore(Path.Combine(folder, "translation.json"));
             translations.Save(new("PUBLIC-SHARED", "https://shared.example.com/v1", "PUBLIC-TEXT-MODEL"), "PUBLIC-SHARED-KEY");
             var store = new TranscriptionSettingsStore(translations, Path.Combine(folder, "voice-input.json"));
             var recorder = new FakeRecorder(); var recognizer = new FakeTranscriber();
+            int targetWorkerStarts = 0;
+            VoiceTargetProbe TargetProbe() { var p = new VoiceTargetProbe(AppHost); p.WorkerStarted += _ => Interlocked.Increment(ref targetWorkerStarts); return p; }
             using var journal = new DiagnosticJournal(Path.Combine(folder, "logs"));
-            controller = new(store, app.Dispatcher, journal, recorder, new VoiceTargetProbe(AppHost), _ => recognizer);
+            controller = new(store, app.Dispatcher, journal, recorder, TargetProbe(), _ => recognizer);
             controller.Initialize(); Require(!controller.Enabled && recorder.Calls == 0, "Voice input opened microphone before explicit setup.");
             var vm = new VoiceInputSettingsViewModel(store, translations, controller); var settings = new VoiceInputSettingsWindow(vm); settings.Show(); settings.UpdateLayout();
             vm.Endpoint = "https://asr.example.com/v1/audio/transcriptions"; vm.Model = "PUBLIC-ASR"; vm.SetGesture(Gesture);
@@ -68,6 +71,7 @@ internal static class VoiceInputChecks
             Require(!File.ReadAllText(Path.Combine(folder, "voice-input.json")).Contains(Key), "ASR key is plaintext on disk.");
             Preview(settings, "58-voice-input-settings");
             CheckSettingsHotkeys(settings, vm, controller, store, recorder);
+            CheckProfiles(settings, vm, controller, store, folder);
             using (var occupant = new HotkeyService())
             {
                 Require(occupant.Register(HotkeyGesture.Default), "Public screenshot conflict fixture could not register.");
@@ -79,7 +83,7 @@ internal static class VoiceInputChecks
             vm.Endpoint = "https://different.example.com/asr"; vm.SaveCommand.Execute(null);
             Require(store.Read()!.Endpoint == "https://shared.example.com/v1/audio/transcriptions" && vm.Status.Contains("域名"), "Cross-service key reuse was accepted or modified the saved profile.");
             settings.Close(); controller.Dispose();
-            controller = new(store, app.Dispatcher, journal, recorder, new VoiceTargetProbe(AppHost), _ => recognizer); controller.Initialize();
+            controller = new(store, app.Dispatcher, journal, recorder, TargetProbe(), _ => recognizer); controller.Initialize();
             Require(controller.Enabled && store.ReadCredentials().ApiKey == "PUBLIC-SHARED-KEY", "Protected voice settings did not survive restart.");
             void ObserveVoice(object? sender, EventArgs args)
             {
@@ -99,13 +103,14 @@ internal static class VoiceInputChecks
             }
             void Release()
             { Keys(true, 0x20, 0x12, 0x11); Wait(() => controller.State == VoiceInputState.Recognizing || !controller.IsActive); }
-            Focus(input); Clipboard.SetText("PUBLIC-CLIPBOARD-SENTINEL"); Start();
+            Focus(input); Clipboard.SetText("PUBLIC-CLIPBOARD-SENTINEL"); int firstProbeCount = targetWorkerStarts; Start();
             if (status is not null) Preview(status, "60-voice-input-recording");
             Require(recognizer.Calls == 0, "Voice was sent before shortcut release.");
             Release(); Wait(() => recognizer.Pending); recognizer.Result.SetResult("中文 English 🙂\n下一句");
             Wait(() => !controller.IsActive);
             Require(input.Text == "prefix中文 English 🙂 下一句suffix" && Clipboard.GetText() == "PUBLIC-CLIPBOARD-SENTINEL" && !controller.ReviewNeeded, "Native Unicode input differs, moved caret, touched clipboard or required manual paste.");
             Require(recorder.LastWave!.All(b => b == 0), "Completed recording bytes were retained.");
+            Require(targetWorkerStarts == firstProbeCount + 1, "One real dictation launched more than one UI Automation worker.");
             Console.WriteLine("PASS native hold-to-record/release-to-recognize inserts mixed Chinese/English/emoji at the original WPF caret, keeps clipboard intact and clears audio bytes.");
 
             input.Text = "prefixsuffix"; Focus(input); Start(); Release(); Wait(() => recognizer.Pending);
@@ -145,7 +150,7 @@ internal static class VoiceInputChecks
                 modeWindow.Close(); status?.Close();
             }
             SetMode(1); controller.Dispose();
-            controller = new(store, app.Dispatcher, journal, recorder, new VoiceTargetProbe(AppHost), _ => recognizer); controller.Initialize(); controller.Changed += ObserveVoice;
+            controller = new(store, app.Dispatcher, journal, recorder, TargetProbe(), _ => recognizer); controller.Initialize(); controller.Changed += ObserveVoice;
             using (var reopenedVm = new VoiceInputSettingsViewModel(store, translations, controller))
                 Require(controller.Mode == VoiceInputMode.Toggle && reopenedVm.ModeIndex == 1, "Toggle recording mode did not survive restart.");
             Console.WriteLine("PASS actual native mode selector saves toggle/hold choices and restores the selected mode after controller/settings restart with credentials intact.");
@@ -176,7 +181,7 @@ internal static class VoiceInputChecks
             controller.Dispose(); controller = null;
             journal.FlushAsync().GetAwaiter().GetResult(); string logs = File.ReadAllText(Path.Combine(folder, "logs/events.jsonl"));
             Require(!logs.Contains(Key) && !logs.Contains("PUBLIC-SHARED-KEY") && !logs.Contains("PUBLIC-DO-NOT-INSERT") && !logs.Contains("PUBLIC-TOGGLE-REVIEW") && !logs.Contains("asr.example.com"), "Voice content, endpoint or credentials entered diagnostics.");
-            File.WriteAllText("artifacts/validation/voice-input.json", JsonSerializer.Serialize(new { NativeHotkeyHoldRelease = true, ProtectedSettings = true, CredentialReuseChecked = true, ConflictPreservesShortcut = true, NativeCaretInsertion = true, ClipboardUnchanged = true, FocusChangeNoInjection = true, CancellationNoUpload = true, PasswordNoUpload = true, ReadOnlyPreserved = true, AudioCleared = true, ChromeTextareaInput = true, ChromeContentEditableInput = true, IsolatedRecorderPipe = true, WorkerReaped = true, ParentExitKillsWorker = true, DiagnosticsPrivate = true, TogglePressTwice = true, ToggleReleaseKeepsRecording = true, RecordingModePersists = true, ToggleCancelNoUpload = true, ToggleFocusChangeNoInjection = true, SettingsScreenshotAvailable = true, ShortcutCaptureRequiresClick = true, ShortcutCaptureEndsAfterOne = true, ShortcutCaptureCancelsOnBlur = true, ShortcutDraftNotApplied = true, ServiceFailureVisibleInSettings = true }));
+            File.WriteAllText("artifacts/validation/voice-input.json", JsonSerializer.Serialize(new { NativeHotkeyHoldRelease = true, ProtectedSettings = true, CredentialReuseChecked = true, ConflictPreservesShortcut = true, NativeCaretInsertion = true, ClipboardUnchanged = true, FocusChangeNoInjection = true, CancellationNoUpload = true, PasswordNoUpload = true, ReadOnlyPreserved = true, AudioCleared = true, ChromeTextareaInput = true, ChromeContentEditableInput = true, IsolatedRecorderPipe = true, WorkerReaped = true, ParentExitKillsWorker = true, DiagnosticsPrivate = true, TogglePressTwice = true, ToggleReleaseKeepsRecording = true, RecordingModePersists = true, ToggleCancelNoUpload = true, ToggleFocusChangeNoInjection = true, SettingsScreenshotAvailable = true, ShortcutCaptureRequiresClick = true, ShortcutCaptureEndsAfterOne = true, ShortcutCaptureCancelsOnBlur = true, ShortcutDraftNotApplied = true, ServiceFailureVisibleInSettings = true, TargetWorkerReused = true, TargetWorkerFreshChecks = true, TargetWorkerReaped = true, NamedProfilesSwitch = true, NativeProtocolSelector = true, NativeProfilesRestart = true }));
             return 0;
         }
         catch (Exception error)
@@ -186,6 +191,54 @@ internal static class VoiceInputChecks
             Console.Error.WriteLine(error); return 1;
         }
         finally { Keys(true, 0x20, 0x12, 0x11); controller?.Dispose(); status?.Close(); foreach (var w in app.Windows.Cast<Window>().ToArray()) w.Close(); Directory.Delete(folder, true); SynchronizationContext.SetSynchronizationContext(previous); }
+    }
+    private static void CheckTargetSession(Window owner, TextBox input, TextBox other, PasswordBox password)
+    {
+        var workers = new System.Collections.Concurrent.ConcurrentQueue<int>();
+        var probe = new VoiceTargetProbe(AppHost); probe.WorkerStarted += workers.Enqueue;
+        owner.Activate(); input.Focus(); Pause();
+        var foreground = new WindowInteropHelper(owner).Handle;
+        var session = probe.OpenSession();
+        VoiceTargetInfo? Read() { var task = session.ReadAsync(foreground, default); Wait(() => task.IsCompleted); return task.GetAwaiter().GetResult(); }
+        var clock = Stopwatch.StartNew();
+        try
+        {
+            var first = Read(); long firstMs = clock.ElapsedMilliseconds; clock.Restart(); var second = Read(); long warmMs = clock.ElapsedMilliseconds;
+            Require(first is { Editable: true, Password: false } && second is { Editable: true } && first.RuntimeId.SequenceEqual(second.RuntimeId) && workers.Count == 1, "Repeated native target verification did not reuse the same isolated worker.");
+            Click(other); var changed = Read();
+            Require(changed is { Editable: true } && !changed.RuntimeId.SequenceEqual(first.RuntimeId), "Reused target worker returned stale input identity.");
+            Click(password); Require(Read()?.Password == true && workers.Count == 1, "Reused target worker missed a password input.");
+            session.Dispose(); Wait(() => workers.All(Exited));
+            Directory.CreateDirectory("artifacts/validation");
+            File.WriteAllText("artifacts/validation/voice-target-performance.json", JsonSerializer.Serialize(new { WorkerStartsForFourChecks = workers.Count, ColdReadMs = firstMs, WarmReadMs = warmMs, FreshIdentity = true, PasswordDetected = true, WorkerReaped = true }));
+            Console.WriteLine("PASS four real UI Automation checks reuse one worker while observing changed fields/passwords, then reap it; warm-check timing is recorded separately.");
+        }
+        finally { session.Dispose(); }
+    }
+    private static void CheckProfiles(VoiceInputSettingsWindow settings, VoiceInputSettingsViewModel vm, VoiceInputController controller, TranscriptionSettingsStore store, string folder)
+    {
+        foreach (var item in new[] { (Name: "PUBLIC-备用百炼", Protocol: 1, Provider: "阿里云百炼"), (Name: "PUBLIC-备用智谱", Protocol: 2, Provider: "智谱AI") })
+        {
+            Click((TextBox)settings.FindName("VoiceProfileNameBox"));
+            var typing = VoiceTextInput.TypeAsync(item.Name, () => settings.IsActive, default); Wait(() => typing.IsCompleted);
+            Require(typing.GetAwaiter().GetResult() == item.Name.Length && vm.NewProfileName == item.Name, "Native profile name entry did not reach its binding.");
+            Click((Button)settings.FindName("AddVoiceProfile"));
+            Require(vm.Provider == item.Name, "Actual add-profile button did not select the new profile.");
+            Click((ComboBox)settings.FindName("VoiceProtocolBox")); HotkeyChecks.Press(item.Protocol == 1 ? (ushort)0x24 : (ushort)0x23);
+            if (item.Protocol == 1) HotkeyChecks.Press(0x28);
+            HotkeyChecks.Press(0x0D); Wait(() => vm.ProtocolIndex == item.Protocol);
+            var defaults = TranscriptionProviders.Defaults(item.Provider);
+            Require(vm.Endpoint == defaults.Endpoint && vm.Model == defaults.Model, "Native protocol selection did not fill a valid empty-profile example.");
+            ((PasswordBox)settings.FindName("VoiceKeyBox")).Password = "PUBLIC-NATIVE-KEY";
+            Click((Button)settings.FindName("SaveVoiceInput"));
+            var reopened = new TranscriptionSettingsStore(new OnlineTranslationSettingsStore(Path.Combine(folder, "translation.json")), Path.Combine(folder, "voice-input.json"));
+            Require(reopened.ReadCredentials().Settings.Provider == item.Name && reopened.ReadCredentials().Settings.Protocol == (TranscriptionProtocol)item.Protocol && reopened.ReadCredentials().ApiKey == "PUBLIC-NATIVE-KEY", "Named profile protocol/key did not persist.");
+            Require(!File.ReadAllText(Path.Combine(folder, "voice-input.json")).Contains("PUBLIC-NATIVE-KEY"), "Named profile key was saved in plaintext.");
+        }
+        Click((ComboBox)settings.FindName("VoiceProviderBox")); HotkeyChecks.Press(0x24); HotkeyChecks.Press(0x0D); Wait(() => vm.Provider == "硅基流动");
+        Click((Button)settings.FindName("SaveVoiceInput"));
+        Require(store.ReadCredentials().ApiKey == Key && store.ReadCredentials().Settings.Protocol == TranscriptionProtocol.OpenAi && controller.Enabled, "Switching back to the existing profile lost its original key or registration.");
+        Console.WriteLine("PASS native add/select/save controls persist separate named Qwen and GLM protocols/DPAPI keys; reloading and switching back preserve the original service and shortcut.");
     }
     private static void CheckSettingsHotkeys(VoiceInputSettingsWindow settings, VoiceInputSettingsViewModel vm, VoiceInputController controller, TranscriptionSettingsStore store, FakeRecorder recorder)
     {
@@ -284,6 +337,7 @@ internal static class VoiceInputChecks
     { var inputs = keys.Select(k => new Input { Type = 1, Data = new() { Key = new() { Key = k, Flags = up ? 2u : 0u } } }).ToArray(); Require(SendInput((uint)inputs.Length, inputs, Marshal.SizeOf<Input>()) == inputs.Length, "Native key input failed."); }
     private static void Click(FrameworkElement element)
     {
+        element.BringIntoView(); element.UpdateLayout(); Pause();
         var point = element.PointToScreen(new Point(element.ActualWidth / 2, element.ActualHeight / 2)); SetPhysicalCursorPos((int)point.X, (int)point.Y);
         foreach (uint flags in new[] { 2u, 4u }) { Input[] input = [new() { Data = new() { Mouse = new() { Flags = flags } } }]; Require(SendInput(1, input, Marshal.SizeOf<Input>()) == 1, "Native click failed."); } Pause();
     }

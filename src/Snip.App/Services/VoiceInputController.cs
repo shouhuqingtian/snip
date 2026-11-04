@@ -1,4 +1,5 @@
 using System.Windows.Threading;
+using System.Diagnostics;
 using Snip.Core;
 using Snip.Infrastructure;
 using Snip.Translation;
@@ -90,6 +91,10 @@ public sealed class VoiceInputController : IDisposable
         long current = ++generation; SuppressNotification = false; ReviewNeeded = false; RecordingStartedUtc = null; LastFailure = "";
         using var request = new CancellationTokenSource(); using var released = new CancellationTokenSource(); active = request; stop = released;
         IVoiceInputTarget? target = null;
+        using var targetSession = (probe as IReusableVoiceTargetProbe)?.OpenSession();
+        var activeProbe = (IVoiceTargetProbe?)targetSession ?? probe;
+        var elapsed = Stopwatch.StartNew();
+        long recordedAt = 0, submittedAt = 0, recognizedAt = 0;
         string completion = "语音输入已停止。";
         bool holdMode = Mode == VoiceInputMode.Hold;
         Publish(holdMode ? "准备麦克风，请继续按住 " + Shortcut + "…" : "准备麦克风，再按一次快捷键结束录音…", VoiceInputState.Starting);
@@ -101,7 +106,7 @@ public sealed class VoiceInputController : IDisposable
                 () => dispatcher.BeginInvoke(() => { if (!disposed && current == generation) Cancel(); }));
             currentTarget = target;
             if (holdMode && !target.HotkeyHeld) throw new VoiceInputException("请按住语音快捷键说话，松开后才会识别。");
-            var initialTask = probe.ReadAsync(target.Foreground, request.Token);
+            var initialTask = activeProbe.ReadAsync(target.Foreground, request.Token);
             using var holdWatch = CancellationTokenSource.CreateLinkedTokenSource(request.Token);
             var releaseWatch = Task.Run(async () =>
             {
@@ -126,14 +131,17 @@ public sealed class VoiceInputController : IDisposable
             }
             finally { holdWatch.Cancel(); await releaseWatch; }
             using var audio = recorded;
+            recordedAt = elapsed.ElapsedMilliseconds;
             request.Token.ThrowIfCancellationRequested();
             Publish("正在识别语音… Esc 可取消", VoiceInputState.Recognizing);
             var original = await initialTask;
             if (original?.Password == true) throw new VoiceInputException("当前是密码输入框，请选择普通文字输入框后再使用语音输入。");
+            submittedAt = elapsed.ElapsedMilliseconds;
             string text = VoiceText.ForTyping(await transcriber(credentials).TranscribeAsync(audio, request.Token));
+            recognizedAt = elapsed.ElapsedMilliseconds;
             request.Token.ThrowIfCancellationRequested(); if (disposed || current != generation) return;
             LastText = text;
-            var now = target.IsCurrent ? await probe.ReadAsync(target.Foreground, request.Token) : null;
+            var now = target.IsCurrent ? await activeProbe.ReadAsync(target.Foreground, request.Token) : null;
             bool safe = original is { Editable: true, Password: false } && now is { Editable: true, Password: false } && original.ProcessId == now.ProcessId && original.RuntimeId.SequenceEqual(now.RuntimeId) && target.IsCurrent;
             diagnostics?.Record("voice-input", "target-checked", new { OriginalAvailable = original is not null, OriginalEditable = original?.Editable, CurrentAvailable = now is not null, CurrentEditable = now?.Editable, SameInput = safe, WindowUnchanged = target.IsCurrent });
             int entered = 0;
@@ -146,6 +154,7 @@ public sealed class VoiceInputController : IDisposable
             string message = entered == text.Length ? "识别完成，文字已输入。" : entered > 0 ? "输入已停止，可能只输入了部分文字；完整结果已保留。" : "识别完成，输入位置变化或无法确认可输入；结果已保留，可查看并复制。";
             completion = message;
             diagnostics?.Record("voice-input", "completed", new { Characters = text.Length, InsertedCharacters = entered, AutomaticallyInserted = entered == text.Length });
+            diagnostics?.Record("voice-input", "timing", new { RecordingAndStartupMs = recordedAt, InitialTargetWaitMs = submittedAt - recordedAt, RecognitionMs = recognizedAt - submittedAt, FinalTargetAndInputMs = elapsed.ElapsedMilliseconds - recognizedAt, AudioBytes = audio.Wav.Length });
         }
         catch (OperationCanceledException) { completion = "语音输入已取消。"; }
         catch (Exception error)

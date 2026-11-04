@@ -16,28 +16,66 @@ public interface IVoiceTargetProbe
 {
     Task<VoiceTargetInfo?> ReadAsync(IntPtr foreground, CancellationToken token);
 }
-public sealed class VoiceTargetProbe(Func<ProcessStartInfo> host) : IVoiceTargetProbe
+public interface IVoiceTargetProbeSession : IVoiceTargetProbe, IDisposable { }
+public interface IReusableVoiceTargetProbe
 {
-    public Task<VoiceTargetInfo?> ReadAsync(IntPtr foreground, CancellationToken token) => Task.Run(async () =>
+    IVoiceTargetProbeSession OpenSession();
+}
+public sealed class VoiceTargetProbe(Func<ProcessStartInfo> host) : IVoiceTargetProbe, IReusableVoiceTargetProbe
+{
+    public event Action<int>? WorkerStarted;
+    public IVoiceTargetProbeSession OpenSession() => new Session(host, id => WorkerStarted?.Invoke(id));
+    public async Task<VoiceTargetInfo?> ReadAsync(IntPtr foreground, CancellationToken token)
     {
-        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(token); deadline.CancelAfter(TimeSpan.FromSeconds(3));
-        Process? process = null;
-        try
+        using var session = OpenSession();
+        return await session.ReadAsync(foreground, token).ConfigureAwait(false);
+    }
+    private sealed class Session(Func<ProcessStartInfo> host, Action<int> started) : IVoiceTargetProbeSession
+    {
+        private readonly SemaphoreSlim gate = new(1);
+        private readonly CancellationTokenSource lifetime = new();
+        private Process? process;
+        private VoiceWorkerJob? job;
+        private int disposed;
+        public Task<VoiceTargetInfo?> ReadAsync(IntPtr foreground, CancellationToken token)
         {
-            var info = host(); info.UseShellExecute = false; info.CreateNoWindow = true; info.RedirectStandardInput = info.RedirectStandardOutput = true;
-            info.ArgumentList.Add("--voice-target-worker"); process = Process.Start(info) ?? throw new InvalidOperationException();
-            using var job = VoiceWorkerJob.Attach(process);
-            await process.StandardInput.WriteLineAsync(foreground.ToInt64().ToString(System.Globalization.CultureInfo.InvariantCulture)).ConfigureAwait(false);
-            string? line = await process.StandardOutput.ReadLineAsync(deadline.Token).ConfigureAwait(false);
-            if (line is null || line.Length > 8192) return null;
-            var result = JsonSerializer.Deserialize<VoiceTargetInfo>(line);
-            if (result?.RuntimeId is null || result.RuntimeId.Length is < 1 or > 64) return null;
-            return result;
+            if (Volatile.Read(ref disposed) != 0) return Task.FromResult<VoiceTargetInfo?>(null);
+            var lifetimeToken = lifetime.Token;
+            return Task.Run(async () =>
+            {
+                using var deadline = CancellationTokenSource.CreateLinkedTokenSource(token, lifetimeToken); deadline.CancelAfter(TimeSpan.FromSeconds(3));
+                bool entered = false;
+                try
+                {
+                    await gate.WaitAsync(deadline.Token).ConfigureAwait(false); entered = true;
+                    deadline.Token.ThrowIfCancellationRequested();
+                    if (process is null)
+                    {
+                        var info = host(); info.UseShellExecute = false; info.CreateNoWindow = true; info.RedirectStandardInput = info.RedirectStandardOutput = true;
+                        info.ArgumentList.Add("--voice-target-worker"); process = Process.Start(info) ?? throw new InvalidOperationException();
+                        job = VoiceWorkerJob.Attach(process);
+                        started(process.Id);
+                    }
+                    await process.StandardInput.WriteLineAsync(foreground.ToInt64().ToString(System.Globalization.CultureInfo.InvariantCulture)).ConfigureAwait(false);
+                    string? line = await process.StandardOutput.ReadLineAsync(deadline.Token).ConfigureAwait(false);
+                    if (line is null || line.Length > 8192) { StopCurrent(); return null; }
+                    var result = JsonSerializer.Deserialize<VoiceTargetInfo>(line);
+                    return result?.RuntimeId is { Length: >= 1 and <= 64 } ? result : null;
+                }
+                catch (Exception e) when (e is IOException or JsonException or InvalidOperationException or System.ComponentModel.Win32Exception or OperationCanceledException)
+                { if (entered) StopCurrent(); token.ThrowIfCancellationRequested(); return null; }
+                finally { if (entered) gate.Release(); }
+            }, token);
         }
-        catch (Exception e) when (e is IOException or JsonException or InvalidOperationException or System.ComponentModel.Win32Exception or OperationCanceledException)
-        { token.ThrowIfCancellationRequested(); return null; }
-        finally { Stop(process); }
-    }, token);
+        private void StopCurrent() { job?.Dispose(); job = null; Stop(process); process = null; }
+        public void Dispose()
+        {
+            if (Interlocked.Exchange(ref disposed, 1) != 0) return;
+            lifetime.Cancel();
+            // Never wait for a native accessibility provider on the UI thread.
+            _ = Task.Run(async () => { await gate.WaitAsync().ConfigureAwait(false); try { StopCurrent(); lifetime.Dispose(); } finally { gate.Release(); } });
+        }
+    }
     internal static void Stop(Process? process)
     {
         if (process is null) return;
@@ -51,11 +89,19 @@ public static class VoiceTargetWorker
     [DllImport("user32.dll")] private static extern IntPtr GetForegroundWindow();
     public static int Run(TextReader input, TextWriter output)
     {
-        using var timeout = new Timer(_ => Environment.Exit(8), null, 4000, Timeout.Infinite);
+        using var timeout = new Timer(_ => Environment.Exit(8), null, (TranscriptionProviders.MaximumRecordingSeconds + 110) * 1000, Timeout.Infinite);
+        while (input.ReadLine() is { } line)
+        {
+            var result = Read(line); output.WriteLine(JsonSerializer.Serialize(result)); output.Flush();
+        }
+        return 0;
+    }
+    private static VoiceTargetInfo Read(string line)
+    {
         VoiceTargetInfo result = new(false, false, 0, []);
         try
         {
-            if (!long.TryParse(input.ReadLine(), out long expected) || GetForegroundWindow().ToInt64() != expected) return 1;
+            if (!long.TryParse(line, out long expected) || GetForegroundWindow().ToInt64() != expected) return result;
             var window = new IntPtr(expected);
             bool chromium = BrowserHoverHitTest.IsChromium(window);
             // Chromium enables its accessibility tree lazily for a new UIA client.
@@ -81,7 +127,7 @@ public static class VoiceTargetWorker
             if (GetForegroundWindow().ToInt64() != expected) result = new(false, false, 0, []);
         }
         catch (Exception) { result = new(false, false, 0, []); }
-        output.WriteLine(JsonSerializer.Serialize(result)); output.Flush(); return 0;
+        return result;
     }
 }
 /// <summary>Native microphone driver lives only in a bounded helper. Audio crosses an anonymous pipe, never disk.</summary>

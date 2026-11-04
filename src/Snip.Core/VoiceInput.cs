@@ -4,7 +4,8 @@ using System.Text;
 
 namespace Snip.Core;
 
-public sealed record TranscriptionSettings(string Provider, string Endpoint, string Model, string Language = "", string TranslationProfile = "", bool HasApiKey = false);
+public enum TranscriptionProtocol { OpenAi, Qwen, Zhipu }
+public sealed record TranscriptionSettings(string Provider, string Endpoint, string Model, string Language = "", string TranslationProfile = "", bool HasApiKey = false, TranscriptionProtocol Protocol = TranscriptionProtocol.OpenAi);
 public enum VoiceInputMode { Hold, Toggle }
 public sealed record VoiceInputPreferences(bool Enabled, HotkeyGesture Hotkey, VoiceInputMode Mode = VoiceInputMode.Hold)
 {
@@ -68,10 +69,12 @@ public sealed class RecordingBufferOrder
 public static class TranscriptionProviders
 {
     public const int MaximumRecordingSeconds = 120;
-    public static readonly string[] Names = ["硅基流动", "OpenAI", "Groq", "Fireworks", "自定义（兼容接口）"];
+    public static readonly string[] Names = ["硅基流动", "阿里云百炼", "智谱AI", "OpenAI", "Groq", "Fireworks", "自定义（兼容接口）"];
     public static TranscriptionSettings Defaults(string provider) => provider switch
     {
         "硅基流动" => new(provider, "https://api.siliconflow.cn/v1/audio/transcriptions", "FunAudioLLM/SenseVoiceSmall"),
+        "阿里云百炼" => new(provider, "https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation", "qwen3-asr-flash", Protocol: TranscriptionProtocol.Qwen),
+        "智谱AI" => new(provider, "https://open.bigmodel.cn/api/paas/v4/audio/transcriptions", "glm-asr", Protocol: TranscriptionProtocol.Zhipu),
         "OpenAI" => new(provider, "https://api.openai.com/v1/audio/transcriptions", "gpt-4o-mini-transcribe"),
         "Groq" => new(provider, "https://api.groq.com/openai/v1/audio/transcriptions", "whisper-large-v3-turbo"),
         "Fireworks" => new(provider, "https://audio-prod.us-virginia-1.direct.fireworks.ai/v1/audio/transcriptions", "whisper-v3"),
@@ -80,6 +83,8 @@ public static class TranscriptionProviders
     public static string[] Models(string provider) => provider switch
     {
         "硅基流动" => ["FunAudioLLM/SenseVoiceSmall"],
+        "阿里云百炼" => ["qwen3-asr-flash"],
+        "智谱AI" => ["glm-asr"],
         "OpenAI" => ["gpt-4o-mini-transcribe", "gpt-4o-transcribe", "whisper-1"],
         "Groq" => ["whisper-large-v3-turbo", "whisper-large-v3"],
         "Fireworks" => ["whisper-v3"],
@@ -88,6 +93,7 @@ public static class TranscriptionProviders
     public static void Validate(TranscriptionSettings settings)
     {
         _ = SpeechProviders.Endpoint(settings.Endpoint);
+        if (!Enum.IsDefined(settings.Protocol)) throw new ArgumentException("请选择有效的语音识别接口协议。");
         if (string.IsNullOrWhiteSpace(settings.Provider) || settings.Provider.Length > 64 || settings.Provider.Any(char.IsControl) ||
             string.IsNullOrWhiteSpace(settings.Model) || settings.Model.Length > 256 || settings.Model.Any(char.IsControl) ||
             settings.Language is not ("" or "zh" or "en") || settings.TranslationProfile is null || settings.TranslationProfile.Length > 64 || settings.TranslationProfile.Any(char.IsControl))
@@ -116,6 +122,16 @@ public static class VoiceText
         long energy = 0;
         for (int i = 0; i < pcm.Length; i += 2) { int sample = BinaryPrimitives.ReadInt16LittleEndian(pcm[i..]); energy += (long)sample * sample; }
         if (Math.Sqrt(energy / (pcm.Length / 2.0)) < 20) throw new VoiceInputException("没有录到清晰声音，请检查默认麦克风和输入音量。", VoiceInputFailure.NoVoice);
+        // Trim only quiet ends; retain 200 ms context and every internal pause.
+        int first = -1, last = 0;
+        for (int offset = 0; offset < pcm.Length; offset += 640)
+        {
+            int length = Math.Min(640, pcm.Length - offset); long frameEnergy = 0;
+            for (int i = offset; i < offset + length; i += 2) { int sample = BinaryPrimitives.ReadInt16LittleEndian(pcm[i..]); frameEnergy += (long)sample * sample; }
+            if (frameEnergy >= 400L * (length / 2)) { if (first < 0) first = offset; last = offset + length; }
+        }
+        int start = Math.Max(0, first - 6400), end = Math.Min(pcm.Length, last + 6400);
+        if (first >= 0 && end - start >= 8000) pcm = pcm[start..end];
         byte[] wav = new byte[44 + pcm.Length];
         "RIFF"u8.CopyTo(wav); BinaryPrimitives.WriteInt32LittleEndian(wav.AsSpan(4), wav.Length - 8);
         "WAVEfmt "u8.CopyTo(wav.AsSpan(8)); BinaryPrimitives.WriteInt32LittleEndian(wav.AsSpan(16), 16);
