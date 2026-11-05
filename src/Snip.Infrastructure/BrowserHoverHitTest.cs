@@ -10,6 +10,10 @@ namespace Snip.Infrastructure;
 /// <summary>Ask the selected Chromium window for its actual hit path, never the overlay or hidden sibling rectangles.</summary>
 internal static class BrowserHoverHitTest
 {
+    [StructLayout(LayoutKind.Sequential)] private struct GuiInfo
+    { public uint Size, Flags; public IntPtr Active, Focus, Capture, Menu, Move, Caret; public NativeMethods.NativeRect Rect; }
+    [DllImport("user32.dll")] private static extern bool GetGUIThreadInfo(uint thread, ref GuiInfo info);
+    [DllImport("user32.dll")] private static extern bool IsChild(IntPtr parent, IntPtr child);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern int GetClassName(IntPtr window, StringBuilder name, int count);
     [DllImport("oleacc.dll")] private static extern int AccessibleObjectFromWindow(IntPtr window, uint objectId, ref Guid iid,
         [MarshalAs(UnmanagedType.Interface)] out IAccessible? accessible);
@@ -20,14 +24,27 @@ internal static class BrowserHoverHitTest
         return name.ToString().StartsWith("Chrome_WidgetWin_", StringComparison.Ordinal);
     }
 
-    internal static void WarmFocusedAccessibility(IntPtr window)
+    internal static (IntPtr Window, int? Role, int? State) WarmFocusedAccessibility(IntPtr window)
     {
         // Electron may expose only its window pane to a new UIA client until a
         // native accessibility client asks for OBJID_CLIENT. This requests only
         // the selected foreground window and its focus, never page text.
+        var info = new GuiInfo { Size = (uint)Marshal.SizeOf<GuiInfo>() };
+        var focused = GetGUIThreadInfo(0, ref info) && IsChild(window, info.Focus) ? info.Focus : window;
         var iid = typeof(IAccessible).GUID;
-        if (AccessibleObjectFromWindow(window, unchecked((uint)-4), ref iid, out var root) >= 0 && root is not null)
-            _ = root.accFocus;
+        if (AccessibleObjectFromWindow(focused, unchecked((uint)-4), ref iid, out var root) >= 0 && root is not null)
+        {
+            object child = 0;
+            for (int depth = 0; depth < 8; depth++)
+            {
+                var next = root.accFocus;
+                if (next is IAccessible accessible && !ReferenceEquals(root, accessible)) { root = accessible; continue; }
+                if (next is int id) child = id;
+                break;
+            }
+            return (focused, root.get_accRole(child) as int?, root.get_accState(child) as int?);
+        }
+        return (focused, null, null);
     }
 
     public static PixelRect? Find(IntPtr window, PixelRect bounds, PixelPoint point, double scale)

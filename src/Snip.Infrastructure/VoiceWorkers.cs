@@ -11,7 +11,7 @@ using Snip.Core;
 
 namespace Snip.Infrastructure;
 
-public sealed record VoiceTargetInfo(bool Editable, bool Password, int ProcessId, int[] RuntimeId, int ControlTypeId = 0, bool KeyboardFocusable = false, bool? TextReadOnly = null);
+public sealed record VoiceTargetInfo(bool Editable, bool Password, int ProcessId, int[] RuntimeId, int ControlTypeId = 0, bool KeyboardFocusable = false, bool? TextReadOnly = null, int? NativeFocusRole = null, int? NativeFocusState = null);
 public interface IVoiceTargetProbe
 {
     Task<VoiceTargetInfo?> ReadAsync(IntPtr foreground, CancellationToken token);
@@ -108,7 +108,8 @@ public static class VoiceTargetWorker
             // Initialize only this foreground window, then give the focused edit a
             // bounded chance to appear. Never accept the temporary browser pane as
             // the original input or enumerate page text.
-            if (chromium) { BrowserHoverHitTest.WarmFocusedAccessibility(window); _ = AutomationElement.FromHandle(window); }
+            (IntPtr Window, int? Role, int? State) nativeFocus = (window, null, null);
+            if (chromium) { nativeFocus = BrowserHoverHitTest.WarmFocusedAccessibility(window); _ = AutomationElement.FromHandle(nativeFocus.Window); }
             var warmup = Stopwatch.StartNew();
             do
             {
@@ -127,7 +128,7 @@ public static class VoiceTargetWorker
                         editable = textReadOnly == false;
                     }
                     else if (focused.Current.ControlType == ControlType.Edit) editable = true;
-                    result = new(editable && focused.Current.IsEnabled && focused.Current.IsKeyboardFocusable, password, focused.Current.ProcessId, focused.GetRuntimeId(), focused.Current.ControlType.Id, focused.Current.IsKeyboardFocusable, textReadOnly);
+                    result = new(editable && focused.Current.IsEnabled && focused.Current.IsKeyboardFocusable, password, focused.Current.ProcessId, focused.GetRuntimeId(), focused.Current.ControlType.Id, focused.Current.IsKeyboardFocusable, textReadOnly, nativeFocus.Role, nativeFocus.State);
                 }
                 if (!chromium || result.Editable || result.Password || warmup.ElapsedMilliseconds >= 1000) break;
                 Thread.Sleep(50); // Only this deadline-bound helper thread waits.
