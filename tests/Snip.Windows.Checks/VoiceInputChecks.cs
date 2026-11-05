@@ -310,19 +310,7 @@ internal static class VoiceInputChecks
                     Require(SendInput(1, click, Marshal.SizeOf<Input>()) == 1, "Electron input click failed.");
                 }
                 Pause();
-                using var session = new VoiceTargetProbe(AppHost).OpenSession();
-                VoiceTargetInfo Read()
-                {
-                    var task = session.ReadAsync(window.Handle, default); Wait(() => task.IsCompleted);
-                    return task.GetAwaiter().GetResult() ?? throw new InvalidOperationException("Electron focus probe returned no identity.");
-                }
-                var first = Read(); var repeated = Read();
-                Require(first.Editable && repeated.Editable && first.RuntimeId.SequenceEqual(repeated.RuntimeId), "Electron focused text identity was not stable across fresh reads.");
-                HotkeyChecks.Press(0x09); Wait(() => Title().EndsWith("| TWO", StringComparison.Ordinal));
-                var changed = Read();
-                Require(changed.Editable && !first.RuntimeId.SequenceEqual(changed.RuntimeId), "Electron native text identity did not distinguish another editor.");
-                HotkeyChecks.Press(0x10, 0x09); Wait(() => Title().EndsWith("| ONE", StringComparison.Ordinal));
-                Console.WriteLine("PASS real Electron fresh native focus reads retain the same field identity and distinguish a different editable field.");
+
             }
             foreach (var test in new[] { ("ONEOK", "PUBLIC 中文 voice"), ("TWOOK", "PUBLIC English words"), ("THREEOK", "PUBLIC rich editor"), ("FOUROK", "PUBLIC plain editor") })
             {
@@ -331,6 +319,22 @@ internal static class VoiceInputChecks
                 Keys(true, 0x20, 0x12, 0x11); Wait(() => recognizer.Pending); recognizer.Result.SetResult(test.Item2); Wait(() => !controller.IsActive);
                 Require(!controller.ReviewNeeded, (electron ? "Electron" : "Chrome") + " input could not be verified: " + controller.Status);
                 Wait(() => Title().EndsWith("| " + test.Item1, StringComparison.Ordinal));
+                if (electron && test.Item1 == "ONEOK")
+                {
+                using var session = new VoiceTargetProbe(AppHost).OpenSession();
+                VoiceTargetInfo Read()
+                {
+                    var task = session.ReadAsync(window.Handle, default); Wait(() => task.IsCompleted);
+                    return task.GetAwaiter().GetResult() ?? throw new InvalidOperationException("Electron focus probe returned no identity.");
+                }
+                var first = Read(); var repeated = Read();
+                Require(first.Editable && repeated.Editable && first.RuntimeId.SequenceEqual(repeated.RuntimeId), "Electron focused text identity was not stable: firstEditable=" + first.Editable + ", repeatedEditable=" + repeated.Editable + ", sameIdentity=" + first.RuntimeId.SequenceEqual(repeated.RuntimeId) + ", firstRole=" + first.NativeFocusRole + ", repeatedRole=" + repeated.NativeFocusRole);
+                HotkeyChecks.Press(0x09); Wait(() => Title().EndsWith("| TWO", StringComparison.Ordinal));
+                var changed = Read();
+                Require(changed.Editable && !first.RuntimeId.SequenceEqual(changed.RuntimeId), "Electron native text identity did not distinguish another editor.");
+                HotkeyChecks.Press(0x10, 0x09); Wait(() => Title().EndsWith("| ONE", StringComparison.Ordinal));
+                Console.WriteLine("PASS real Electron fresh native focus reads retain the same field identity and distinguish a different editable field.");
+                }
             }
             Console.WriteLine("PASS real " + (electron ? "Electron desktop" : "Chrome") + " textarea, semantic and roleless rich/plain contenteditable accept native ASR Unicode input without Return or submit.");
             HotkeyChecks.Press(0x09); Wait(() => Title().EndsWith("| FIVE", StringComparison.Ordinal));

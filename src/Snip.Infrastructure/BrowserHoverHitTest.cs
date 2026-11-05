@@ -19,6 +19,40 @@ internal static class BrowserHoverHitTest
         [MarshalAs(UnmanagedType.Interface)] out IAccessible? accessible);
 
 
+    [ComImport, Guid("F8B80ADA-2C44-48D0-89BE-5FF23C9CD875"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    private interface IAccessibleExNative
+    {
+        [PreserveSig] int GetObjectForChild(int child, out IAccessibleExNative? result);
+        [PreserveSig] int GetIAccessiblePair(out IAccessible? accessible, out int child);
+        [PreserveSig] int GetRuntimeId([MarshalAs(UnmanagedType.SafeArray, SafeArraySubType = VarEnum.VT_I4)] out int[]? result);
+        [PreserveSig] int ConvertReturnedElement(IntPtr provider, out IAccessibleExNative? result);
+    }
+    [ComImport, Guid("6D5140C1-7436-11CE-8034-00AA006009FA"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    private interface IAccessibleServices
+    {
+        [PreserveSig] int QueryService(ref Guid service, ref Guid iid, [MarshalAs(UnmanagedType.Interface)] out object? result);
+    }
+    internal static int[]? FocusRuntimeId(NativeFocus focus)
+    {
+        object? accessible = focus.Accessible;
+        int child = focus.Child;
+        if (child != 0 && focus.Accessible?.get_accChild(child) is IAccessible normalized) { accessible = normalized; child = 0; }
+        var extension = accessible as IAccessibleExNative;
+        if (extension is null && accessible is IAccessibleServices services)
+        {
+            var iid = typeof(IAccessibleExNative).GUID; var service = iid;
+            if (services.QueryService(ref service, ref iid, out var result) < 0)
+            { service = typeof(IAccessible).GUID; services.QueryService(ref service, ref iid, out result); }
+            extension = result as IAccessibleExNative;
+        }
+        if (child != 0 && extension is not null)
+        {
+            if (extension.GetObjectForChild(child, out var childExtension) < 0) return null;
+            extension = childExtension;
+        }
+        return extension is not null && extension.GetRuntimeId(out var runtime) >= 0 && runtime is { Length: >= 1 and <= 60 } ? runtime : null;
+    }
+
     public static bool IsChromium(IntPtr window)
     {
         var name = new StringBuilder(64); GetClassName(window, name, name.Capacity);
