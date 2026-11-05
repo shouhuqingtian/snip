@@ -32,8 +32,9 @@ internal static class BrowserHoverHitTest
     {
         [PreserveSig] int QueryService(ref Guid service, ref Guid iid, [MarshalAs(UnmanagedType.Interface)] out object? result);
     }
-    internal static int[]? FocusRuntimeId(NativeFocus focus)
+    internal static int[]? FocusRuntimeId(NativeFocus focus, bool ia2Only = false)
     {
+        if (ia2Only) return Ia2RuntimeId(focus);
         object? accessible = focus.Accessible;
         int child = focus.Child;
         if (child != 0 && focus.Accessible?.get_accChild(child) is IAccessible normalized) { accessible = normalized; child = 0; }
@@ -50,7 +51,33 @@ internal static class BrowserHoverHitTest
             if (extension.GetObjectForChild(child, out var childExtension) < 0) return null;
             extension = childExtension;
         }
-        return extension is not null && extension.GetRuntimeId(out var runtime) >= 0 && runtime is { Length: >= 1 and <= 60 } ? runtime : null;
+        return extension is not null && extension.GetRuntimeId(out var runtime) >= 0 && runtime is { Length: >= 1 and <= 60 } ? runtime : Ia2RuntimeId(focus);
+    }
+
+    [ComImport, Guid("6D5140C1-7436-11CE-8034-00AA006009FA"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    private interface IAccessibleServicesRaw
+    {
+        [PreserveSig] int QueryService(ref Guid service, ref Guid iid, out IntPtr result);
+    }
+    [UnmanagedFunctionPointer(CallingConvention.StdCall)]
+    private delegate int GetAccessibleUniqueId(IntPtr accessible, out int id);
+    private static int[]? Ia2RuntimeId(NativeFocus focus)
+    {
+        if (focus.Accessible is not IAccessibleServicesRaw services) return null;
+        var service = typeof(IAccessible).GUID;
+        var iid = new Guid("E89F726E-C4F4-4C19-BB19-B647D7FA8478");
+        if (services.QueryService(ref service, ref iid, out var accessible) < 0 || accessible == IntPtr.Zero) return null;
+        try
+        {
+            // IAccessible2's published ABI: IUnknown(3), IDispatch(4),
+            // IAccessible(21), then 13 methods before get_uniqueID (slot 41).
+            // This fixed interface UUID cannot change that vtable layout.
+            var method = Marshal.ReadIntPtr(Marshal.ReadIntPtr(accessible), 41 * IntPtr.Size);
+            var read = Marshal.GetDelegateForFunctionPointer<GetAccessibleUniqueId>(method);
+            return read(accessible, out int id) >= 0 && id != 0
+                ? [-43, unchecked((int)focus.Window.ToInt64()), unchecked((int)(focus.Window.ToInt64() >> 32)), id, focus.Child] : null;
+        }
+        finally { Marshal.Release(accessible); }
     }
 
     public static bool IsChromium(IntPtr window)

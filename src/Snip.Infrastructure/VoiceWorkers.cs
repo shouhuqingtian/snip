@@ -101,15 +101,16 @@ public static class VoiceTargetWorker
     {
         [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(IntPtr window, out uint process);
         public bool UseNative { get; private set; }
+        private bool ia2Only;
         public VoiceTargetInfo? Read(BrowserHoverHitTest.NativeFocus focus)
         {
             // MSAA supplies text focus/state; IAccessibleEx supplies its stable
             // runtime identity. Never substitute a COM proxy pointer or bounds.
             if (focus.Accessible is null || focus.Role != 42 || focus.State is not { } state ||
                 (state & 0x100004) != 0x100004 || (state & 0x18001) != 0) return null;
-            var runtime = BrowserHoverHitTest.FocusRuntimeId(focus);
+            var runtime = BrowserHoverHitTest.FocusRuntimeId(focus, ia2Only);
             if (runtime is null) return null;
-            UseNative = true;
+            UseNative = true; ia2Only = runtime[0] == -43;
             GetWindowThreadProcessId(focus.Window, out uint process);
             return new((state & 0x40) == 0, (state & 0x20000000) != 0, (int)process,
                 new[] { -42, (int)process }.Concat(runtime).ToArray(), ControlType.Edit.Id, true, (state & 0x40) != 0, focus.Role, state);
