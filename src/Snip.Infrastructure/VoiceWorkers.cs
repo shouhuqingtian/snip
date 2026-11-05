@@ -110,6 +110,7 @@ public static class VoiceTargetWorker
             if (focus.Accessible is null || focus.State is not { } state ||
                 (state & 0x100004) != 0x100004 || (state & 0x18001) != 0) return null;
             var capabilities = BrowserHoverHitTest.EditorCapabilities(focus);
+            IdentityStage = capabilities.Stage; IdentityResult = capabilities.Error;
             if (capabilities.Password) return new(false, true, 0, [-1], NativeFocusRole: focus.Role, NativeFocusState: focus.State);
             bool? readOnly = capabilities.ReadOnly ?? (focus.Role == 42 ? (state & 0x40) != 0 : null);
             if (readOnly is null) return null;

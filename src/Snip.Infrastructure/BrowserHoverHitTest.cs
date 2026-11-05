@@ -57,19 +57,46 @@ internal static class BrowserHoverHitTest
         stage = 11; error = unchecked((int)0x80004002); return null;
     }
 
-    internal static (bool? ReadOnly, bool Password) EditorCapabilities(NativeFocus focus)
+    [ComImport, Guid("6D5140C1-7436-11CE-8034-00AA006009FA"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    private interface IAccessibleServicesRaw
+    {
+        [PreserveSig] int QueryService(ref Guid service, ref Guid iid, out IntPtr result);
+    }
+    [UnmanagedFunctionPointer(CallingConvention.StdCall)]
+    private delegate int ReadAccessibleStates(IntPtr accessible, out int states);
+    internal static (bool? ReadOnly, bool Password, int Stage, int Error) EditorCapabilities(NativeFocus focus)
     {
         bool password = false;
         try
         {
-            if (focus.Accessible is not IRawElementProviderSimple provider) return (null, false);
-            password = provider.GetPropertyValue(AutomationElement.IsPasswordProperty.Id) is true;
-            if (provider.GetPatternProvider(ValuePattern.Pattern.Id) is IValueProvider value) return (value.IsReadOnly, password);
-            var text = provider.GetPatternProvider(TextPattern.Pattern.Id) as ITextProvider;
-            if (text is not null) return (text.DocumentRange.GetAttributeValue(TextPattern.IsReadOnlyAttribute.Id) as bool?, password);
+            try
+            {
+            if (focus.Accessible is IRawElementProviderSimple provider)
+            {
+                password = provider.GetPropertyValue(AutomationElement.IsPasswordProperty.Id) is true;
+                if (provider.GetPatternProvider(ValuePattern.Pattern.Id) is IValueProvider value) return (value.IsReadOnly, password, 30, 0);
+                var text = provider.GetPatternProvider(TextPattern.Pattern.Id) as ITextProvider;
+                if (text is not null) return (text.DocumentRange.GetAttributeValue(TextPattern.IsReadOnlyAttribute.Id) as bool?, password, 30, 0);
+            }
+            }
+            catch (COMException) { /* A provider may omit a pattern but support native IA2 state. */ }
+            if (focus.Accessible is not IAccessibleServicesRaw services) return (null, password, 31, unchecked((int)0x80004002));
+            var service = typeof(IAccessible).GUID; var iid = new Guid("E89F726E-C4F4-4C19-BB19-B647D7FA8478");
+            int error = services.QueryService(ref service, ref iid, out var accessible);
+            if (error < 0 || accessible == IntPtr.Zero) return (null, password, 31, error);
+            try
+            {
+                // IAccessible2 ABI: IUnknown(3), IDispatch(4), IAccessible(21),
+                // seven IA2 methods, then get_states at slot 35.
+                var method = Marshal.ReadIntPtr(Marshal.ReadIntPtr(accessible), 35 * IntPtr.Size);
+                error = Marshal.GetDelegateForFunctionPointer<ReadAccessibleStates>(method)(accessible, out int states);
+                // IA2_STATE_EDITABLE still permits read-only; the caller also
+                // checks MSAA STATE_SYSTEM_READONLY before accepting input.
+                return (error >= 0 && (states & 0xC) == 0x8 ? false : null, password, 32, error);
+            }
+            finally { Marshal.Release(accessible); }
         }
-        catch (COMException) { }
-        return (null, password);
+        catch (COMException error) { return (null, password, 33, error.HResult); }
     }
 
     public static bool IsChromium(IntPtr window)
