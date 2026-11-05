@@ -45,7 +45,17 @@ internal static class SelfCaptureChecks
             // Show() can leave a same-process fixture behind the runner console
             // under foreground-lock rules. Raise it, then restore the launcher;
             // the capture must still run while the launcher owns foreground.
-            target.Activate(); main.Activate();
+            target.Activate();
+            if (ReferenceEquals(target, result))
+            {
+                // Present the fixture's first frame while it still owns focus.
+                // Immediately deactivating a newly exposed WPF surface can leave
+                // DWM showing its dark placeholder on loaded CI desktops.
+                target.InvalidateVisual(); target.UpdateLayout();
+                Require(SetWindowPos(new WindowInteropHelper(target).Handle, IntPtr.Zero, 0, 0, 0, 0, 0x13), "Could not present public result fixture.");
+                Wait(() => ResultExposed() && ResultCenter() is [0, 69, 255, _]);
+            }
+            main.Activate();
             Require(SetWindowPos(new WindowInteropHelper(target).Handle, IntPtr.Zero, 0, 0, 0, 0, 0x13), "Could not expose public fixture without changing focus.");
             Move(target.PointToScreen(new Point(100, 90)));
             if (ReferenceEquals(target, result))
