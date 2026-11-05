@@ -299,12 +299,24 @@ internal static class VoiceInputChecks
             Wait(() => (window = DesktopWindows.Snapshot().FirstOrDefault(w =>
             { var s = new StringBuilder(512); GetWindowText(w.Handle, s, s.Capacity); return s.ToString().StartsWith("Public voice fixture", StringComparison.Ordinal); })) is not null);
             DesktopWindows.Activate(window!.Handle); Wait(() => Title().EndsWith("| ONE", StringComparison.Ordinal)); Pause();
+            if (electron)
+            {
+                // Match the reported desktop workflow: DOM autofocus alone does
+                // not guarantee that the native web contents owns keyboard focus.
+                SetPhysicalCursorPos((int)window.Bounds.X + 80, (int)window.Bounds.Y + 220);
+                foreach (uint flags in new[] { 2u, 4u })
+                {
+                    Input[] click = [new() { Data = new() { Mouse = new() { Flags = flags } } }];
+                    Require(SendInput(1, click, Marshal.SizeOf<Input>()) == 1, "Electron input click failed.");
+                }
+                Pause();
+            }
             foreach (var test in new[] { ("ONEOK", "PUBLIC 中文 voice"), ("TWOOK", "PUBLIC English words"), ("THREEOK", "PUBLIC rich editor"), ("FOUROK", "PUBLIC plain editor") })
             {
                 if (test.Item1 != "ONEOK") { HotkeyChecks.Press(0x09); string expected = test.Item1[..^2]; Wait(() => Title().EndsWith("| " + expected, StringComparison.Ordinal)); }
                 int before = recorder.Calls; recognizer.Reset(); Keys(false, 0x11, 0x12, 0x20); Wait(() => recorder.Calls == before + 1); Pause();
                 Keys(true, 0x20, 0x12, 0x11); Wait(() => recognizer.Pending); recognizer.Result.SetResult(test.Item2); Wait(() => !controller.IsActive);
-                Require(!controller.ReviewNeeded, "Chrome input could not be verified: " + controller.Status);
+                Require(!controller.ReviewNeeded, (electron ? "Electron" : "Chrome") + " input could not be verified: " + controller.Status);
                 Wait(() => Title().EndsWith("| " + test.Item1, StringComparison.Ordinal));
             }
             Console.WriteLine("PASS real " + (electron ? "Electron desktop" : "Chrome") + " textarea, semantic and roleless rich/plain contenteditable accept native ASR Unicode input without Return or submit.");
