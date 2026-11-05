@@ -32,9 +32,10 @@ internal static class BrowserHoverHitTest
     {
         [PreserveSig] int QueryService(ref Guid service, ref Guid iid, [MarshalAs(UnmanagedType.Interface)] out object? result);
     }
-    internal static int[]? FocusRuntimeId(NativeFocus focus, bool ia2Only = false)
+    internal static int[]? FocusRuntimeId(NativeFocus focus, bool ia2Only, out int stage, out int error)
     {
-        if (ia2Only) return Ia2RuntimeId(focus);
+        stage = 0; error = 0;
+        if (ia2Only) return Ia2RuntimeId(focus, out stage, out error);
         object? accessible = focus.Accessible;
         int child = focus.Child;
         if (child != 0 && focus.Accessible?.get_accChild(child) is IAccessible normalized) { accessible = normalized; child = 0; }
@@ -51,7 +52,8 @@ internal static class BrowserHoverHitTest
             if (extension.GetObjectForChild(child, out var childExtension) < 0) return null;
             extension = childExtension;
         }
-        return extension is not null && extension.GetRuntimeId(out var runtime) >= 0 && runtime is { Length: >= 1 and <= 60 } ? runtime : Ia2RuntimeId(focus);
+        if (extension is not null && extension.GetRuntimeId(out var runtime) >= 0 && runtime is { Length: >= 1 and <= 60 }) { stage = 10; return runtime; }
+        return Ia2RuntimeId(focus, out stage, out error);
     }
 
     [ComImport, Guid("6D5140C1-7436-11CE-8034-00AA006009FA"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
@@ -61,12 +63,14 @@ internal static class BrowserHoverHitTest
     }
     [UnmanagedFunctionPointer(CallingConvention.StdCall)]
     private delegate int GetAccessibleUniqueId(IntPtr accessible, out int id);
-    private static int[]? Ia2RuntimeId(NativeFocus focus)
+    private static int[]? Ia2RuntimeId(NativeFocus focus, out int stage, out int error)
     {
+        stage = 20; error = unchecked((int)0x80004002);
         if (focus.Accessible is not IAccessibleServicesRaw services) return null;
         var service = typeof(IAccessible).GUID;
         var iid = new Guid("E89F726E-C4F4-4C19-BB19-B647D7FA8478");
-        if (services.QueryService(ref service, ref iid, out var accessible) < 0 || accessible == IntPtr.Zero) return null;
+        stage = 21; error = services.QueryService(ref service, ref iid, out var accessible);
+        if (error < 0 || accessible == IntPtr.Zero) return null;
         try
         {
             // IAccessible2's published ABI: IUnknown(3), IDispatch(4),
@@ -74,7 +78,8 @@ internal static class BrowserHoverHitTest
             // This fixed interface UUID cannot change that vtable layout.
             var method = Marshal.ReadIntPtr(Marshal.ReadIntPtr(accessible), 41 * IntPtr.Size);
             var read = Marshal.GetDelegateForFunctionPointer<GetAccessibleUniqueId>(method);
-            return read(accessible, out int id) >= 0 && id != 0
+            stage = 22; error = read(accessible, out int id);
+            return error >= 0 && id != 0
                 ? [-43, unchecked((int)focus.Window.ToInt64()), unchecked((int)(focus.Window.ToInt64() >> 32)), id, focus.Child] : null;
         }
         finally { Marshal.Release(accessible); }
@@ -105,6 +110,10 @@ internal static class BrowserHoverHitTest
                 if (next is int id) child = id;
                 break;
             }
+            // MSAA can return a parent + child ID instead of the child's own
+            // interface. Normalize that pair before asking for extended identity.
+            if (child is int childId && childId != 0 && root.get_accChild(childId) is IAccessible normalized)
+            { root = normalized; child = 0; }
             return new(focused, root, (int)child, root.get_accRole(child) as int?, root.get_accState(child) as int?);
         }
         return new(focused, null, 0, null, null);

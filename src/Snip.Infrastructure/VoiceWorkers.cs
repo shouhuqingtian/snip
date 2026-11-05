@@ -11,7 +11,7 @@ using Snip.Core;
 
 namespace Snip.Infrastructure;
 
-public sealed record VoiceTargetInfo(bool Editable, bool Password, int ProcessId, int[] RuntimeId, int ControlTypeId = 0, bool KeyboardFocusable = false, bool? TextReadOnly = null, int? NativeFocusRole = null, int? NativeFocusState = null);
+public sealed record VoiceTargetInfo(bool Editable, bool Password, int ProcessId, int[] RuntimeId, int ControlTypeId = 0, bool KeyboardFocusable = false, bool? TextReadOnly = null, int? NativeFocusRole = null, int? NativeFocusState = null, int NativeIdentityStage = 0, int NativeIdentityResult = 0);
 public interface IVoiceTargetProbe
 {
     Task<VoiceTargetInfo?> ReadAsync(IntPtr foreground, CancellationToken token);
@@ -102,18 +102,21 @@ public static class VoiceTargetWorker
         [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(IntPtr window, out uint process);
         public bool UseNative { get; private set; }
         private bool ia2Only;
+        public int IdentityStage { get; private set; }
+        public int IdentityResult { get; private set; }
         public VoiceTargetInfo? Read(BrowserHoverHitTest.NativeFocus focus)
         {
             // MSAA supplies text focus/state; IAccessibleEx supplies its stable
             // runtime identity. Never substitute a COM proxy pointer or bounds.
             if (focus.Accessible is null || focus.Role != 42 || focus.State is not { } state ||
                 (state & 0x100004) != 0x100004 || (state & 0x18001) != 0) return null;
-            var runtime = BrowserHoverHitTest.FocusRuntimeId(focus, ia2Only);
+            var runtime = BrowserHoverHitTest.FocusRuntimeId(focus, ia2Only, out int stage, out int error);
+            IdentityStage = stage; IdentityResult = error;
             if (runtime is null) return null;
             UseNative = true; ia2Only = runtime[0] == -43;
             GetWindowThreadProcessId(focus.Window, out uint process);
             return new((state & 0x40) == 0, (state & 0x20000000) != 0, (int)process,
-                new[] { -42, (int)process }.Concat(runtime).ToArray(), ControlType.Edit.Id, true, (state & 0x40) != 0, focus.Role, state);
+                new[] { -42, (int)process }.Concat(runtime).ToArray(), ControlType.Edit.Id, true, (state & 0x40) != 0, focus.Role, state, IdentityStage, IdentityResult);
         }
     }
     private static VoiceTargetInfo Read(string line, NativeFocusIdentities identities)
@@ -164,7 +167,7 @@ public static class VoiceTargetWorker
                         editable = textReadOnly == false;
                     }
                     else if (focused.Current.ControlType == ControlType.Edit) editable = true;
-                    result = new(editable && focused.Current.IsEnabled && focused.Current.IsKeyboardFocusable, password, focused.Current.ProcessId, focused.GetRuntimeId(), focused.Current.ControlType.Id, focused.Current.IsKeyboardFocusable, textReadOnly, nativeFocus.Role, nativeFocus.State);
+                    result = new(editable && focused.Current.IsEnabled && focused.Current.IsKeyboardFocusable, password, focused.Current.ProcessId, focused.GetRuntimeId(), focused.Current.ControlType.Id, focused.Current.IsKeyboardFocusable, textReadOnly, nativeFocus.Role, nativeFocus.State, identities.IdentityStage, identities.IdentityResult);
                 }
                 if (!chromium || result.Editable || result.Password || warmup.ElapsedMilliseconds >= 1000) break;
                 Thread.Sleep(50); // Only this deadline-bound helper thread waits.
