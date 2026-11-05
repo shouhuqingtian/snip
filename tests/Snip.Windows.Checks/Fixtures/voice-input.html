@@ -3,11 +3,17 @@
 <h1>Public voice input fixture</h1>
 <textarea id="one" aria-label="Public textarea"></textarea>
 <div id="two" contenteditable="true" role="textbox" aria-label="Public contenteditable" aria-multiline="true" tabindex="0"></div>
+<div id="three" contenteditable="true" class="tiptap ProseMirror" tabindex="0"><p><br></p></div>
+<div id="four" contenteditable="plaintext-only" tabindex="0"></div>
 <script>
 let submitted=false;
 document.addEventListener('keydown',e=>{if(e.key==='Enter')submitted=true});
 one.addEventListener('focus',()=>document.title='Public voice fixture | ONE');
 two.addEventListener('focus',()=>document.title='Public voice fixture | TWO');
+three.addEventListener('focus',()=>document.title='Public voice fixture | THREE');
+four.addEventListener('focus',()=>document.title='Public voice fixture | FOUR');
+three.addEventListener('input',()=>document.title='Public voice fixture | '+(three.textContent==='PUBLIC rich editor'&&!submitted?'THREEOK':'THREEEDIT'));
+four.addEventListener('input',()=>document.title='Public voice fixture | '+(four.textContent==='PUBLIC plain editor'&&!submitted?'FOUROK':'FOUREDIT'));
 one.addEventListener('input',()=>document.title='Public voice fixture | '+(one.value==='PUBLIC 中文 voice'&&!submitted?'ONEOK':'ONEEDIT'));
 two.addEventListener('input',()=>document.title='Public voice fixture | '+(two.textContent==='PUBLIC English words'&&!submitted?'TWOOK':'TWOEDIT'));
 window.addEventListener('load',()=>one.focus());

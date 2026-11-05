@@ -298,9 +298,9 @@ internal static class VoiceInputChecks
             Wait(() => (window = DesktopWindows.Snapshot().FirstOrDefault(w =>
             { var s = new StringBuilder(512); GetWindowText(w.Handle, s, s.Capacity); return s.ToString().StartsWith("Public voice fixture", StringComparison.Ordinal); })) is not null);
             DesktopWindows.Activate(window!.Handle); Wait(() => Title().EndsWith("| ONE", StringComparison.Ordinal)); Pause();
-            foreach (var test in new[] { ("ONEOK", "PUBLIC 中文 voice"), ("TWOOK", "PUBLIC English words") })
+            foreach (var test in new[] { ("ONEOK", "PUBLIC 中文 voice"), ("TWOOK", "PUBLIC English words"), ("THREEOK", "PUBLIC rich editor"), ("FOUROK", "PUBLIC plain editor") })
             {
-                if (test.Item1 == "TWOOK") { HotkeyChecks.Press(0x09); Wait(() => Title().EndsWith("| TWO", StringComparison.Ordinal)); }
+                if (test.Item1 != "ONEOK") { HotkeyChecks.Press(0x09); string expected = test.Item1[..^2]; Wait(() => Title().EndsWith("| " + expected, StringComparison.Ordinal)); }
                 int before = recorder.Calls; recognizer.Reset(); Keys(false, 0x11, 0x12, 0x20); Wait(() => recorder.Calls == before + 1); Pause();
                 Keys(true, 0x20, 0x12, 0x11); Wait(() => recognizer.Pending); recognizer.Result.SetResult(test.Item2); Wait(() => !controller.IsActive);
                 Require(!controller.ReviewNeeded, "Chrome input could not be verified: " + controller.Status);
