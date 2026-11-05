@@ -143,7 +143,9 @@ public static class VoiceTargetWorker
                         ? new(false, true, 0, [-1], NativeFocusRole: nativeFocus.Role, NativeFocusState: nativeFocus.State)
                         : result;
                 var focused = AutomationElement.FocusedElement;
-                if (chromium && (identities.UseNative || focused?.Current.ControlType == ControlType.Pane))
+                bool containerFocus = focused is not null && (focused.Current.ControlType == ControlType.Pane ||
+                    focused.Current.ControlType == ControlType.Document && !focused.Current.IsKeyboardFocusable);
+                if (chromium && (identities.UseNative || containerFocus))
                 {
                     var native = identities.Read(nativeFocus);
                     if (native is not null) result = native;
