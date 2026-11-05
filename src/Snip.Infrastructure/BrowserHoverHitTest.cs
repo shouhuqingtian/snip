@@ -20,6 +20,16 @@ internal static class BrowserHoverHitTest
         return name.ToString().StartsWith("Chrome_WidgetWin_", StringComparison.Ordinal);
     }
 
+    internal static void WarmFocusedAccessibility(IntPtr window)
+    {
+        // Electron may expose only its window pane to a new UIA client until a
+        // native accessibility client asks for OBJID_CLIENT. This requests only
+        // the selected foreground window and its focus, never page text.
+        var iid = typeof(IAccessible).GUID;
+        if (AccessibleObjectFromWindow(window, unchecked((uint)-4), ref iid, out var root) >= 0 && root is not null)
+            _ = root.accFocus;
+    }
+
     public static PixelRect? Find(IntPtr window, PixelRect bounds, PixelPoint point, double scale)
     {
         try

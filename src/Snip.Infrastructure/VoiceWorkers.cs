@@ -108,7 +108,7 @@ public static class VoiceTargetWorker
             // Initialize only this foreground window, then give the focused edit a
             // bounded chance to appear. Never accept the temporary browser pane as
             // the original input or enumerate page text.
-            if (chromium) _ = AutomationElement.FromHandle(window);
+            if (chromium) { BrowserHoverHitTest.WarmFocusedAccessibility(window); _ = AutomationElement.FromHandle(window); }
             var warmup = Stopwatch.StartNew();
             do
             {
