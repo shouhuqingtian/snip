@@ -2,7 +2,7 @@ name: Run a targeted Windows regression
 on:
   push:
     branches: [hold-to-dictate, voice-recording-mode, voice-input-settings-fix, system-proxy-compat, faster-domestic-asr, voice-rich-editor-focus]
-    paths: ['src/**', 'tests/**', '.github/workflows/windows-targeted.yml']
+    paths: ['src/**', 'tests/**', 'packaging/PrepareElectronFixture.ps1', '.github/workflows/windows-targeted.yml']
   workflow_dispatch:
     inputs:
       check:
@@ -35,6 +35,9 @@ jobs:
           dotnet tool install dotnet-stack --version 8.0.547301 --tool-path artifacts/check-tools
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           "SNIP_CHECK_STACK_TOOL=$PWD/artifacts/check-tools/dotnet-stack.exe" | Add-Content $env:GITHUB_ENV
+      - name: Prepare pinned public Electron dictation fixture
+        shell: pwsh
+        run: ./packaging/PrepareElectronFixture.ps1
       - name: Run selected real desktop scenario
         shell: pwsh
         env:

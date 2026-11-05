@@ -87,6 +87,9 @@ jobs:
         with:
           path: .model-cache/ocr
           key: enhanced-ocr-${{ hashFiles('src/Snip.Ocr/OcrModelStore.cs') }}
+      - name: Prepare pinned public Electron dictation fixture
+        shell: pwsh
+        run: ./packaging/PrepareElectronFixture.ps1
       - name: Verify native Windows system proxy changes
         shell: pwsh
         timeout-minutes: 2

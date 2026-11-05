@@ -177,11 +177,11 @@ internal static class VoiceInputChecks
             SetMode(0); Require(controller.Mode == VoiceInputMode.Hold, "Switching back to hold recording did not take effect.");
             Console.WriteLine("PASS toggle Esc cancellation before upload and changed-field result preservation; saved switch back to hold mode takes effect immediately.");
 
-            status?.Close(); CheckChrome(controller, recorder, recognizer, folder); CheckRecorderWorker();
+            status?.Close(); CheckChrome(controller, recorder, recognizer, folder); CheckChrome(controller, recorder, recognizer, folder, electron: true); CheckRecorderWorker();
             controller.Dispose(); controller = null;
             journal.FlushAsync().GetAwaiter().GetResult(); string logs = File.ReadAllText(Path.Combine(folder, "logs/events.jsonl"));
             Require(!logs.Contains(Key) && !logs.Contains("PUBLIC-SHARED-KEY") && !logs.Contains("PUBLIC-DO-NOT-INSERT") && !logs.Contains("PUBLIC-TOGGLE-REVIEW") && !logs.Contains("asr.example.com"), "Voice content, endpoint or credentials entered diagnostics.");
-            File.WriteAllText("artifacts/validation/voice-input.json", JsonSerializer.Serialize(new { NativeHotkeyHoldRelease = true, ProtectedSettings = true, CredentialReuseChecked = true, ConflictPreservesShortcut = true, NativeCaretInsertion = true, ClipboardUnchanged = true, FocusChangeNoInjection = true, CancellationNoUpload = true, PasswordNoUpload = true, ReadOnlyPreserved = true, AudioCleared = true, ChromeTextareaInput = true, ChromeContentEditableInput = true, IsolatedRecorderPipe = true, WorkerReaped = true, ParentExitKillsWorker = true, DiagnosticsPrivate = true, TogglePressTwice = true, ToggleReleaseKeepsRecording = true, RecordingModePersists = true, ToggleCancelNoUpload = true, ToggleFocusChangeNoInjection = true, SettingsScreenshotAvailable = true, ShortcutCaptureRequiresClick = true, ShortcutCaptureEndsAfterOne = true, ShortcutCaptureCancelsOnBlur = true, ShortcutDraftNotApplied = true, ServiceFailureVisibleInSettings = true, TargetWorkerReused = true, TargetWorkerFreshChecks = true, TargetWorkerReaped = true, NamedProfilesSwitch = true, NativeProtocolSelector = true, NativeProfilesRestart = true }));
+            File.WriteAllText("artifacts/validation/voice-input.json", JsonSerializer.Serialize(new { NativeHotkeyHoldRelease = true, ProtectedSettings = true, CredentialReuseChecked = true, ConflictPreservesShortcut = true, NativeCaretInsertion = true, ClipboardUnchanged = true, FocusChangeNoInjection = true, CancellationNoUpload = true, PasswordNoUpload = true, ReadOnlyPreserved = true, AudioCleared = true, ChromeTextareaInput = true, ChromeContentEditableInput = true, IsolatedRecorderPipe = true, WorkerReaped = true, ParentExitKillsWorker = true, DiagnosticsPrivate = true, TogglePressTwice = true, ToggleReleaseKeepsRecording = true, RecordingModePersists = true, ToggleCancelNoUpload = true, ToggleFocusChangeNoInjection = true, SettingsScreenshotAvailable = true, ShortcutCaptureRequiresClick = true, ShortcutCaptureEndsAfterOne = true, ShortcutCaptureCancelsOnBlur = true, ShortcutDraftNotApplied = true, ServiceFailureVisibleInSettings = true, TargetWorkerReused = true, TargetWorkerFreshChecks = true, TargetWorkerReaped = true, NamedProfilesSwitch = true, NativeProtocolSelector = true, NativeProfilesRestart = true, ChromeRolelessRichInput = true, ElectronRichInput = true, ElectronReadOnlyPreserved = true, ElectronPasswordNoUpload = true, ElectronFocusChangeNoInjection = true }));
             return 0;
         }
         catch (Exception error)
@@ -285,12 +285,13 @@ internal static class VoiceInputChecks
         }
     }
     private static ProcessStartInfo AppHost() => new(Path.Combine(AppContext.BaseDirectory, "Snip.exe"));
-    private static void CheckChrome(VoiceInputController controller, FakeRecorder recorder, FakeTranscriber recognizer, string folder)
+    private static void CheckChrome(VoiceInputController controller, FakeRecorder recorder, FakeTranscriber recognizer, string folder, bool electron = false)
     {
         string chrome = new[] { Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86) }
             .Select(p => Path.Combine(p, "Google/Chrome/Application/chrome.exe")).First(File.Exists);
-        var info = new ProcessStartInfo(chrome) { UseShellExecute = false };
-        foreach (string arg in new[] { "--new-window", "--no-first-run", "--disable-background-mode", "--disable-gpu", "--user-data-dir=" + Path.Combine(folder, "chrome"), "--window-size=800,650", new Uri(Path.Combine(AppContext.BaseDirectory, "Fixtures/voice-input.html")).AbsoluteUri }) info.ArgumentList.Add(arg);
+        var info = new ProcessStartInfo(electron ? Environment.GetEnvironmentVariable("SNIP_CHECK_ELECTRON") ?? throw new InvalidOperationException("Prepare the pinned public Electron fixture first.") : chrome) { UseShellExecute = false };
+        if (electron) { info.ArgumentList.Add(Path.Combine(AppContext.BaseDirectory, "Fixtures/voice-electron.cjs")); info.ArgumentList.Add(Path.Combine(AppContext.BaseDirectory, "Fixtures/voice-input.html")); info.ArgumentList.Add("--user-data-dir=" + Path.Combine(folder, "electron")); }
+        else foreach (string arg in new[] { "--new-window", "--no-first-run", "--disable-background-mode", "--disable-gpu", "--user-data-dir=" + Path.Combine(folder, "chrome"), "--window-size=800,650", new Uri(Path.Combine(AppContext.BaseDirectory, "Fixtures/voice-input.html")).AbsoluteUri }) info.ArgumentList.Add(arg);
         using var launcher = Process.Start(info)!; WindowCaptureInfo? window = null;
         string Title() { var s = new StringBuilder(512); GetWindowText(window!.Handle, s, s.Capacity); return s.ToString().Split(" - ", 2)[0]; }
         try
@@ -306,7 +307,22 @@ internal static class VoiceInputChecks
                 Require(!controller.ReviewNeeded, "Chrome input could not be verified: " + controller.Status);
                 Wait(() => Title().EndsWith("| " + test.Item1, StringComparison.Ordinal));
             }
-            Console.WriteLine("PASS real Chrome textarea and contenteditable accept native ASR Unicode input at the original focus, with no Return key or submit action.");
+            Console.WriteLine("PASS real " + (electron ? "Electron desktop" : "Chrome") + " textarea, semantic and roleless rich/plain contenteditable accept native ASR Unicode input without Return or submit.");
+            HotkeyChecks.Press(0x09); Wait(() => Title().EndsWith("| FIVE", StringComparison.Ordinal));
+            int calls = recognizer.Calls;
+            recognizer.Reset(); Keys(false, 0x11, 0x12, 0x20); Wait(() => controller.State == VoiceInputState.Recording); Pause(); Keys(true, 0x20, 0x12, 0x11);
+            Wait(() => recognizer.Pending); recognizer.Result.SetResult("PUBLIC-READONLY"); Wait(() => !controller.IsActive);
+            Require(controller.ReviewNeeded && Title().EndsWith("| FIVE", StringComparison.Ordinal), "Read-only browser document accepted dictation.");
+            HotkeyChecks.Press(0x09); Wait(() => Title().EndsWith("| SIX", StringComparison.Ordinal));
+            calls = recognizer.Calls;
+            Keys(false, 0x11, 0x12, 0x20); Wait(() => controller.State == VoiceInputState.Recording); Pause(); Keys(true, 0x20, 0x12, 0x11); Wait(() => !controller.IsActive);
+            Require(recognizer.Calls == calls && Title().EndsWith("| SIX", StringComparison.Ordinal), "Browser password was uploaded or received text.");
+            HotkeyChecks.Press(0x09); Wait(() => Title().EndsWith("| SEVEN", StringComparison.Ordinal));
+            recognizer.Reset(); Keys(false, 0x11, 0x12, 0x20); Wait(() => controller.State == VoiceInputState.Recording); Pause(); Keys(true, 0x20, 0x12, 0x11); Wait(() => recognizer.Pending);
+            HotkeyChecks.Press(0x09); Wait(() => Title().EndsWith("| EIGHT", StringComparison.Ordinal));
+            recognizer.Result.SetResult("PUBLIC-CHANGED-FIELD"); Wait(() => !controller.IsActive);
+            Require(controller.ReviewNeeded && Title().EndsWith("| EIGHT", StringComparison.Ordinal), "Browser changed field received dictation.");
+            Console.WriteLine("PASS real " + (electron ? "Electron desktop" : "Chrome") + " read-only document, password/no upload and changed editable field remain protected.");
         }
         finally
         {

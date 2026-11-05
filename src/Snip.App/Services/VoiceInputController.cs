@@ -145,7 +145,9 @@ public sealed class VoiceInputController : IDisposable
             LastText = text;
             var now = target.IsCurrent ? await activeProbe.ReadAsync(target.Foreground, request.Token) : null;
             bool safe = original is { Editable: true, Password: false } && now is { Editable: true, Password: false } && original.ProcessId == now.ProcessId && original.RuntimeId.SequenceEqual(now.RuntimeId) && target.IsCurrent;
-            diagnostics?.Record("voice-input", "target-checked", new { OriginalAvailable = original is not null, OriginalEditable = original?.Editable, CurrentAvailable = now is not null, CurrentEditable = now?.Editable, SameInput = safe, WindowUnchanged = target.IsCurrent });
+            diagnostics?.Record("voice-input", "target-checked", new { OriginalAvailable = original is not null, OriginalEditable = original?.Editable, CurrentAvailable = now is not null, CurrentEditable = now?.Editable, SameInput = safe, WindowUnchanged = target.IsCurrent,
+                OriginalControlType = original?.ControlTypeId, CurrentControlType = now?.ControlTypeId, OriginalKeyboardFocusable = original?.KeyboardFocusable, CurrentKeyboardFocusable = now?.KeyboardFocusable,
+                OriginalTextReadOnly = original?.TextReadOnly, CurrentTextReadOnly = now?.TextReadOnly, SameProcess = original is not null && now is not null && original.ProcessId == now.ProcessId, SameRuntimeIdentity = original is not null && now is not null && original.RuntimeId.SequenceEqual(now.RuntimeId) });
             int entered = 0;
             if (safe)
             {

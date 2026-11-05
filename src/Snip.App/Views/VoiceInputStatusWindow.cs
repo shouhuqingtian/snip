@@ -115,7 +115,7 @@ public sealed class VoiceInputStatusWindow : Window
         };
         detail.TextWrapping = failure ? TextWrapping.Wrap : TextWrapping.NoWrap;
         detail.MaxHeight = failure ? 84 : double.PositiveInfinity;
-        detail.Text = failure ? controller.Status : result ? "输入位置变化，结果已保留" : controller.State == VoiceInputState.Starting ? "Esc 取消" : controller.State == VoiceInputState.Recording ? controller.RecordingEndHint : controller.State == VoiceInputState.Inserting ? "不会自动发送消息" : controller.State == VoiceInputState.Recognizing ? "已等待 0 秒 · Esc 取消" : controller.Status.Contains("识别完成") ? controller.LastText : controller.Status.Contains("已取消") ? "录音与识别已停止" : "";
+        detail.Text = failure ? controller.Status : result ? "未自动输入，结果已保留" : controller.State == VoiceInputState.Starting ? "Esc 取消" : controller.State == VoiceInputState.Recording ? controller.RecordingEndHint : controller.State == VoiceInputState.Inserting ? "不会自动发送消息" : controller.State == VoiceInputState.Recognizing ? "已等待 0 秒 · Esc 取消" : controller.Status.Contains("识别完成") ? controller.LastText : controller.Status.Contains("已取消") ? "录音与识别已停止" : "";
         detail.Visibility = detail.Text.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
         review.Visibility = result ? Visibility.Visible : Visibility.Collapsed;
         surface.ToolTip = controller.Status;

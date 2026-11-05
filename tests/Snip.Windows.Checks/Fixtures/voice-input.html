@@ -5,8 +5,13 @@
 <div id="two" contenteditable="true" role="textbox" aria-label="Public contenteditable" aria-multiline="true" tabindex="0"></div>
 <div id="three" contenteditable="true" class="tiptap ProseMirror" tabindex="0"><p><br></p></div>
 <div id="four" contenteditable="plaintext-only" tabindex="0"></div>
+<div id="five" role="document" aria-readonly="true" tabindex="0">PUBLIC READONLY</div>
+<input id="six" type="password" aria-label="Public password">
+<textarea id="seven" aria-label="Original field">PUBLIC ORIGINAL</textarea>
+<textarea id="eight" aria-label="Other field">PUBLIC OTHER</textarea>
 <script>
 let submitted=false;
+for (const [id,tag] of [['five','FIVE'],['six','SIX'],['seven','SEVEN'],['eight','EIGHT']]) { const e=document.getElementById(id); e.addEventListener('focus',()=>document.title='Public voice fixture | '+tag); e.addEventListener('input',()=>document.title='Public voice fixture | BADINPUT'); }
 document.addEventListener('keydown',e=>{if(e.key==='Enter')submitted=true});
 one.addEventListener('focus',()=>document.title='Public voice fixture | ONE');
 two.addEventListener('focus',()=>document.title='Public voice fixture | TWO');

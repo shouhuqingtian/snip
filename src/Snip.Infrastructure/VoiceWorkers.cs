@@ -11,7 +11,7 @@ using Snip.Core;
 
 namespace Snip.Infrastructure;
 
-public sealed record VoiceTargetInfo(bool Editable, bool Password, int ProcessId, int[] RuntimeId);
+public sealed record VoiceTargetInfo(bool Editable, bool Password, int ProcessId, int[] RuntimeId, int ControlTypeId = 0, bool KeyboardFocusable = false, bool? TextReadOnly = null);
 public interface IVoiceTargetProbe
 {
     Task<VoiceTargetInfo?> ReadAsync(IntPtr foreground, CancellationToken token);
@@ -117,9 +117,17 @@ public static class VoiceTargetWorker
                 if (focused is not null)
                 {
                     bool password = focused.Current.IsPassword, editable = false;
+                    bool? textReadOnly = null;
                     if (focused.TryGetCurrentPattern(ValuePattern.Pattern, out var pattern)) editable = !((ValuePattern)pattern).Current.IsReadOnly;
+                    else if (focused.TryGetCurrentPattern(TextPattern.Pattern, out var textPattern))
+                    {
+                        // Roleless contenteditable editors are exposed as documents, not Edit.
+                        // Query only the read-only attribute, never the document's text.
+                        textReadOnly = ((TextPattern)textPattern).DocumentRange.GetAttributeValue(TextPattern.IsReadOnlyAttribute) as bool?;
+                        editable = textReadOnly == false;
+                    }
                     else if (focused.Current.ControlType == ControlType.Edit) editable = true;
-                    result = new(editable && focused.Current.IsEnabled && focused.Current.IsKeyboardFocusable, password, focused.Current.ProcessId, focused.GetRuntimeId());
+                    result = new(editable && focused.Current.IsEnabled && focused.Current.IsKeyboardFocusable, password, focused.Current.ProcessId, focused.GetRuntimeId(), focused.Current.ControlType.Id, focused.Current.IsKeyboardFocusable, textReadOnly);
                 }
                 if (!chromium || result.Editable || result.Password || warmup.ElapsedMilliseconds >= 1000) break;
                 Thread.Sleep(50); // Only this deadline-bound helper thread waits.

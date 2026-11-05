@@ -14,6 +14,9 @@ try {
         if ($LASTEXITCODE -ne 0) { throw '构建失败，未执行测试。' }
     }
     $output = Join-Path $root 'artifacts/validation'
+    if ($Scope -in 'Desktop','All' -and $IsWindows -and -not $env:SNIP_CHECK_ELECTRON) {
+        & (Join-Path $PSScriptRoot 'PrepareElectronFixture.ps1')
+    }
     New-Item -ItemType Directory -Path $output -Force | Out-Null
     $results = [System.Collections.Generic.List[object]]::new()
     function Check([string]$Name, [string[]]$Arguments, [switch]$AllowsMissingOcr, [switch]$AllowsMissingShare, [switch]$AllowsMissingGpu, [switch]$AllowsMissingSpeech) {
