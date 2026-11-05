@@ -101,22 +101,26 @@ public static class VoiceTargetWorker
     {
         [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(IntPtr window, out uint process);
         public bool UseNative { get; private set; }
-        private bool ia2Only;
         public int IdentityStage { get; private set; }
         public int IdentityResult { get; private set; }
         public VoiceTargetInfo? Read(BrowserHoverHitTest.NativeFocus focus)
         {
             // MSAA supplies text focus/state; IAccessibleEx supplies its stable
             // runtime identity. Never substitute a COM proxy pointer or bounds.
-            if (focus.Accessible is null || focus.Role != 42 || focus.State is not { } state ||
+            if (focus.Accessible is null || focus.State is not { } state ||
                 (state & 0x100004) != 0x100004 || (state & 0x18001) != 0) return null;
-            var runtime = BrowserHoverHitTest.FocusRuntimeId(focus, ia2Only, out int stage, out int error);
+            var capabilities = BrowserHoverHitTest.EditorCapabilities(focus);
+            if (capabilities.Password) return new(false, true, 0, [-1], NativeFocusRole: focus.Role, NativeFocusState: focus.State);
+            bool? readOnly = capabilities.ReadOnly ?? (focus.Role == 42 ? (state & 0x40) != 0 : null);
+            if (readOnly is null) return null;
+            if ((state & 0x40) != 0) readOnly = true;
+            var runtime = BrowserHoverHitTest.FocusRuntimeId(focus, out int stage, out int error);
             IdentityStage = stage; IdentityResult = error;
             if (runtime is null) return null;
-            UseNative = true; ia2Only = runtime[0] == -43;
+            UseNative = true;
             GetWindowThreadProcessId(focus.Window, out uint process);
-            return new((state & 0x40) == 0, (state & 0x20000000) != 0, (int)process,
-                new[] { -42, (int)process }.Concat(runtime).ToArray(), ControlType.Edit.Id, true, (state & 0x40) != 0, focus.Role, state, IdentityStage, IdentityResult);
+            return new(readOnly == false, capabilities.Password || (state & 0x20000000) != 0, (int)process,
+                new[] { -42, (int)process }.Concat(runtime).ToArray(), ControlType.Edit.Id, true, readOnly, focus.Role, state, IdentityStage, IdentityResult);
         }
     }
     private static VoiceTargetInfo Read(string line, NativeFocusIdentities identities)
@@ -138,7 +142,7 @@ public static class VoiceTargetWorker
             {
                 if (GetForegroundWindow().ToInt64() != expected) break;
                 if (chromium) nativeFocus = BrowserHoverHitTest.WarmFocusedAccessibility(window);
-                if (nativeFocus.Role == 42 && nativeFocus.State is { } protectedState && (protectedState & 0x20000004) == 0x20000004)
+                if (nativeFocus.State is { } protectedState && (protectedState & 0x20000004) == 0x20000004)
                     return GetForegroundWindow().ToInt64() == expected
                         ? new(false, true, 0, [-1], NativeFocusRole: nativeFocus.Role, NativeFocusState: nativeFocus.State)
                         : result;

@@ -3,6 +3,8 @@ using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text;
 using Accessibility;
+using System.Windows.Automation;
+using System.Windows.Automation.Provider;
 using Snip.Core;
 
 namespace Snip.Infrastructure;
@@ -32,10 +34,9 @@ internal static class BrowserHoverHitTest
     {
         [PreserveSig] int QueryService(ref Guid service, ref Guid iid, [MarshalAs(UnmanagedType.Interface)] out object? result);
     }
-    internal static int[]? FocusRuntimeId(NativeFocus focus, bool ia2Only, out int stage, out int error)
+    internal static int[]? FocusRuntimeId(NativeFocus focus, out int stage, out int error)
     {
         stage = 0; error = 0;
-        if (ia2Only) return Ia2RuntimeId(focus, out stage, out error);
         object? accessible = focus.Accessible;
         int child = focus.Child;
         if (child != 0 && focus.Accessible?.get_accChild(child) is IAccessible normalized) { accessible = normalized; child = 0; }
@@ -53,36 +54,22 @@ internal static class BrowserHoverHitTest
             extension = childExtension;
         }
         if (extension is not null && extension.GetRuntimeId(out var runtime) >= 0 && runtime is { Length: >= 1 and <= 60 }) { stage = 10; return runtime; }
-        return Ia2RuntimeId(focus, out stage, out error);
+        stage = 11; error = unchecked((int)0x80004002); return null;
     }
 
-    [ComImport, Guid("6D5140C1-7436-11CE-8034-00AA006009FA"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-    private interface IAccessibleServicesRaw
+    internal static (bool? ReadOnly, bool Password) EditorCapabilities(NativeFocus focus)
     {
-        [PreserveSig] int QueryService(ref Guid service, ref Guid iid, out IntPtr result);
-    }
-    [UnmanagedFunctionPointer(CallingConvention.StdCall)]
-    private delegate int GetAccessibleUniqueId(IntPtr accessible, out int id);
-    private static int[]? Ia2RuntimeId(NativeFocus focus, out int stage, out int error)
-    {
-        stage = 20; error = unchecked((int)0x80004002);
-        if (focus.Accessible is not IAccessibleServicesRaw services) return null;
-        var service = typeof(IAccessible).GUID;
-        var iid = new Guid("E89F726E-C4F4-4C19-BB19-B647D7FA8478");
-        stage = 21; error = services.QueryService(ref service, ref iid, out var accessible);
-        if (error < 0 || accessible == IntPtr.Zero) return null;
+        bool password = false;
         try
         {
-            // IAccessible2's published ABI: IUnknown(3), IDispatch(4),
-            // IAccessible(21), then 13 methods before get_uniqueID (slot 41).
-            // This fixed interface UUID cannot change that vtable layout.
-            var method = Marshal.ReadIntPtr(Marshal.ReadIntPtr(accessible), 41 * IntPtr.Size);
-            var read = Marshal.GetDelegateForFunctionPointer<GetAccessibleUniqueId>(method);
-            stage = 22; error = read(accessible, out int id);
-            return error >= 0 && id != 0
-                ? [-43, unchecked((int)focus.Window.ToInt64()), unchecked((int)(focus.Window.ToInt64() >> 32)), id, focus.Child] : null;
+            if (focus.Accessible is not IRawElementProviderSimple provider) return (null, false);
+            password = provider.GetPropertyValue(AutomationElement.IsPasswordProperty.Id) is true;
+            if (provider.GetPatternProvider(ValuePattern.Pattern.Id) is IValueProvider value) return (value.IsReadOnly, password);
+            var text = provider.GetPatternProvider(TextPattern.Pattern.Id) as ITextProvider;
+            if (text is not null) return (text.DocumentRange.GetAttributeValue(TextPattern.IsReadOnlyAttribute.Id) as bool?, password);
         }
-        finally { Marshal.Release(accessible); }
+        catch (COMException) { }
+        return (null, password);
     }
 
     public static bool IsChromium(IntPtr window)
