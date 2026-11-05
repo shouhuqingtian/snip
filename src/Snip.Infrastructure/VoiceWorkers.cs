@@ -1,5 +1,6 @@
 using System;
 using System.Diagnostics;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
@@ -89,14 +90,46 @@ public static class VoiceTargetWorker
     [DllImport("user32.dll")] private static extern IntPtr GetForegroundWindow();
     public static int Run(TextReader input, TextWriter output)
     {
+        using var identities = new NativeFocusIdentities();
         using var timeout = new Timer(_ => Environment.Exit(8), null, (TranscriptionProviders.MaximumRecordingSeconds + 110) * 1000, Timeout.Infinite);
         while (input.ReadLine() is { } line)
         {
-            var result = Read(line); output.WriteLine(JsonSerializer.Serialize(result)); output.Flush();
+            var result = Read(line, identities); output.WriteLine(JsonSerializer.Serialize(result)); output.Flush();
         }
         return 0;
     }
-    private static VoiceTargetInfo Read(string line)
+    private sealed class NativeFocusIdentities : IDisposable
+    {
+        [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(IntPtr window, out uint process);
+        private readonly Dictionary<IntPtr, int> identities = new();
+        private readonly List<object> references = new();
+        public bool UseNative { get; private set; }
+        public VoiceTargetInfo? Read(BrowserHoverHitTest.NativeFocus focus)
+        {
+            // Native MSAA ROLE_SYSTEM_TEXT, FOCUSED and FOCUSABLE. Keep object
+            // identity alive only for this dictation, so a recycled pointer can
+            // never identify a different field. No name/value/text is queried.
+            if (focus.Accessible is null || focus.Role != 42 || focus.State is not { } state ||
+                (state & 0x100004) != 0x100004 || (state & 0x18001) != 0) return null;
+            IntPtr identity = Marshal.GetIUnknownForObject(focus.Accessible);
+            if (identities.TryGetValue(identity, out int id)) Marshal.Release(identity);
+            else
+            {
+                if (identities.Count >= 8) { Marshal.Release(identity); return null; }
+                id = identities.Count + 1; identities.Add(identity, id); references.Add(focus.Accessible);
+            }
+            UseNative = true;
+            GetWindowThreadProcessId(focus.Window, out uint process);
+            return new((state & 0x40) == 0, (state & 0x20000000) != 0, (int)process,
+                [-42, id, focus.Child], ControlType.Edit.Id, true, (state & 0x40) != 0, focus.Role, state);
+        }
+        public void Dispose()
+        {
+            foreach (var identity in identities.Keys) Marshal.Release(identity);
+            identities.Clear(); references.Clear();
+        }
+    }
+    private static VoiceTargetInfo Read(string line, NativeFocusIdentities identities)
     {
         VoiceTargetInfo result = new(false, false, 0, []);
         try
@@ -120,11 +153,16 @@ public static class VoiceTargetWorker
                         ? new(false, true, 0, [-1], NativeFocusRole: nativeFocus.Role, NativeFocusState: nativeFocus.State)
                         : result;
                 var focused = AutomationElement.FocusedElement;
-                bool bridged = false;
-                if (chromium && focused?.Current.ControlType == ControlType.Pane)
+                if (chromium && (identities.UseNative || focused?.Current.ControlType == ControlType.Pane))
                 {
-                    var compatible = BrowserHoverHitTest.BridgeFocusedText(nativeFocus);
-                    if (compatible is not null) { focused = compatible; bridged = true; }
+                    var native = identities.Read(nativeFocus);
+                    if (native is not null) result = native;
+                    if (identities.UseNative)
+                    {
+                        if (result.Editable || result.Password || warmup.ElapsedMilliseconds >= 1000) break;
+                        Thread.Sleep(50);
+                        continue;
+                    }
                 }
                 if (focused is not null)
                 {
@@ -139,11 +177,6 @@ public static class VoiceTargetWorker
                         editable = textReadOnly == false;
                     }
                     else if (focused.Current.ControlType == ControlType.Edit) editable = true;
-                    if (bridged && nativeFocus.State is { } state)
-                    {
-                        password |= (state & 0x20000000) != 0;
-                        editable &= (state & 0x40) == 0;
-                    }
                     result = new(editable && focused.Current.IsEnabled && focused.Current.IsKeyboardFocusable, password, focused.Current.ProcessId, focused.GetRuntimeId(), focused.Current.ControlType.Id, focused.Current.IsKeyboardFocusable, textReadOnly, nativeFocus.Role, nativeFocus.State);
                 }
                 if (!chromium || result.Editable || result.Password || warmup.ElapsedMilliseconds >= 1000) break;

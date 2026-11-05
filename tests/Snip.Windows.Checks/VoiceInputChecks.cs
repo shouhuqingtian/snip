@@ -181,7 +181,7 @@ internal static class VoiceInputChecks
             controller.Dispose(); controller = null;
             journal.FlushAsync().GetAwaiter().GetResult(); string logs = File.ReadAllText(Path.Combine(folder, "logs/events.jsonl"));
             Require(!logs.Contains(Key) && !logs.Contains("PUBLIC-SHARED-KEY") && !logs.Contains("PUBLIC-DO-NOT-INSERT") && !logs.Contains("PUBLIC-TOGGLE-REVIEW") && !logs.Contains("asr.example.com"), "Voice content, endpoint or credentials entered diagnostics.");
-            File.WriteAllText("artifacts/validation/voice-input.json", JsonSerializer.Serialize(new { NativeHotkeyHoldRelease = true, ProtectedSettings = true, CredentialReuseChecked = true, ConflictPreservesShortcut = true, NativeCaretInsertion = true, ClipboardUnchanged = true, FocusChangeNoInjection = true, CancellationNoUpload = true, PasswordNoUpload = true, ReadOnlyPreserved = true, AudioCleared = true, ChromeTextareaInput = true, ChromeContentEditableInput = true, IsolatedRecorderPipe = true, WorkerReaped = true, ParentExitKillsWorker = true, DiagnosticsPrivate = true, TogglePressTwice = true, ToggleReleaseKeepsRecording = true, RecordingModePersists = true, ToggleCancelNoUpload = true, ToggleFocusChangeNoInjection = true, SettingsScreenshotAvailable = true, ShortcutCaptureRequiresClick = true, ShortcutCaptureEndsAfterOne = true, ShortcutCaptureCancelsOnBlur = true, ShortcutDraftNotApplied = true, ServiceFailureVisibleInSettings = true, TargetWorkerReused = true, TargetWorkerFreshChecks = true, TargetWorkerReaped = true, NamedProfilesSwitch = true, NativeProtocolSelector = true, NativeProfilesRestart = true, ChromeRolelessRichInput = true, ElectronRichInput = true, ElectronReadOnlyPreserved = true, ElectronPasswordNoUpload = true, ElectronFocusChangeNoInjection = true }));
+            File.WriteAllText("artifacts/validation/voice-input.json", JsonSerializer.Serialize(new { NativeHotkeyHoldRelease = true, ProtectedSettings = true, CredentialReuseChecked = true, ConflictPreservesShortcut = true, NativeCaretInsertion = true, ClipboardUnchanged = true, FocusChangeNoInjection = true, CancellationNoUpload = true, PasswordNoUpload = true, ReadOnlyPreserved = true, AudioCleared = true, ChromeTextareaInput = true, ChromeContentEditableInput = true, IsolatedRecorderPipe = true, WorkerReaped = true, ParentExitKillsWorker = true, DiagnosticsPrivate = true, TogglePressTwice = true, ToggleReleaseKeepsRecording = true, RecordingModePersists = true, ToggleCancelNoUpload = true, ToggleFocusChangeNoInjection = true, SettingsScreenshotAvailable = true, ShortcutCaptureRequiresClick = true, ShortcutCaptureEndsAfterOne = true, ShortcutCaptureCancelsOnBlur = true, ShortcutDraftNotApplied = true, ServiceFailureVisibleInSettings = true, TargetWorkerReused = true, TargetWorkerFreshChecks = true, TargetWorkerReaped = true, NamedProfilesSwitch = true, NativeProtocolSelector = true, NativeProfilesRestart = true, ChromeRolelessRichInput = true, ElectronRichInput = true, ElectronReadOnlyPreserved = true, ElectronPasswordNoUpload = true, ElectronFocusChangeNoInjection = true, ElectronNativeIdentityStable = true, ElectronNativeIdentityDistinct = true }));
             return 0;
         }
         catch (Exception error)
@@ -310,6 +310,19 @@ internal static class VoiceInputChecks
                     Require(SendInput(1, click, Marshal.SizeOf<Input>()) == 1, "Electron input click failed.");
                 }
                 Pause();
+                using var session = new VoiceTargetProbe(AppHost).OpenSession();
+                VoiceTargetInfo Read()
+                {
+                    var task = session.ReadAsync(window.Handle, default); Wait(() => task.IsCompleted);
+                    return task.GetAwaiter().GetResult() ?? throw new InvalidOperationException("Electron focus probe returned no identity.");
+                }
+                var first = Read(); var repeated = Read();
+                Require(first.Editable && repeated.Editable && first.RuntimeId.SequenceEqual(repeated.RuntimeId), "Electron focused text identity was not stable across fresh reads.");
+                HotkeyChecks.Press(0x09); Wait(() => Title().EndsWith("| TWO", StringComparison.Ordinal));
+                var changed = Read();
+                Require(changed.Editable && !first.RuntimeId.SequenceEqual(changed.RuntimeId), "Electron native text identity did not distinguish another editor.");
+                HotkeyChecks.Press(0x10, 0x09); Wait(() => Title().EndsWith("| ONE", StringComparison.Ordinal));
+                Console.WriteLine("PASS real Electron fresh native focus reads retain the same field identity and distinguish a different editable field.");
             }
             foreach (var test in new[] { ("ONEOK", "PUBLIC 中文 voice"), ("TWOOK", "PUBLIC English words"), ("THREEOK", "PUBLIC rich editor"), ("FOUROK", "PUBLIC plain editor") })
             {
