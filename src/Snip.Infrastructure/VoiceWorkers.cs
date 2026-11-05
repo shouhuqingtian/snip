@@ -108,13 +108,24 @@ public static class VoiceTargetWorker
             // Initialize only this foreground window, then give the focused edit a
             // bounded chance to appear. Never accept the temporary browser pane as
             // the original input or enumerate page text.
-            (IntPtr Window, int? Role, int? State) nativeFocus = (window, null, null);
+            BrowserHoverHitTest.NativeFocus nativeFocus = new(window, null, 0, null, null);
             if (chromium) { nativeFocus = BrowserHoverHitTest.WarmFocusedAccessibility(window); _ = AutomationElement.FromHandle(nativeFocus.Window); }
             var warmup = Stopwatch.StartNew();
             do
             {
                 if (GetForegroundWindow().ToInt64() != expected) break;
+                if (chromium) nativeFocus = BrowserHoverHitTest.WarmFocusedAccessibility(window);
+                if (nativeFocus.Role == 42 && nativeFocus.State is { } protectedState && (protectedState & 0x20000004) == 0x20000004)
+                    return GetForegroundWindow().ToInt64() == expected
+                        ? new(false, true, 0, [-1], NativeFocusRole: nativeFocus.Role, NativeFocusState: nativeFocus.State)
+                        : result;
                 var focused = AutomationElement.FocusedElement;
+                bool bridged = false;
+                if (chromium && focused?.Current.ControlType == ControlType.Pane)
+                {
+                    var compatible = BrowserHoverHitTest.BridgeFocusedText(nativeFocus);
+                    if (compatible is not null) { focused = compatible; bridged = true; }
+                }
                 if (focused is not null)
                 {
                     bool password = focused.Current.IsPassword, editable = false;
@@ -128,6 +139,11 @@ public static class VoiceTargetWorker
                         editable = textReadOnly == false;
                     }
                     else if (focused.Current.ControlType == ControlType.Edit) editable = true;
+                    if (bridged && nativeFocus.State is { } state)
+                    {
+                        password |= (state & 0x20000000) != 0;
+                        editable &= (state & 0x40) == 0;
+                    }
                     result = new(editable && focused.Current.IsEnabled && focused.Current.IsKeyboardFocusable, password, focused.Current.ProcessId, focused.GetRuntimeId(), focused.Current.ControlType.Id, focused.Current.IsKeyboardFocusable, textReadOnly, nativeFocus.Role, nativeFocus.State);
                 }
                 if (!chromium || result.Editable || result.Password || warmup.ElapsedMilliseconds >= 1000) break;

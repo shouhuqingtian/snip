@@ -3,6 +3,8 @@ using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text;
 using Accessibility;
+using System.Windows.Automation;
+using System.Windows.Automation.Provider;
 using Snip.Core;
 
 namespace Snip.Infrastructure;
@@ -17,6 +19,8 @@ internal static class BrowserHoverHitTest
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern int GetClassName(IntPtr window, StringBuilder name, int count);
     [DllImport("oleacc.dll")] private static extern int AccessibleObjectFromWindow(IntPtr window, uint objectId, ref Guid iid,
         [MarshalAs(UnmanagedType.Interface)] out IAccessible? accessible);
+    [DllImport("UIAutomationCore.dll")] private static extern int UiaProviderFromIAccessible(IAccessible accessible, int child, uint flags,
+        [MarshalAs(UnmanagedType.Interface)] out IRawElementProviderSimple? provider);
 
     public static bool IsChromium(IntPtr window)
     {
@@ -24,7 +28,8 @@ internal static class BrowserHoverHitTest
         return name.ToString().StartsWith("Chrome_WidgetWin_", StringComparison.Ordinal);
     }
 
-    internal static (IntPtr Window, int? Role, int? State) WarmFocusedAccessibility(IntPtr window)
+    internal sealed record NativeFocus(IntPtr Window, IAccessible? Accessible, int Child, int? Role, int? State);
+    internal static NativeFocus WarmFocusedAccessibility(IntPtr window)
     {
         // Electron may expose only its window pane to a new UIA client until a
         // native accessibility client asks for OBJID_CLIENT. This requests only
@@ -42,9 +47,19 @@ internal static class BrowserHoverHitTest
                 if (next is int id) child = id;
                 break;
             }
-            return (focused, root.get_accRole(child) as int?, root.get_accState(child) as int?);
+            return new(focused, root, (int)child, root.get_accRole(child) as int?, root.get_accState(child) as int?);
         }
-        return (focused, null, null);
+        return new(focused, null, 0, null, null);
+    }
+
+    internal static AutomationElement? BridgeFocusedText(NativeFocus focus)
+    {
+        // ROLE_SYSTEM_TEXT + FOCUSED + FOCUSABLE, excluding unavailable/hidden.
+        // Do not infer an editor from a window, generic document or screen bounds.
+        if (focus.Accessible is null || focus.Role != 42 || focus.State is not { } state ||
+            (state & 0x100004) != 0x100004 || (state & 0x18001) != 0) return null;
+        return UiaProviderFromIAccessible(focus.Accessible, focus.Child, 0, out var provider) >= 0 && provider is not null
+            ? AutomationElement.FromLocalProvider(provider) : null;
     }
 
     public static PixelRect? Find(IntPtr window, PixelRect bounds, PixelPoint point, double scale)
