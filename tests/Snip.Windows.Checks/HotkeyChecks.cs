@@ -63,6 +63,32 @@ internal static class HotkeyChecks
             Press(0x1B); TextWindowChecks.PumpUntil(() => !window.IsVisible, TimeSpan.FromSeconds(3));
             Console.WriteLine("PASS real WPF settings records Ctrl+Shift+A keyboard input, saves it and closes with Esc.");
 
+            window = new HotkeySettingsWindow(vm); window.Show(); window.Activate(); window.UpdateLayout();
+            ((TextBox)window.FindName("GestureBox")).Focus(); PumpBriefly();
+            Press(0x10, 0x51); TextWindowChecks.PumpUntil(() => vm.GestureText == "Shift+Q", TimeSpan.FromSeconds(3));
+            Require(vm.Status.Contains("全局快捷键") && service.Current == new HotkeyGesture(6, 0x41), "Shift-only draft applied before Save or lost its input impact hint.");
+            vm.SaveCommand.Execute(null);
+            Require(service.Current == new HotkeyGesture(4, 0x51) && store.Read() == service.Current, "Shift+Q was rejected or not persisted from the real settings window.");
+            Press(0x1B); TextWindowChecks.PumpUntil(() => !window.IsVisible, TimeSpan.FromSeconds(3));
+            int beforeFlexible = triggers;
+            Press(0x10, 0x51); TextWindowChecks.PumpUntil(() => triggers == beforeFlexible + 1, TimeSpan.FromSeconds(3));
+            using (var conflict = new HotkeyService()) Require(!conflict.Register(new(4, 0x51)), "Shift+Q registration was not held by the saved shortcut.");
+            Console.WriteLine("PASS actual Shift+Q capture, draft/save separation, persistence, native global trigger and conflict ownership.");
+
+            foreach (var test in new[] { (Key: (ushort)0x51, Display: "Q"), (Key: (ushort)0x61, Display: "Num1"), (Key: (ushort)0xBA, Display: ";") })
+            {
+                window = new HotkeySettingsWindow(vm); window.Show(); window.Activate(); window.UpdateLayout();
+                ((TextBox)window.FindName("GestureBox")).Focus(); PumpBriefly();
+                Press(test.Key); TextWindowChecks.PumpUntil(() => vm.GestureText == test.Display, TimeSpan.FromSeconds(3));
+                vm.SaveCommand.Execute(null);
+                Require(service.Current == new HotkeyGesture(0, test.Key) && store.Read() == service.Current, "Single/numpad/OEM key did not save and register.");
+                Press(0x1B); TextWindowChecks.PumpUntil(() => !window.IsVisible, TimeSpan.FromSeconds(3));
+                int previousTrigger = triggers;
+                Press(test.Key); TextWindowChecks.PumpUntil(() => triggers == previousTrigger + 1, TimeSpan.FromSeconds(3));
+            }
+            Console.WriteLine("PASS actual ordinary single key, numpad and OEM punctuation recording, persisted settings and global native triggers.");
+            Require(service.Register(HotkeyGesture.Default), "Could not restore fixture shortcut after flexible key checks.");
+
             File.WriteAllText(path, "{broken");
             bool invalid = false; try { store.Read(); } catch (InvalidOperationException) { invalid = true; }
             Require(invalid, "Damaged shortcut configuration was silently accepted.");

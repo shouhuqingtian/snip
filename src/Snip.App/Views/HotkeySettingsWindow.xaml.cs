@@ -16,7 +16,7 @@ public partial class HotkeySettingsWindow : Window
     }
     private void CaptureKey(object sender, KeyEventArgs args)
     {
-        var key = args.Key == Key.System ? args.SystemKey : args.Key;
+        var key = args.Key == Key.System ? args.SystemKey : args.Key == Key.ImeProcessed ? args.ImeProcessedKey : args.Key == Key.DeadCharProcessed ? args.DeadCharProcessedKey : args.Key;
         if (key == Key.Escape) return;
         args.Handled = true;
         if (key is Key.LeftCtrl or Key.RightCtrl or Key.LeftAlt or Key.RightAlt or Key.LeftShift or Key.RightShift or Key.LWin or Key.RWin) return;

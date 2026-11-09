@@ -22,7 +22,7 @@ public sealed class HotkeySettingsViewModel : ObservableObject
     public string Status { get => status; private set => Set(ref status, value); }
     public void SetGesture(HotkeyGesture value)
     {
-        try { value.Validate(); draft = value; Notify(nameof(GestureText)); Status = "点击保存使 " + value.DisplayText + " 生效。"; }
+        try { value.Validate(); draft = value; Notify(nameof(GestureText)); Status = "点击保存使 " + value.DisplayText + " 生效。" + (value.Modifiers is 0 or 4 ? "此按键会成为全局快捷键，普通输入时也可能触发。" : ""); }
         catch (ArgumentException error) { Status = error.Message; }
     }
     private void Save()
