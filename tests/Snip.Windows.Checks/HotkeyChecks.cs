@@ -75,7 +75,7 @@ internal static class HotkeyChecks
             using (var conflict = new HotkeyService()) Require(!conflict.Register(new(4, 0x51)), "Shift+Q registration was not held by the saved shortcut.");
             Console.WriteLine("PASS actual Shift+Q capture, draft/save separation, persistence, native global trigger and conflict ownership.");
 
-            foreach (var test in new[] { (Key: (ushort)0x51, Display: "Q"), (Key: (ushort)0x61, Display: "Num1"), (Key: (ushort)0xBA, Display: ";") })
+            foreach (var test in new[] { (Key: (ushort)0x51, Display: "Q"), (Key: (ushort)0x20, Display: "Space"), (Key: (ushort)0x61, Display: "Num1"), (Key: (ushort)0xBA, Display: ";") })
             {
                 window = new HotkeySettingsWindow(vm); window.Show(); window.Activate(); window.UpdateLayout();
                 ((TextBox)window.FindName("GestureBox")).Focus(); PumpBriefly();
