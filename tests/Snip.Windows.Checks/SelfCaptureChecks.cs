@@ -33,6 +33,14 @@ internal static class SelfCaptureChecks
         var main = new MainWindow { AllowClose = true, WindowStartupLocation = WindowStartupLocation.Manual, Left = 40, Top = 20 };
         var result = new Window { Style = null, WindowStyle = WindowStyle.None, ResizeMode = ResizeMode.NoResize, Left = 720, Top = 100, Width = 240, Height = 180, Background = Brushes.OrangeRed,
             Content = new Border { Background = Brushes.OrangeRed } };
+        result.SourceInitialized += (_, _) =>
+        {
+            // The solid source fixture must not depend on the CI GPU's WPF
+            // swap chain. This changes only this public test window; capture
+            // still reads real desktop pixels and all color assertions remain.
+            if (PresentationSource.FromVisual(result) is HwndSource source)
+                source.CompositionTarget.RenderMode = RenderMode.SoftwareOnly;
+        };
         var pin = new PinWindow(GreenImage(), export) { Left = 720, Top = 340 };
         Task? active = null;
         Exception? commandError = null;
